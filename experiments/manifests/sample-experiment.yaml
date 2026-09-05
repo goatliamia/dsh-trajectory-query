@@ -1,0 +1,23 @@
+# 示例 Experiment manifest(骨架;arm 名/模型为占位,自用填实际值)
+# 运行时:burner 会话(子代理跑 task set)→ 每个 run 一个 session digest → 汇总对比表。
+experiment: sample-ab
+description: "示例:同一 task 集下两个 preset 臂的结构化对比(占位)"
+date: 2026-09-05
+arms:
+  baseline: { preset: "TODO: baseline preset 名", model: "TODO" }
+  treatment: { preset: "TODO: treatment preset 名", model: "TODO" }
+task_set:
+  - "TODO: 任务 1 描述(可复现、唯一事实可植入)"
+  - "TODO: 任务 2 描述"
+runs_per_arm: 20
+analyzers: [turns, tools, errors, retry]   # versioned;新维度按 skill/analysis.md §4 注册
+analysis_schema:
+  # 半开放模板:模型只在以下维度内解释,每条挂 (session, seq)
+  open_dimensions:
+    - skill_usage: "skill 是否被加载/加载位置/使用后行为变化/是否被绕过(可选)"
+    - behavior_notes: "观察到的行为现象(非计数的定性观察)"
+pipeline:
+  run: "TODO: 启动 burner 会话(每次一个新 session)"
+  digest: "node analyzers/run-digest.mjs <session.zstd> <out>"
+  compare: "TODO: 汇总 runs_per_arm 次 digest → 对比 md 表(确定性列)"
+report: "experiments/reports/<experiment>-<date>.md"

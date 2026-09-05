@@ -22,17 +22,20 @@
 
 | 路径 | 内容 |
 |---|---|
-| `docs/design.md` | 设计判断与收敛过程(为什么不是 Memory) |
+| `docs/design.md` | 设计判断与收敛过程(为什么不是 Memory)+ 单插件三面解剖 |
 | `docs/experiments/protocol.md` | 可证伪实验协议(Tier 0 / 1 / 2) |
-| `plugin/` | 动态 Cordis 插件源码镜像(host-only,装载方式见其 README) |
-| `skill/` | Skill 纪律文本 v0 |
-| `experiments/` | 实验流水线约定(语料/探针/盲评) |
+| `plugin/` | 动态 Cordis 插件源码镜像(装载方式见其 README) |
+| `skill/trajectory-query.md` | 历史查询纪律(agent 自服务) |
+| `skill/analysis.md` | 分析 Skill:把研究问题变成可核验分析(不锁死维度) |
+| `analyzers/` | 分析器注册表:契约 + 事件加载 + 内置示例(turns/tools/errors/retry)+ digest 运行器 |
+| `experiments/` | 实验流水线(语料/探针/盲评/manifest/digest 产物) |
 
 ## 状态
 
 - [x] 设计收敛 & 实验协议
 - [x] Tier 0:合成信息体制(5/5 远端取回、2/2 阴性无证据、H1/H2 ✅、H3 弱 ✅、H4 软 ✅;报告 `experiments/reports/tier0-results.md`)
 - [x] Tier 1:真实长会话双盲探针(6/6 存在 verbatim 取回、2/2 阴性;真实两级 compaction 影子事件可查;报告 `experiments/reports/tier1-results.md`)
-- [ ] Tier 2(可选,非实验):日常使用采纳率观测
+- [x] 查询面插件(tqry-1)+ 分析面非 UI 部分(分析器框架 + digest + 分析 Skill + manifest 骨架)
+- [ ] UI:可选面板(待与用户探讨:槽位/常驻形态/是否必要)
 
 > 注:本地目录名为历史遗留的 `sql event`,与仓库名无关。

@@ -48,3 +48,22 @@
 4. **成本**:按需查询的边际 token 是否随会话长度持平(携带成本线性涨)。
 
 验证协议见 `docs/experiments/protocol.md`。
+
+## 插件解剖:单一插件,三面按需(2026-09 定稿)
+
+trajectory 收敛为**一个插件**,内部三个 facet,全部惰性——不用 = 不调用/不渲染/不注册效果:
+
+```text
+trajectory 插件
+├─ 查询面(host 工具):trajectory_find / window / trace / sessions —— 人和 AI 共用
+├─ 分析面:
+│    ├─ 分析管线(host,按需):确定性分析器(fold → 事实)→ digest(md/json)→ 对比表
+│    ├─ 可选面板(client,占位):纯模板渲染分析结果,零 token(UI 待与用户探讨,未实现)
+│    └─ 分析 Skill(skill/analysis.md):教方法、不锁死维度;维度从现象/假设/对比长出来
+└─ 与查询面的结合:分析器复用同一 read model(ctx.sessionQuery / 事件日志);
+     查询面已验证(证据纪律:H2 verbatim+指针);分析面把同一纪律形式化为分析器契约。
+```
+
+- 触发规则:agent 想查才调查询工具;你要研究才跑管线;面板挂上且打开才渲染。
+- 分析器是纯 fold、带 version、可丢弃重算——分析产物永不当记忆持久化。
+- UI(可选面板)是最后一个 facet:先定槽位契约与"常驻 or 打开才渲染"再实现(见 goal 的 UI 探讨点)。
