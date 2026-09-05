@@ -62,6 +62,9 @@ exports.apply = function apply(ctx) {
 		order: 20,
 		label: () => '分析',
 		children: {},
-		inject: () => ({ hooks: {} })
+		inject: (sessionId) => {
+          const target = ctx.uiConversation.binding(sessionId).target('trajectory');
+          return { hooks: { trajectory: { getSnapshot: () => target.getSnapshot(), subscribe: (l) => target.subscribe(l) } } };
+        }
 	}, digestView));
 };
