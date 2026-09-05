@@ -2,7 +2,7 @@
 // Text mapping mirrors dsh-session-query's semantic docs (user/assistant/tool messages).
 // Usage: node extract-events.mjs <session.zstd> <out.txt>
 import { readFileSync, writeFileSync } from 'node:fs';
-import { decodeZstdSession } from './scan-sessions.mjs';
+import { decodeZstdSession } from './decode-session.mjs';
 
 function contentText(content) {
   if (!Array.isArray(content)) return '';
