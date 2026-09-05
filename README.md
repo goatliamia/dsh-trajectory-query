@@ -31,7 +31,8 @@
 ## 状态
 
 - [x] 设计收敛 & 实验协议
-- [ ] Tier 0:合成信息体制(测 H1 召回 / H2 保真 / H4 采纳 + find recall)
-- [ ] Tier 1:端到端真实 compaction(burner 会话)
+- [x] Tier 0:合成信息体制(5/5 远端取回、2/2 阴性无证据、H1/H2 ✅、H3 弱 ✅、H4 软 ✅;报告 `experiments/reports/tier0-results.md`)
+- [ ] Tier 1:真实长会话(旧持久化会话 24,208 事件)+ 双盲探针 + 成本对比(进行中)
+  - 附带发现:FTS 索引本部署被禁(`openAt:"never"`);51 个持久化会话中未观测到 compaction(surfaceReplace=0)
 
 > 注:本地目录名为历史遗留的 `sql event`,与仓库名无关。
