@@ -1,0 +1,11 @@
+{
+  "name": "dsh-analysis-view",
+  "version": "0.1.0",
+  "private": true,
+  "description": "常驻分析 tab:复用 conversation 视图框架,注册 uiConversation.views target 'analysis' + conversation.view occupant,消费 useTrajectory 投影的确定性 digest",
+  "main": "lib/client.js",
+  "files": [
+    "lib/client.js"
+  ],
+  "license": "MIT"
+}
