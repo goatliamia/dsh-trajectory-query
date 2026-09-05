@@ -1,0 +1,14 @@
+{
+  "sessionId": "session-73f70be7-48e3-435a-addf-42e792c70a4d",
+  "method": "存在事实:keys 后向 window(seq) verbatim 核验;不存在事实:find 空结果。盲备局限:keys 事后读取(语料为转义代码日志,锚点 literal 查询噪音大),报告中如实披露",
+  "answers": [
+    { "id": "E1", "seq": 1189024, "type": "assistant/message", "quote": "deepseek-ai\\dsh-web-app\\lib\\index.js" },
+    { "id": "E2", "seq": 6576, "type": "tool/result", "quote": "C:\\Users\\14100\\AppData\\Roaming\\npm\\dsh.cmd" },
+    { "id": "E3", "seq": 7492, "type": "assistant/message", "quote": "env:USERPROFILE\\.dsh\\settings.json\\" },
+    { "id": "E4", "seq": 7496, "type": "tool/result", "quote": "deepseek-ai\\dsh\\package.json" },
+    { "id": "E5", "seq": 8008, "type": "assistant/message", "quote": "C:\\Users\\14100\\.dsh\\settings.yaml" },
+    { "id": "E6", "seq": 8011, "type": "tool/result", "quote": "ui-onboarding:\n2:" },
+    { "id": "A1", "verdict": "no-evidence", "hits": 0 },
+    { "id": "A2", "verdict": "no-evidence", "hits": 0 }
+  ]
+}

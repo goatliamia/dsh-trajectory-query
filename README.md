@@ -32,7 +32,7 @@
 
 - [x] 设计收敛 & 实验协议
 - [x] Tier 0:合成信息体制(5/5 远端取回、2/2 阴性无证据、H1/H2 ✅、H3 弱 ✅、H4 软 ✅;报告 `experiments/reports/tier0-results.md`)
-- [ ] Tier 1:真实长会话(旧持久化会话 24,208 事件)+ 双盲探针 + 成本对比(进行中)
-  - 附带发现:FTS 索引本部署被禁(`openAt:"never"`);51 个持久化会话中未观测到 compaction(surfaceReplace=0)
+- [x] Tier 1:真实长会话双盲探针(6/6 存在 verbatim 取回、2/2 阴性;真实两级 compaction 影子事件可查;报告 `experiments/reports/tier1-results.md`)
+- [ ] Tier 2(可选,非实验):日常使用采纳率观测
 
 > 注:本地目录名为历史遗留的 `sql event`,与仓库名无关。

@@ -111,4 +111,7 @@ skill 必须教"先用表面词猜词 → 命中不足就换词 / 放宽 / 按 t
 6. 报告:H1–H4 判据表 + 定位结论
 
 ## 9. 状态
-- Tier 0 结果与原始数据 → `experiments/reports/tier0-results.md`
+- Tier 0 结果:`experiments/reports/tier0-results.md`(H1/H2 ✅、H3 弱 ✅、H4 软 ✅)
+- Tier 1 结果:`experiments/reports/tier1-results.md`(真实旧会话两级 compaction 阴影可查;存在 6/6、阴性 2/2)
+- 执行注记:Tier 1 用"历史上真实发生 compaction 的持久化会话"替代"burner+手动 compactRegion",
+  生态效度更高;keys 事后读取,盲设部分失效,已在报告中披露。

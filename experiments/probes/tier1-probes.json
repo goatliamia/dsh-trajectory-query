@@ -1,0 +1,39 @@
+{
+  "sessionId": "session-73f70be7-48e3-435a-addf-42e792c70a4d",
+  "exists": [
+    {
+      "id": "E1",
+      "question": "那次真实会话里,在一段 助手消息 中,紧接着下面这段上下文之后出现的那个长标识/令牌是什么?(不要猜,查历史原文后原样引用) 上下文:「\\n{\"command\": \"$f = 'C:\\\\Users\\\\14100\\\\.dsh\\\\profiles\\\\node_modules\\\\@…」"
+    },
+    {
+      "id": "E2",
+      "question": "那次真实会话里,在一段 工具输出 中,紧接着下面这段上下文之后出现的那个长标识/令牌是什么?(不要猜,查历史原文后原样引用) 上下文:「\\ndsh C:\\Users\\14100\\AppData\\Roaming\\npm\\dsh \\ndsh.cmd…」"
+    },
+    {
+      "id": "E3",
+      "question": "那次真实会话里,在一段 助手消息 中,紧接着下面这段上下文之后出现的那个长标识/令牌是什么?(不要猜,查历史原文后原样引用) 上下文:「ect { $_.Name }; Write-Output '=== settings.json ==='; Get-Content \\\"$…」"
+    },
+    {
+      "id": "E4",
+      "question": "那次真实会话里,在一段 工具输出 中,紧接着下面这段上下文之后出现的那个长标识/令牌是什么?(不要猜,查历史原文后原样引用) 上下文:「<path>C:\\Users\\14100\\AppData\\Roaming\\npm\\node_modules\\@…」"
+    },
+    {
+      "id": "E5",
+      "question": "那次真实会话里,在一段 助手消息 中,紧接着下面这段上下文之后出现的那个长标识/令牌是什么?(不要猜,查历史原文后原样引用) 上下文:「n 受沙箱限制看不到，netstat 可以）。现在读一下配置文件确认端口和 web 启动命令：\\nread\\n{\"file_path\": \"…」"
+    },
+    {
+      "id": "E6",
+      "question": "那次真实会话里,在一段 工具输出 中,紧接着下面这段上下文之后出现的那个长标识/令牌是什么?(不要猜,查历史原文后原样引用) 上下文:「ers\\14100\\.dsh\\settings.yaml</path>\\n<type>file</type>\\n<content>\\n1:…」"
+    }
+  ],
+  "absent": [
+    {
+      "id": "A1",
+      "question": "那次真实会话里是否出现过与「QuasarRigelAuroraVendor-9k2m」相关的内容?请给出证据或说明无证据。"
+    },
+    {
+      "id": "A2",
+      "question": "那次真实会话里是否出现过与「NebulaPipelineDeploy-7t4x」相关的内容?请给出证据或说明无证据。"
+    }
+  ]
+}

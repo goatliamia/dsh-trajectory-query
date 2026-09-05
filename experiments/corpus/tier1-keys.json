@@ -1,0 +1,51 @@
+{
+  "sessionId": "session-73f70be7-48e3-435a-addf-42e792c70a4d",
+  "exists": [
+    {
+      "id": "E1",
+      "seq": 1189024,
+      "type": "assistant/message",
+      "expectedToken": "deepseek-ai\\\\dsh-web-app\\\\lib\\\\index.js"
+    },
+    {
+      "id": "E2",
+      "seq": 6576,
+      "type": "tool/result",
+      "expectedToken": "C:\\Users\\14100\\AppData\\Roaming\\npm\\dsh.cmd"
+    },
+    {
+      "id": "E3",
+      "seq": 7492,
+      "type": "assistant/message",
+      "expectedToken": "env:USERPROFILE\\\\.dsh\\\\settings.json\\"
+    },
+    {
+      "id": "E4",
+      "seq": 7496,
+      "type": "tool/result",
+      "expectedToken": "deepseek-ai\\dsh\\package.json"
+    },
+    {
+      "id": "E5",
+      "seq": 8008,
+      "type": "assistant/message",
+      "expectedToken": "C:\\\\Users\\\\14100\\\\.dsh\\\\settings.yaml"
+    },
+    {
+      "id": "E6",
+      "seq": 8011,
+      "type": "tool/result",
+      "expectedToken": "ui-onboarding:\\n2:"
+    }
+  ],
+  "absent": [
+    {
+      "id": "A1",
+      "phrase": "QuasarRigelAuroraVendor-9k2m"
+    },
+    {
+      "id": "A2",
+      "phrase": "NebulaPipelineDeploy-7t4x"
+    }
+  ]
+}
