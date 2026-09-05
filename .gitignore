@@ -1,0 +1,28 @@
+# deps / build
+node_modules/
+dist/
+*.tsbuildinfo
+
+# logs & runtime artifacts
+*.log
+.dsh/
+dsh-spill-*/
+*.tmp
+*.sqlite
+*.sqlite-*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# experiment working files (keep final reports)
+experiments/**/raw-*.json
+experiments/**/*.tmp.json
