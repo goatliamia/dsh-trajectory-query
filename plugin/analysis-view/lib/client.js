@@ -46,9 +46,18 @@ window.__ModuleLoader__.load({
       const sub = { fontSize: 12, color: 'var(--dsw-alias-label-secondary, #666)' };
       const row = (k, v) => React.createElement('div', { key: k, style: { padding: '5px 0', borderBottom: '1px solid var(--dsw-alias-border-l2, #eee)' } }, React.createElement('span', { style: { fontSize: 13 } }, k), React.createElement('span', { style: sub }, '  ' + v));
       const kpi = [['turns', String(turns)], ['tool calls', String(toolCalls)], ['errors', String(errors)]];
+    const maxTool = Math.max(0, ...Object.values(names));
+    const chartEl = React.createElement('div', { key: 'chart', style: { margin: '10px 0' } }, [
+      React.createElement('div', { key: 'ct', style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary, #666)', marginBottom: 6 } }, '工具分布 (top)'),
+      ...Object.entries(names).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([nm, count]) => React.createElement('div', { key: nm, style: { display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' } },
+        React.createElement('span', { style: { width: 96, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, nm),
+        React.createElement('div', { style: { flex: 1, height: 12, background: 'var(--dsw-alias-bg-layer-2, #eee)', borderRadius: 3, overflow: 'hidden' } },
+          React.createElement('div', { style: { width: (maxTool ? Math.round(count / maxTool * 100) : 0) + '%', height: '100%', background: 'var(--dsw-alias-state-business-primary, #3b82f6)' } })),
+        React.createElement('span', { style: { width: 22, textAlign: 'right', fontSize: 12 } }, String(count))))
+    ]);
       return React.createElement('div', { style: { padding: 12, overflow: 'auto', minHeight: 0 } }, [
         React.createElement('h3', { key: 'h', style: { margin: '0 0 4px', fontSize: 14 } }, '分析', React.createElement('span', { style: sub }, '  ·  turns/tools/errors v1 (轨迹投影)')),
-        React.createElement('div', { key: 'kpi', style: { display: 'flex', gap: 14, margin: '8px 0', flexWrap: 'wrap' } }, kpi.map(([k, v]) => React.createElement('span', { key: k, style: { fontSize: 13 } }, React.createElement('b', { style: { marginRight: 4 } }, v), k))),
+        React.createElement('div', { key: 'kpi', style: { display: 'flex', gap: 14, margin: '8px 0', flexWrap: 'wrap' } }, kpi.map(([k, v]) => React.createElement('span', { key: k, style: { fontSize: 13 } }, React.createElement('b', { style: { marginRight: 4 } }, v), k))), chartEl,
         row('tools v1', toolCalls + ' 次 · top: ' + (top.join(' · ') || '无')),
         row('errors v1', errors + ' 个;首现: ' + (errFirst.map((e) => e.kind + '@' + e.seq).join(', ') || '无')),
         row('现象区', retry.length ? 'retry v1(同名,去参数) ×' + retry.length + ';样例 ' + retry.slice(0, 4).join(', ') + '. 同参检测需 host 分析器。' : '无候选。同参检测需 host 分析器。'),
