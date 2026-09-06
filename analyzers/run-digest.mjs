@@ -9,8 +9,9 @@ import { turns } from './turns.mjs';
 import { tools } from './tools.mjs';
 import { errors } from './errors.mjs';
 import { retry } from './retry.mjs';
+import { incidents } from './incidents.mjs';
 
-const ANALYZERS = [turns, tools, errors, retry];
+const ANALYZERS = [turns, tools, errors, retry, incidents];
 const here = dirname(fileURLToPath(import.meta.url));
 
 const file = process.argv[2];
@@ -32,6 +33,7 @@ for (const a of ANALYZERS) {
   rows.push(`| ${a.id} v${a.version} | ${cells.join(' ')} |`);
 }
 
+const incidentLines = facts.incidents && facts.incidents.incidents ? facts.incidents.incidents.map((x) => `- **${x.title}** (sev ${x.severity}) — ${x.detail}; cause: ${x.cause}; runtime: ${x.runtimeKnew}; model: ${x.modelKnew}; harness: ${x.harness}; impact: ${x.impact}; evidence seq: ${(x.seqs || []).join(', ')}`) : ['- 无'];
 const md = [
   `# Digest: ${id || basename(file)}`,
   '',
@@ -43,6 +45,9 @@ const md = [
   '| analyzer v | facts |',
   '| --- | --- |',
   ...rows,
+  '',
+  '### Incidents (v1, 机械层, 确定性)',
+  ...incidentLines,
   '',
   '> 列全部由确定性分析器产出(模型不写列)。开放解读与人工核验见 skill/analysis.md。',
   ''

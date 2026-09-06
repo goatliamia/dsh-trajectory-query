@@ -1,44 +1,48 @@
 {
   "session": "session-e0636aa9-e8d7-4879-9309-7b5ff232037d",
-  "events": 2895,
+  "events": 4903,
   "facts": {
     "turns": {
       "version": 1,
-      "turns": 18,
-      "ended": 17,
+      "turns": 40,
+      "ended": 39,
       "openTurns": 1,
       "endReasons": {
-        "completed": 16,
-        "aborted": 1
+        "completed": 37,
+        "aborted": 2
       }
     },
     "tools": {
       "version": 1,
-      "total": 171,
-      "distinct": 26,
+      "total": 264,
+      "distinct": 31,
       "byName": [
         {
           "name": "pwsh",
-          "calls": 40
+          "calls": 69
         },
         {
           "name": "write",
-          "calls": 35
+          "calls": 50
+        },
+        {
+          "name": "read",
+          "calls": 24
+        },
+        {
+          "name": "grep",
+          "calls": 23
         },
         {
           "name": "trajectory_find",
           "calls": 18
         },
         {
-          "name": "read",
-          "calls": 10
-        },
-        {
           "name": "edit",
-          "calls": 10
+          "calls": 14
         },
         {
-          "name": "grep",
+          "name": "cordis_define",
           "calls": 9
         },
         {
@@ -46,49 +50,59 @@
           "calls": 8
         },
         {
+          "name": "cordis_run",
+          "calls": 7
+        },
+        {
           "name": "trajectory_window",
           "calls": 6
-        },
-        {
-          "name": "cordis_define",
-          "calls": 5
-        },
-        {
-          "name": "cordis_run",
-          "calls": 5
         },
         {
           "name": "cordis_inspect_query",
           "calls": 4
         },
         {
+          "name": "create_goal",
+          "calls": 3
+        },
+        {
+          "name": "cordis_inspect_self",
+          "calls": 3
+        },
+        {
           "name": "list_agents",
           "calls": 3
         },
         {
-          "name": "create_goal",
-          "calls": 2
-        },
-        {
-          "name": "trajectory_trace",
-          "calls": 2
-        },
-        {
-          "name": "tq_seed_corpus",
+          "name": "ask_user_question",
           "calls": 2
         }
       ]
     },
     "errors": {
       "version": 1,
-      "total": 1,
-      "distinct": 1,
+      "total": 7,
+      "distinct": 3,
       "firstSeqs": [
         {
           "kind": "ToolNotFoundError:UNKNOWN_TOOL",
           "name": "ToolNotFoundError",
           "code": "UNKNOWN_TOOL",
           "firstSeq": 92652,
+          "count": 2
+        },
+        {
+          "kind": "FsError:FS_NOT_OBSERVED",
+          "name": "FsError",
+          "code": "FS_NOT_OBSERVED",
+          "firstSeq": 241063,
+          "count": 4
+        },
+        {
+          "kind": "WebError:WEB_BLOCKED_URL",
+          "name": "WebError",
+          "code": "WEB_BLOCKED_URL",
+          "firstSeq": 277710,
           "count": 1
         }
       ]
@@ -97,6 +111,49 @@
       "version": 1,
       "suspectedPairs": 0,
       "samples": []
+    },
+    "incidents": {
+      "version": 1,
+      "turns": 40,
+      "toolCalls": 264,
+      "errors": 10,
+      "emptyTurns": 14,
+      "incidentCount": 2,
+      "incidents": [
+        {
+          "type": "error",
+          "severity": 1,
+          "title": "调用失败",
+          "detail": "10 个调用返回错误",
+          "cause": "工具调用返回错误",
+          "runtimeKnew": "错误码见证据",
+          "modelKnew": "收到 tool result(可能已含错误)",
+          "harness": "未检测到针对性处理",
+          "impact": "该部分目标未达成",
+          "seqs": [
+            72652,
+            92652,
+            92732,
+            191688,
+            241063,
+            241065,
+            249962,
+            249968
+          ]
+        },
+        {
+          "type": "noop",
+          "severity": 1,
+          "title": "空转 turn",
+          "detail": "14 个 turn 无任何工具调用",
+          "cause": "该 turn 未产生工具动作",
+          "runtimeKnew": "-",
+          "modelKnew": "无工具上下文",
+          "harness": "-",
+          "impact": "该 turn 未推进",
+          "seqs": []
+        }
+      ]
     }
   }
 }
