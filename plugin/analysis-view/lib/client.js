@@ -1,8 +1,7 @@
 // dsh-analysis-view — 常驻 client 插件(分析 tab)。
-// 镜像:会话内动态插件 tqan-3/pkg-8。web profile 的 loader 约定:client 文件
-// 必须以 __ModuleLoader__.load({ id, factory }) 自注册,factory 接收 require
-// (react 等外部模块必须经 require 获取,不能引用全局),返回 { inject, apply }
-// 描述符(同 dsh-runtime-seam / dsh-approval-hotkeys 的打包形态)。
+// web profile 的 loader 约定:client 文件必须以 __ModuleLoader__.load({ id, factory })
+// 自注册,factory 接收 require(react 等外部模块必须经 require 获取,不能引用全局),
+// 返回 { inject, apply } 描述符(同 dsh-runtime-seam / dsh-approval-hotkeys 的打包形态)。
 window.__ModuleLoader__.load({
   id: "dsh-analysis-view",
   factory: (require) => {
@@ -26,61 +25,100 @@ window.__ModuleLoader__.load({
     };
     AnalysisSnapshotBuilder.prototype.snapshot = function () { return this.snap; };
 
+    const sub = { fontSize: 12, color: "var(--dsw-alias-label-secondary, #666)" };
+    const chip = { display: "inline-block", margin: "0 4px", padding: "0 5px", borderRadius: 4, background: "var(--dsw-alias-bg-layer-2, #ececec)", fontSize: 11, color: "var(--dsw-alias-label-secondary, #666)", cursor: "pointer", border: "0", fontFamily: "inherit" };
+
     function digestView(props) {
       const useTrajectory = props && props.useTrajectory;
+      const openView = props && props.openView;
       let snap = null;
       try { snap = useTrajectory ? useTrajectory((s) => s) : null; } catch { snap = null; }
       const nodes = Array.isArray(snap && snap.eventNodes) ? snap.eventNodes : [];
-      const turnSet = new Set(); let toolCalls = 0, errors = 0;
-      const names = {}; const errFirst = []; const nameSeq = [];
+
+      const turnSet = new Set();
+      const turnTools = new Map();
+      const nameSeq = [];
+      const callIdBySeq = new Map();
+      let toolCalls = 0, errors = 0;
+      const errFirst = [];
+
       for (const n of nodes) {
         const k = n && n.kind;
-        if (k === 'assistant' && n.turn > 0) turnSet.add(n.turn);
-        if (k === 'tool-result') { toolCalls++; if (n.error || n.isError) { errors++; if (errFirst.length < 4) errFirst.push({ kind: (n.error && (n.error.name || n.error.code)) || n.name || 'error', seq: n.seq }); } }
-        if (k === 'assistant' && Array.isArray(n.blocks)) for (const b of n.blocks) if (b && b.kind === 'tool-call' && b.name) { const nm = b.name; names[nm] = (names[nm] || 0) + 1; nameSeq.push({ name: nm, seq: n.seq }); }
+        if (k === "assistant" && n.turn > 0) {
+          turnSet.add(n.turn);
+          if (Array.isArray(n.blocks)) for (const b of n.blocks) {
+            if (b && b.kind === "tool-call" && b.name) {
+              turnTools.set(n.turn, (turnTools.get(n.turn) || 0) + 1);
+              nameSeq.push({ name: b.name, seq: n.seq, callId: b.callId });
+              if (b.callId) callIdBySeq.set(n.seq, b.callId);
+            }
+          }
+        }
+        if (k === "tool-result") {
+          toolCalls++;
+          if (n.callId) callIdBySeq.set(n.seq, n.callId);
+          if (n.error || n.isError) {
+            errors++;
+            if (errFirst.length < 5) errFirst.push({ kind: (n.error && (n.error.name || n.error.code)) || n.name || "error", seq: n.seq, callId: n.callId });
+          }
+        }
       }
+
       const turns = turnSet.size;
+      let emptyTurns = 0;
+      for (const t of turnSet) if (!(turnTools.get(t) > 0)) emptyTurns++;
+      const maxT = Math.max(1, ...[...turnTools.values()]);
+
       const retry = [];
-      for (let i = 1; i < nameSeq.length; i++) if (nameSeq[i - 1].name === nameSeq[i].name) retry.push(nameSeq[i - 1].seq + '→' + nameSeq[i].seq);
-      const top = Object.entries(names).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => name + '×' + count);
-      const sub = { fontSize: 12, color: 'var(--dsw-alias-label-secondary, #666)' };
-      const row = (k, v) => React.createElement('div', { key: k, style: { padding: '5px 0', borderBottom: '1px solid var(--dsw-alias-border-l2, #eee)' } }, React.createElement('span', { style: { fontSize: 13 } }, k), React.createElement('span', { style: sub }, '  ' + v));
-      const kpi = [['turns', String(turns)], ['tool calls', String(toolCalls)], ['errors', String(errors)]];
-    const maxTool = Math.max(0, ...Object.values(names));
-    const chartEl = React.createElement('div', { key: 'chart', style: { margin: '10px 0' } }, [
-      React.createElement('div', { key: 'ct', style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary, #666)', marginBottom: 6 } }, '工具分布 (top)'),
-      ...Object.entries(names).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([nm, count]) => React.createElement('div', { key: nm, style: { display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0' } },
-        React.createElement('span', { style: { width: 96, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, nm),
-        React.createElement('div', { style: { flex: 1, height: 12, background: 'var(--dsw-alias-bg-layer-2, #eee)', borderRadius: 3, overflow: 'hidden' } },
-          React.createElement('div', { style: { width: (maxTool ? Math.round(count / maxTool * 100) : 0) + '%', height: '100%', background: 'var(--dsw-alias-state-business-primary, #3b82f6)' } })),
-        React.createElement('span', { style: { width: 22, textAlign: 'right', fontSize: 12 } }, String(count))))
-    ]);
-      return React.createElement('div', { style: { padding: 12, overflow: 'auto', minHeight: 0 } }, [
-        React.createElement('h3', { key: 'h', style: { margin: '0 0 4px', fontSize: 14 } }, '分析', React.createElement('span', { style: sub }, '  ·  turns/tools/errors v1 (轨迹投影)')),
-        React.createElement('div', { key: 'kpi', style: { display: 'flex', gap: 14, margin: '8px 0', flexWrap: 'wrap' } }, kpi.map(([k, v]) => React.createElement('span', { key: k, style: { fontSize: 13 } }, React.createElement('b', { style: { marginRight: 4 } }, v), k))), chartEl,
-        row('tools v1', toolCalls + ' 次 · top: ' + (top.join(' · ') || '无')),
-        row('errors v1', errors + ' 个;首现: ' + (errFirst.map((e) => e.kind + '@' + e.seq).join(', ') || '无')),
-        row('现象区', retry.length ? 'retry v1(同名,去参数) ×' + retry.length + ';样例 ' + retry.slice(0, 4).join(', ') + '. 同参检测需 host 分析器。' : '无候选。同参检测需 host 分析器。'),
-        React.createElement('div', { key: 'foot', style: Object.assign({}, sub, { marginTop: 8 }) }, '确定性列,非模型生成; 复跑: node analyzers/run-digest.mjs <session.zstd>')
+      for (let i = 1; i < nameSeq.length; i++) if (nameSeq[i - 1].name === nameSeq[i].name) retry.push({ ...nameSeq[i - 1], nextSeq: nameSeq[i].seq });
+
+      const go = (callId) => () => { if (openView && callId) openView("trajectory", callId); };
+      const chipBtn = (seq, callId) => React.createElement("button", { key: String(seq) + "-" + String(callId), onClick: go(callId), style: chip, title: openView ? "切换到轨迹" : "" }, String(seq));
+
+      const factRow = (k, v) => React.createElement("div", { key: k, style: { padding: "5px 0", borderBottom: "1px solid var(--dsw-alias-border-l2, #eee)" } }, React.createElement("span", { style: { fontSize: 13 } }, k), React.createElement("span", { style: sub }, "  " + v));
+
+      const active = React.createElement("div", { key: "act", style: { margin: "8px 0" } }, [
+        React.createElement("div", { key: "a", style: Object.assign({}, sub, { marginBottom: 4 }) }, "Turn 活动 (tool 调用密度 · 红=有错误)"),
+        React.createElement("div", { key: "b", style: { display: "flex", alignItems: "flex-end", gap: 2, height: 56 } }, [...turnSet].sort((a, b) => a - b).map((t) => {
+          const c = turnTools.get(t) || 0;
+          const h = c ? Math.max(6, Math.round((c / maxT) * 44)) : 4;
+          return React.createElement("div", { key: t, title: "turn " + t + " · " + c + " calls", style: { width: 8, height: h, background: "var(--dsw-alias-state-business-primary, #3b82f6)", borderRadius: 2 } });
+        }))
+      ]);
+
+      const phenRows = [];
+      phenRows.push(factRow("errors v1", errors + " 个; 首现: " + (errFirst.length ? errFirst.slice(0, 4).map((e) => React.createElement("span", { key: e.seq }, e.kind, chipBtn(e.seq, e.callId))) : "无")));
+      phenRows.push(factRow("retry v1", (retry.length ? "疑似重复 ×" + retry.length + "; 样例(seq): " : "无候选。同参检测需 host 分析器。") + retry.slice(0, 4).map((r) => React.createElement("span", { key: r.seq }, chipBtn(r.seq, r.callId), "→", chipBtn(r.nextSeq, nameSeq.find((x) => x.seq === r.nextSeq)?.callId)))));
+      phenRows.push(factRow("空转 turn", emptyTurns + " / " + turns + " 个 turn 没有工具调用(潜在空转)"));
+
+      const kpi = [["turns", String(turns)], ["tool calls", String(toolCalls)], ["errors", String(errors)]];
+
+      return React.createElement("div", { style: { padding: 12, overflow: "auto", minHeight: 0 } }, [
+        React.createElement("h3", { key: "h", style: { margin: "0 0 4px", fontSize: 14 } }, "分析", React.createElement("span", { style: sub }, "  ·  turns/tools/errors v1 (轨迹投影)")),
+        React.createElement("div", { key: "kpi", style: { display: "flex", gap: 14, margin: "8px 0", flexWrap: "wrap" } }, kpi.map(([k, v]) => React.createElement("span", { key: k, style: { fontSize: 13 } }, React.createElement("b", { style: { marginRight: 4 } }, v), k))),
+        active,
+        ...phenRows,
+        React.createElement("div", { key: "open", style: { margin: "8px 0" } }, React.createElement("details", null, React.createElement("summary", { style: { fontSize: 12, cursor: "pointer" } }, "开放解读(消耗 tokens)"), React.createElement("div", { style: sub }, "占位:模型在半开放维度内解释,每条带 (session, seq) 引用。"))),
+        React.createElement("div", { key: "foot", style: Object.assign({}, sub, { marginTop: 8 }) }, "确定性列,非模型生成; 复跑: node analyzers/run-digest.mjs <session.zstd>")
       ]);
     }
 
     return {
       inject: ["slots", "uiConversation"],
       apply(ctx) {
-        ctx.uiConversation.views.register({ target: 'analysis', create: () => new AnalysisSnapshotBuilder(), isActive: () => true });
+        ctx.uiConversation.views.register({ target: "analysis", create: () => new AnalysisSnapshotBuilder(), isActive: () => true });
         const s = ctx.slots;
         if (!s) return;
-        s.inject('conversation.view', () => s.register({
-          name: 'conversation.view',
-          id: 'analysis',
+        s.inject("conversation.view", () => s.register({
+          name: "conversation.view",
+          id: "analysis",
           order: 20,
-          label: () => '分析',
+          label: () => "分析",
           children: {},
           inject: (sessionId) => {
-          const target = ctx.uiConversation.binding(sessionId).target('trajectory');
-          return { hooks: { trajectory: { getSnapshot: () => target.getSnapshot(), subscribe: (l) => target.subscribe(l) } } };
-        }
+            const target = ctx.uiConversation.binding(sessionId).target("trajectory");
+            return { hooks: { trajectory: { getSnapshot: () => target.getSnapshot(), subscribe: (l) => target.subscribe(l) } } };
+          }
         }, digestView));
       },
     };
