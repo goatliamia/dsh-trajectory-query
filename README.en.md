@@ -90,10 +90,9 @@ pnpm install            # in ~/.dsh/profiles/web
 
 ## Known gaps
 
-- The panel's retry detection is name-level; **same-args** detection lives in the host analyzer
-  (`analyzers/incidents.mjs`).
-- `Harness response` on a card is currently a template, not derived from guard/intervention events.
-- Client-side detection only sees the trajectory projection; richer incidents need host data.
+- The panel's incidents come from the host route `/analysis-view/digest` (same-args repeat, no-op turn and harness response are decided on the host); the panel renders evidence only.
+- `Harness response` is derived from error codes (guard intercepted / no guard, model must self-correct), not a template.
+- Host analysis and `analyzers/incidents.mjs` are two implementations (runtime cannot import repo scripts); each is pinned by its own self-test.
 
 ## License
 

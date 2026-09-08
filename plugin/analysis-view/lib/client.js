@@ -30,6 +30,18 @@ window.__ModuleLoader__.load({
     function digestView(props) {
       const useTrajectory = props && props.useTrajectory;
       const openView = props && props.openView;
+      const sessionId = props && props.sessionId;
+      const [host, setHost] = React.useState(null);
+      const [hostErr, setHostErr] = React.useState(null);
+      React.useEffect(() => {
+        let alive = true;
+        if (!sessionId) return void 0;
+        fetch("/analysis-view/digest?session=" + encodeURIComponent(sessionId))
+          .then((r) => r.json())
+          .then((j) => { if (alive) setHost(j); })
+          .catch((e) => { if (alive) setHostErr(String((e && e.message) || e)); });
+        return () => { alive = false; };
+      }, [sessionId]);
       let snap = null;
       try { snap = useTrajectory ? useTrajectory((s) => s) : null; } catch { snap = null; }
       const nodes = Array.isArray(snap && snap.eventNodes) ? snap.eventNodes : [];
@@ -80,6 +92,12 @@ window.__ModuleLoader__.load({
         });
       }
 
+      const clientIncidents = incidents.slice();
+      const hostIncidents = host && Array.isArray(host.incidents)
+        ? host.incidents.map((inc) => ({ ...inc, seqs: (inc.seqs || []).map((s) => (typeof s === "number" ? { seq: s, callId: callIdBySeq.get(s) } : s)) }))
+        : null;
+      const shown = hostIncidents || clientIncidents;
+      const hostState = host ? "已加载" : hostErr ? "不可用: " + hostErr : "加载中…";
       const go = (callId) => () => { if (openView && callId) openView("trajectory", callId); };
       const chipBtn = (seq, callId) => React.createElement("button", { key: String(seq) + "-" + String(callId), onClick: go(callId), style: chip, title: openView ? "切到轨迹" : "" }, String(seq));
       const fact = (k, v) => React.createElement("div", { key: k, style: { padding: "4px 0", borderBottom: "1px solid var(--dsw-alias-border-l2, #eee)" } }, React.createElement("span", { style: { fontSize: 13 } }, k), React.createElement("span", { style: sub }, "  " + v));
@@ -104,20 +122,21 @@ window.__ModuleLoader__.load({
         }))
       ]);
 
-      const kpi = [["turns", String(turns)], ["tool calls", String(toolCalls)], ["errors", String(errors)], ["incidents", String(incidents.length)]];
+      const kpi = [["turns", String(turns)], ["tool calls", String(toolCalls)], ["errors", String(errors)], ["incidents", String(shown.length)]];
       const facts = [
         fact("调用失败", errors + " 次(证据已列)"),
-        fact("同参重复调用", "需 host 分析(面板投影不含工具参数)"),
-        fact("空转 turn", "需 host 分析(需 无工具 且 无助手产出 判定)"),
-        fact("分析器版本", "incidents v1(host)· 面板仅渲染证据")
+        fact("同参重复调用", hostIncidents ? ((host.incidents || []).filter((x) => x.type === "retry-loop").length + " 个(host)") : "需 host 分析"),
+        fact("空转 turn", host ? String(host.emptyTurns) + " 个(host)" : "需 host 分析"),
+        fact("host 分析", hostState),
+        fact("分析器版本", "incidents v1(host + client 渲染)")
       ];
 
       return React.createElement("div", { style: { padding: 12, overflow: "auto", minHeight: 0 } }, [
         React.createElement("h3", { key: "h", style: { margin: "0 0 4px", fontSize: 14 } }, "分析 (Incident View)", React.createElement("span", { style: sub }, "  ·  只列有证据的 incident;工具名级表面模式不判")),
         React.createElement("div", { key: "kpi", style: { display: "flex", gap: 14, margin: "8px 0", flexWrap: "wrap" } }, kpi.map(([k, v]) => React.createElement("span", { key: k, style: { fontSize: 13 } }, React.createElement("b", { style: { marginRight: 4 } }, v), k))),
-        incidents.length ? React.createElement("div", { key: "inc" }, incidents.map(card)) : React.createElement("div", { key: "noinc", style: sub }, "未检测到有证据的 incident。"),
+        shown.length ? React.createElement("div", { key: "inc" }, shown.map(card)) : React.createElement("div", { key: "noinc", style: sub }, "未检测到有证据的 incident。"),
         strip,
-        React.createElement("div", { key: "mech", style: { margin: "8px 0", paddingTop: 4, borderTop: "1px solid var(--dsw-alias-border-l2, #eee)" } }, [React.createElement("div", { key: "h", style: Object.assign({}, sub, { marginBottom: 2 }) }, "机械层事实 / 待 host"), ...facts]),
+        React.createElement("div", { key: "mech", style: { margin: "8px 0", paddingTop: 4, borderTop: "1px solid var(--dsw-alias-border-l2, #eee)" } }, [React.createElement("div", { key: "h", style: Object.assign({}, sub, { marginBottom: 2 }) }, "机械层事实 / host 分析"), ...facts]),
         React.createElement("div", { key: "open", style: { margin: "8px 0" } }, React.createElement("details", null, React.createElement("summary", { style: { fontSize: 12, cursor: "pointer" } }, "开放解读 (AI-skill,消耗 tokens)"), React.createElement("div", { style: sub }, "占位:由 analysis skill 基于 incident 证据带 (session, seq) 引用生成。")))
       ]);
     }
@@ -136,7 +155,7 @@ window.__ModuleLoader__.load({
           children: {},
           inject: (sessionId) => {
             const target = ctx.uiConversation.binding(sessionId).target("trajectory");
-            return { hooks: { trajectory: { getSnapshot: () => target.getSnapshot(), subscribe: (l) => target.subscribe(l) } } };
+            return { hooks: { trajectory: { getSnapshot: () => target.getSnapshot(), subscribe: (l) => target.subscribe(l) } }, sessionId };
           }
         }, digestView));
       },

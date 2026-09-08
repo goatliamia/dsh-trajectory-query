@@ -64,7 +64,7 @@ Dynamic plugins are session-scoped and vanish on reload; this one is installed i
 | File | Role |
 |---|---|
 | `lib/client.js` | the client plugin; must self-register via `window.__ModuleLoader__.load({ id, factory })`; `require("react")` instead of a global |
-| `lib/index.js` | no-op host stub so the cordis loader can load the package |
+| `lib/index.js` | host half: computes incidents from the session log and serves `GET /analysis-view/digest?session=<id>` |
 | `cordis.patch.yml` | bundle layer that inserts the plugin row |
 | `package.json` | `dsh.bundle.patch` + `dsh.client` (platform web + client injects) |
 
@@ -76,11 +76,9 @@ Dynamic plugins are session-scoped and vanish on reload; this one is installed i
 
 ### Limitations
 
-- Panel retry detection is name-level; **same-args** detection lives in the host analyzer
-  (`analyzers/incidents.mjs`).
-- `Harness response` on a card is currently a template, not derived from guard/intervention
-  events; deriving it is the next step.
-- Client-side detection only sees the trajectory projection; richer incidents need host data.
+- The host half serves incidents at `GET /analysis-view/digest?session=<id>` (same-args repeat, no-op turn, harness response); the client fetches it and renders evidence only.
+- `Harness response` is derived from error codes, not a template.
+- Host analysis and the repo analyzers are two implementations; each is pinned by its own self-test.
 
 ---
 
@@ -136,7 +134,7 @@ conversation.view  →  [对话] [轨迹] [分析]
 | 文件 | 作用 |
 |---|---|
 | `lib/client.js` | 客户端插件本体;必须以 `window.__ModuleLoader__.load({ id, factory })` 自注册,`require("react")` 而非全局 |
-| `lib/index.js` | 空 host stub,让 cordis loader 能加载该包 |
+| `lib/index.js` | host 半边:从会话日志计算 incidents,提供 `GET /analysis-view/digest?session=<id>` |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch` + `dsh.client`(platform web + client injects) |
 
@@ -148,6 +146,6 @@ conversation.view  →  [对话] [轨迹] [分析]
 
 ### 局限
 
-- 面板的 retry 是**名字级**;**同参**检测在 host 分析器 `analyzers/incidents.mjs`。
-- 卡片上的 `Harness 反应` 目前是模板文案,尚未由 guard/干预事件推导(下一步)。
-- 客户端检测只能看到轨迹投影;更丰富的 incident 需要 host 数据。
+- host 半边在 `GET /analysis-view/digest?session=<id>` 提供 incidents(同参重复、空转 turn、Harness 反应);客户端 fetch 后只负责渲染证据。
+- `Harness 反应` 由错误码推导,不是模板文案。
+- host 分析与仓库 `analyzers/` 是两份实现,各自由自检钉住。
