@@ -1,5 +1,5 @@
 // dsh-analysis-view — runtime incident view(分析 tab)。
-// 原则:面板只渲染"有证据的 incident";工具名级表面模式不判 incident。
+// 面板只渲染"有证据的 incident";工具名级表面模式不判 incident。
 // 同参重复 / 空转 / 因果归属需要参数与状态 → 标为"需 host 分析"(由 analyzers/incidents.mjs 产出)。
 window.__ModuleLoader__.load({
   id: "dsh-analysis-view",
@@ -35,35 +35,35 @@ window.__ModuleLoader__.load({
       const nodes = Array.isArray(snap && snap.eventNodes) ? snap.eventNodes : [];
 
       const turnSet = new Set();
-      const turnTools = new Map();
-      const turnErrors = new Set();
+      const turnMarkers = [];
       const callIdBySeq = new Map();
-      const errFirst = [];
+      const errRaw = [];
       let toolCalls = 0, errors = 0;
 
       for (const n of nodes) {
         const k = n && n.kind;
         if (k === "assistant" && n.turn > 0) {
           turnSet.add(n.turn);
-          if (Array.isArray(n.blocks)) for (const b of n.blocks) if (b && b.kind === "tool-call") {
-            turnTools.set(n.turn, (turnTools.get(n.turn) || 0) + 1);
-            if (b.callId) callIdBySeq.set(n.seq, b.callId);
-          }
+          turnMarkers.push({ seq: n.seq, turn: n.turn });
+          if (Array.isArray(n.blocks)) for (const b of n.blocks) if (b && b.kind === "tool-call" && b.callId) callIdBySeq.set(n.seq, b.callId);
         }
         if (k === "tool-result") {
           toolCalls++;
           if (n.callId) callIdBySeq.set(n.seq, n.callId);
           if (n.error || n.isError) {
             errors++;
-            if (n.turn) turnErrors.add(n.turn);
-            if (errFirst.length < 12) errFirst.push({ kind: (n.error && (n.error.name || n.error.code)) || n.name || "error", seq: n.seq, callId: n.callId, turn: n.turn });
+            if (errRaw.length < 12) errRaw.push({ kind: (n.error && (n.error.name || n.error.code)) || n.name || "error", seq: n.seq, callId: n.callId });
           }
         }
       }
+      turnMarkers.sort((a, b) => a.seq - b.seq);
+      const turnAt = (seq) => { let t; for (const m of turnMarkers) { if (m.seq <= seq) t = m.turn; else break; } return t; };
+      const errFirst = errRaw.map((e) => ({ ...e, turn: turnAt(e.seq) }));
       const turns = turnSet.size;
-      const maxT = Math.max(1, ...[...turnTools.values()]);
 
-      // —— 仅"有证据的 incident":调用失败 ——
+      const errForTurn = new Map();
+      for (const e of errFirst) if (e.turn !== undefined && !errForTurn.has(e.turn)) errForTurn.set(e.turn, e);
+
       const incidents = [];
       if (errors > 0) {
         const kinds = {};
@@ -79,7 +79,6 @@ window.__ModuleLoader__.load({
           seqs: errFirst.map((e) => ({ seq: e.seq, callId: e.callId }))
         });
       }
-      incidents.sort((a, b) => b.severity - a.severity);
 
       const go = (callId) => () => { if (openView && callId) openView("trajectory", callId); };
       const chipBtn = (seq, callId) => React.createElement("button", { key: String(seq) + "-" + String(callId), onClick: go(callId), style: chip, title: openView ? "切到轨迹" : "" }, String(seq));
@@ -96,14 +95,12 @@ window.__ModuleLoader__.load({
         React.createElement("div", { key: "seq", style: { margin: "4px 0 0" } }, inc.seqs.slice(0, 8).map((s) => chipBtn(s.seq, s.callId)))
       ]);
 
-      const errForTurn = new Map();
-      for (const e of errFirst) if (e.turn !== undefined && !errForTurn.has(e.turn)) errForTurn.set(e.turn, e);
-      const strip = React.createElement("div", { key: "strip", style: { margin: "8px 0" } }, [
-        React.createElement("div", { key: "a", style: Object.assign({}, sub, { marginBottom: 4 }) }, "Turn 地图(红 = 该 turn 有失败,可点跳轨迹 · 灰 = 正常)"),
-        React.createElement("div", { key: "b", style: { display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" } }, [...turnSet].sort((a, b) => a - b).map((t) => {
+      const strip = React.createElement("div", { key: "strip", style: { margin: "8px 0", padding: 8, border: "1px solid var(--dsw-alias-border-l2, #eee)", borderRadius: 6 } }, [
+        React.createElement("div", { key: "a", style: Object.assign({}, sub, { marginBottom: 6 }) }, "Turn 地图(共 " + turns + " 个 turn · 红 = 有失败,可点跳轨迹 · 灰 = 正常)"),
+        React.createElement("div", { key: "b", style: { display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap" } }, [...turnSet].sort((a, b) => a - b).map((t) => {
           const e = errForTurn.get(t);
           const isErr = e !== undefined;
-          return React.createElement("button", { key: t, onClick: isErr ? go(e.callId) : void 0, title: "turn " + t + (isErr ? " · 有失败 @seq " + e.seq : ""), style: { width: 12, height: 18, padding: 0, border: "0", borderRadius: 2, cursor: isErr ? "pointer" : "default", background: isErr ? "#e5484d" : "var(--dsw-alias-bg-layer-2, #e6e6e6)" } });
+          return React.createElement("button", { key: t, onClick: isErr ? go(e.callId) : void 0, title: "turn " + t + (isErr ? " · 失败 @seq " + e.seq : ""), style: { width: 14, height: 20, padding: 0, border: "1px solid " + (isErr ? "#c33" : "var(--dsw-alias-border-l2, #c9c9c9)"), borderRadius: 3, cursor: isErr ? "pointer" : "default", background: isErr ? "#e5484d" : "#dcdcdc" } });
         }))
       ]);
 
