@@ -139,6 +139,89 @@ function withTimeout(promise, ms) {
   });
 }
 
+function clipText(value, max) {
+  const text = String(value == null ? "" : value);
+  return text.length <= max ? text : text.slice(0, max) + "…";
+}
+
+function blocksText(content) {
+  if (!Array.isArray(content)) return "";
+  const out = [];
+  const walk = (blocks) => {
+    for (const b of blocks || []) {
+      if (!b || typeof b !== "object") continue;
+      if (b.type === "text" && typeof b.text === "string") out.push(b.text);
+      else if (b.type === "tool-call") out.push(String(b.name || ""), String(b.arguments || ""));
+      else if (b.type === "tool-result") walk(b.content);
+    }
+  };
+  walk(content);
+  return out.filter(Boolean).join("\n");
+}
+
+/** One verbatim, bounded evidence line per event. */
+function evidenceLine(e) {
+  const d = (e && e.data) || {};
+  if (e.type === "tool/call") return "tool/call " + (d.name || "?") + " " + clipText(d.arguments, 220);
+  if (e.type === "tool/result") return "tool/result" + (d.error ? " error=" + (d.error.name || "") + ":" + (d.error.code || "") : "") + " " + clipText(blocksText(d.message && d.message.content), 220);
+  if (e.type === "assistant/message") return "assistant/message " + clipText(blocksText(d.message && d.message.content), 220);
+  if (e.type === "user/message") return "user/message " + clipText(blocksText(d.content), 160);
+  if (e.type === "turn/end") return "turn/end " + clipText(JSON.stringify(d.reason || {}), 120);
+  return e.type;
+}
+
+/** Bounded evidence block handed to the model: facts + incident lines + verbatim excerpts. */
+export function buildEvidence(sessionId, events, facts) {
+  const lines = ["session: " + sessionId];
+  lines.push("facts: turns=" + facts.turns + " toolCalls=" + facts.toolCalls + " errors=" + facts.errors + " emptyTurns=" + facts.emptyTurns);
+  for (const inc of facts.incidents) {
+    lines.push("- incident[" + inc.type + "] " + inc.detail + " | cause: " + inc.cause + " | harness: " + inc.harness + " | impact: " + inc.impact + " | seqs: " + (inc.seqs || []).join(","));
+  }
+  const bySeq = new Map();
+  for (const e of events || []) if (e && typeof e.seq === "number") bySeq.set(e.seq, e);
+  const wanted = [];
+  for (const inc of facts.incidents) for (const s of inc.seqs || []) if (!wanted.includes(s) && wanted.length < 8) wanted.push(s);
+  for (const s of wanted) {
+    const e = bySeq.get(s);
+    if (e) lines.push("evidence (seq " + s + "): " + evidenceLine(e));
+  }
+  return lines.join("\n");
+}
+
+/** Ask the configured model to interpret the incidents; every claim must cite (session, seq). */
+async function interpret(ctx, sessionId, events, facts) {
+  const llm = ctx.get("llm");
+  if (llm === undefined || typeof llm.stream !== "function") return { error: "llm service unavailable" };
+  const defaultModel = ctx.get("agentDefaultModel");
+  const selection = defaultModel && typeof defaultModel.currentSelection === "function" ? defaultModel.currentSelection() : void 0;
+  if (!selection || !selection.provider || !selection.model) return { error: "no default model selection" };
+  const system = "你是轨迹分析助手。只依据给定的确定性 incident 事实与逐字证据片段作答;每条事实性陈述必须引用 (session, seq),不得编造 seq。输出中文,不超过 200 字,分四段:发生了什么 / 原因 / Harness 是否响应 / 影响。";
+  const messages = [{
+    id: "analysis-view-interpret",
+    role: "user",
+    content: [{ type: "text", text: "会话:" + sessionId + "\n\n" + buildEvidence(sessionId, events, facts) }],
+    source: { kind: "plugin", plugin: "dsh-analysis-view", form: "notice" }
+  }];
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 60000);
+  let text = "";
+  let usage = null;
+  let failure = null;
+  try {
+    for await (const chunk of llm.stream({ provider: selection.provider, model: selection.model, messages, system, maxTokens: 600, signal: ctl.signal, sessionId })) {
+      if (chunk.type === "text-delta") text += chunk.text;
+      else if (chunk.type === "usage") usage = chunk.usage;
+      else if (chunk.type === "finish" && chunk.reason && (chunk.reason.kind === "error" || chunk.reason.kind === "aborted")) failure = chunk.reason;
+    }
+  } catch (error) {
+    failure = { kind: "error", message: String((error && error.message) || error) };
+  } finally {
+    clearTimeout(timer);
+  }
+  if (failure !== null) return { error: "model call failed: " + ((failure.failure && failure.failure.message) || failure.message || failure.kind) };
+  return { text, model: { provider: selection.provider, model: selection.model }, usage };
+}
+
 export const inject = ["webServer"];
 
 export function apply(ctx) {
@@ -154,11 +237,14 @@ export function apply(ctx) {
       };
       try {
         const url = new URL(req.url || "/", "http://localhost");
-        if (req.method !== "GET" || url.pathname !== ROUTE_PATH + "/digest") return send(404, { error: "not found" });
+        if (req.method !== "GET") return send(404, { error: "not found" });
         const sessionId = url.searchParams.get("session");
         if (!sessionId) return send(400, { error: "missing session" });
         const events = await withTimeout(loadEvents(ctx, sessionId), 5000);
-        return send(200, { sessionId, ...computeIncidents(events) });
+        const facts = computeIncidents(events);
+        if (url.pathname === ROUTE_PATH + "/digest") return send(200, { sessionId, ...facts });
+        if (url.pathname === ROUTE_PATH + "/interpret") return send(200, { sessionId, ...(await interpret(ctx, sessionId, events, facts)) });
+        return send(404, { error: "not found" });
       } catch (error) {
         return send(500, { error: String((error && error.message) || error) });
       }

@@ -64,7 +64,7 @@ Dynamic plugins are session-scoped and vanish on reload; this one is installed i
 | File | Role |
 |---|---|
 | `lib/client.js` | the client plugin; must self-register via `window.__ModuleLoader__.load({ id, factory })`; `require("react")` instead of a global |
-| `lib/index.js` | host half: computes incidents from the session log and serves `GET /analysis-view/digest?session=<id>` |
+| `lib/index.js` | host half: computes incidents and serves `GET /analysis-view/digest?session=<id>` (facts) and `GET /analysis-view/interpret?session=<id>` (model interpretation, called only when the section is expanded) |
 | `cordis.patch.yml` | bundle layer that inserts the plugin row |
 | `package.json` | `dsh.bundle.patch` + `dsh.client` (platform web + client injects) |
 
@@ -134,7 +134,7 @@ conversation.view  →  [对话] [轨迹] [分析]
 | 文件 | 作用 |
 |---|---|
 | `lib/client.js` | 客户端插件本体;必须以 `window.__ModuleLoader__.load({ id, factory })` 自注册,`require("react")` 而非全局 |
-| `lib/index.js` | host 半边:从会话日志计算 incidents,提供 `GET /analysis-view/digest?session=<id>` |
+| `lib/index.js` | host 半边:计算 incidents,提供 `GET /analysis-view/digest?session=<id>`(事实)与 `GET /analysis-view/interpret?session=<id>`(AI 解读,仅展开时才调用) |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch` + `dsh.client`(platform web + client injects) |
 

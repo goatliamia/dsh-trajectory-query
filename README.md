@@ -32,7 +32,9 @@ DSH 的会话是一份 append-only 的事件日志:近端在 context 里,远端�
 | Incident 卡片 | `Event / Cause / Runtime 知道 / Model 知道 / Harness 反应 / 影响`,带证据 `seq` 可点跳轨迹 |
 | Turn 地图 | 一格一个 turn;红 = 该 turn 有失败(可点),灰 = 正常 |
 | 机械层事实 | 确定性数字 + 明确标注"需 host"的项 |
-| 开放解读 | 折叠区,由 analysis skill 在有限证据上生成,每条带引用 |
+| 开放解读 | 折叠区;**展开时**由 analysis skill 基于 incident 证据生成,每条带 `(session, seq)` 引用 |
+
+**Host 路由** —— `GET /analysis-view/digest?session=<id>` 返回确定性 incidents(同参重复 / 失败 / 空转 turn);`GET /analysis-view/interpret?session=<id>` 在展开「开放解读」时才调用一次模型,返回带引用的解读。
 
 **机械分析器** —— `turns / tools / errors / retry / incidents` 五个确定性 fold:同参重复、调用失败、空转 turn 由代码判定,不由模型判断;`analyzers/self-test.mjs` 把语义钉进测试。
 

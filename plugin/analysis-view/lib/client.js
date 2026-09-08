@@ -33,6 +33,8 @@ window.__ModuleLoader__.load({
       const sessionId = props && props.sessionId;
       const [host, setHost] = React.useState(null);
       const [hostErr, setHostErr] = React.useState(null);
+      const [interpretText, setInterpretText] = React.useState(null);
+      const [interpretLoading, setInterpretLoading] = React.useState(false);
       React.useEffect(() => {
         if (!sessionId) return void 0;
         let alive = true;
@@ -144,7 +146,16 @@ window.__ModuleLoader__.load({
         shown.length ? React.createElement("div", { key: "inc" }, shown.map(card)) : React.createElement("div", { key: "noinc", style: sub }, "未检测到有证据的 incident。"),
         strip,
         React.createElement("div", { key: "mech", style: { margin: "8px 0", paddingTop: 4, borderTop: "1px solid var(--dsw-alias-border-l2, #eee)" } }, [React.createElement("div", { key: "h", style: Object.assign({}, sub, { marginBottom: 2 }) }, "机械层事实 / host 分析"), ...facts]),
-        React.createElement("div", { key: "open", style: { margin: "8px 0" } }, React.createElement("details", null, React.createElement("summary", { style: { fontSize: 12, cursor: "pointer" } }, "开放解读 (AI-skill,消耗 tokens)"), React.createElement("div", { style: sub }, "占位:由 analysis skill 基于 incident 证据带 (session, seq) 引用生成。")))
+        React.createElement("div", { key: "open", style: { margin: "8px 0" } }, React.createElement("details", { onToggle: (ev) => {
+          const opened = ev && ev.currentTarget && ev.currentTarget.open;
+          if (!opened || interpretText !== null || interpretLoading) return;
+          if (!sessionId) { setInterpretText("无 sessionId,未发起请求"); return; }
+          setInterpretLoading(true);
+          fetch("/analysis-view/interpret?session=" + encodeURIComponent(sessionId), { cache: "no-store" })
+            .then((r) => r.json())
+            .then((j) => { setInterpretLoading(false); setInterpretText(j && j.text ? j.text : "失败: " + ((j && j.error) || "unknown")); })
+            .catch((e) => { setInterpretLoading(false); setInterpretText("失败: " + String((e && e.message) || e)); });
+        } }, React.createElement("summary", { style: { fontSize: 12, cursor: "pointer" } }, "开放解读 (AI-skill · 展开才调用,消耗 tokens)"), React.createElement("div", { style: sub }, interpretLoading ? "生成中…" : interpretText === null ? "展开后由 analysis skill 基于 incident 证据生成,每条带 (session, seq) 引用。" : interpretText)))
       ]);
     }
 
