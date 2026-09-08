@@ -34,13 +34,20 @@ window.__ModuleLoader__.load({
       const [host, setHost] = React.useState(null);
       const [hostErr, setHostErr] = React.useState(null);
       React.useEffect(() => {
-        let alive = true;
         if (!sessionId) return void 0;
-        fetch("/analysis-view/digest?session=" + encodeURIComponent(sessionId))
+        let alive = true;
+        const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+        const timer = ctl ? setTimeout(() => ctl.abort(), 8000) : null;
+        fetch("/analysis-view/digest?session=" + encodeURIComponent(sessionId) + "&t=" + Date.now(), ctl ? { signal: ctl.signal, cache: "no-store" } : { cache: "no-store" })
           .then((r) => r.json())
           .then((j) => { if (alive) setHost(j); })
-          .catch((e) => { if (alive) setHostErr(String((e && e.message) || e)); });
-        return () => { alive = false; };
+          .catch((e) => {
+            const msg = String((e && (e.name ? e.name + ": " + e.message : e.message)) || e);
+            if (typeof console !== "undefined" && console.error) console.error("[analysis-view] host digest fetch failed:", msg);
+            if (alive) setHostErr(msg);
+          })
+          .finally(() => { if (timer) clearTimeout(timer); });
+        return () => { alive = false; if (timer) clearTimeout(timer); };
       }, [sessionId]);
       let snap = null;
       try { snap = useTrajectory ? useTrajectory((s) => s) : null; } catch { snap = null; }
