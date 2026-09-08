@@ -1,0 +1,38 @@
+{
+  "name": "dsh-trajectory-tools",
+  "version": "0.1.3",
+  "description": "面向模型的会话轨迹查询工具:在 DSH 已有的事件日志上做逐字检索/窗口/关系链,只读、不改写事实。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "self-test.mjs"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "session",
+    "trajectory",
+    "query"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/goatliamia/dsh-trajectory-query.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

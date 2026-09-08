@@ -25,16 +25,20 @@ trajectory into an **evidence-cited incident view**. No DSH core changes.
 1. **Detection is deterministic; interpretation belongs to the model.** What counts as an incident
    is decided by analyzers over typed events. The model explains, it does not invent.
 2. **Projection = selection + pointer, not rewriting.** Retrieval returns a trimmed original and
-   quotes it verbatim, each with `(session, seq)`.
+   quotes it verbatim, each with `(session, seq@logId)`.
 3. **The panel renders evidence only.** Surface patterns — tool-name counts, name-only repeats —
    are not incidents.
 4. **Nothing is stored as "memory".** Analyses are derived views, recomputable from the log.
 
 ## Features
 
-**Historical query tools (agent-facing)** — `trajectory_find / window / trace / sessions` over
-`ctx.sessionQuery`. Evidence-first: every answer carries `(session, seq)` and quotes the original
-text verbatim; a search that returns nothing is a verifiable "no such fact".
+**Historical query tools (agent-facing)** — the resident host plugin `dsh-trajectory-tools`
+registers four read-only tools (`trajectory_sessions / find / window / trace`) that read the event
+log DSH already keeps (live sessions from an in-memory snapshot, settled sessions through a
+`sessionPersistence` handle) without depending on `ctx.sessionQuery`. Evidence-first: every answer
+carries `(session, seq@logId)` and quotes the original text verbatim; a search that returns nothing
+is a verifiable "no such fact". The plugin also registers the `trajectory-query` runtime skill, so
+the discipline travels with the tools and no agent preset has to be edited.
 
 **Resident Analysis tab (Web GUI)** — a third tab beside *Conversation | Trajectory* that renders a
 **runtime incident view**:
@@ -56,6 +60,10 @@ Same-argument repeats, failed calls and no-op turns are decided by code, not by 
 analysis (evidence discipline, dimension discovery, analyzer contract). It defines entry points,
 not conclusions.
 
+**Query skill** — `skill/trajectory-query.md` (registered as a runtime skill by the plugin):
+query before answering, quote verbatim, cite `(session, seq@logId)`, and treat an empty result as
+verifiable absence.
+
 **Reports** — `analyzers/run-digest.mjs` turns one session into reproducible `*.facts.json` +
 `*.digest.md`.
 
@@ -66,28 +74,31 @@ not conclusions.
 node analyzers/run-digest.mjs <session.jsonl.zstd>
 node analyzers/self-test.mjs
 
-# query tools — mount plugin/trajectory-tools.js as a host Cordis plugin
-# Analysis tab — install plugin/analysis-view into your web profile (see its README)
+# two resident plugins — install into your web profile (see each README)
+#   plugin/trajectory-tools  — four query tools + the trajectory-query skill
+#   plugin/analysis-view     — resident Analysis tab + digest/interpret routes
 ```
 
 ## Layout
 
-- `plugin/trajectory-tools.js` — host plugin: the four query tools
-- `plugin/analysis-view/` — resident Analysis tab (pure client plugin)
+- `plugin/trajectory-tools/` — host plugin: four read-only query tools + bundled runtime skill
+- `plugin/analysis-view/` — resident Analysis tab (client + host routes)
 - `analyzers/` — deterministic analyzers, digest runner, self-test
 - `skill/` — `trajectory-query.md` (query discipline), `analysis.md` (analysis method)
 - `docs/` — design notes and the experiment protocol
 - `experiments/` — corpora, probes, manifests, generated reports
 
-## Install (Analysis tab)
+## Install (both resident plugins)
 
 ```text
-pnpm pack
+pnpm pack                                  # in each plugin directory
 # ~/.dsh/profiles/web/package.json:
-#   dependencies: add "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.1.0.tgz"
-#   dsh.profile.bundles: append "dsh-analysis-view"
+#   dependencies: add
+#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.3.tgz"
+#     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.1.0.tgz"
+#   dsh.profile.bundles: append "dsh-trajectory-tools" and "dsh-analysis-view"
 pnpm install            # in ~/.dsh/profiles/web
-# rebuild / restart `dsh web`
+# reload / restart `dsh web` (host plugins do not hot-reload reliably)
 ```
 
 ## Known gaps
@@ -96,6 +107,8 @@ pnpm install            # in ~/.dsh/profiles/web
 - `Harness response` is derived from error codes (guard intercepted / no guard, model must self-correct), not a template.
 - Host analysis and `analyzers/incidents.mjs` are two implementations (runtime cannot import repo scripts); each is pinned by its own self-test.
 - Settled sessions are read via `sessionPersistence.open(id, 'read')` (v0.1.3+); a legacy `inspect()` fallback remains.
+- `seq` is only stable inside one log revision, so citations must carry `logId`; after a version rewrite an old `seq` may point at a different event.
+- The query tools are a host plugin: after installing them, `dsh web` must be reloaded before they appear in the model's tool list. Their contract is pinned by `plugin/trajectory-tools/self-test.mjs` (40 checks).
 
 ## License
 

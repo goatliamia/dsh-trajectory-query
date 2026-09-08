@@ -26,4 +26,4 @@ Thumbs.db
 # experiment working files (keep final reports)
 experiments/**/raw-*.json
 experiments/**/*.tmp.json
-plugin/analysis-view/*.tgz
+plugin/**/*.tgz

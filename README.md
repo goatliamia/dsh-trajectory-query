@@ -17,13 +17,13 @@ DSH 的会话是一份 append-only 的事件日志:近端在 context 里,远端�
 ## 核心原则
 
 1. **检测确定性,解释归模型。** 什么算 incident 由分析器按类型化事件判定;模型只解释,不发明。
-2. **投影 = 选择 + 指针,不是改写。** 取回的是原文裁剪,引用原样,附 `(session, seq)`。
+2. **投影 = 选择 + 指针,不是改写。** 取回的是原文裁剪,引用原样,附 `(session, seq@logId)`。
 3. **面板只渲染证据。** 工具名计数、仅同名的重复这类表面模式,不算 incident。
 4. **不存"记忆"。** 分析是派生视图,随时可从日志重算。
 
 ## 功能
 
-**历史查询工具(给 Agent)** —— `trajectory_find / window / trace / sessions`,基于 `ctx.sessionQuery`。证据优先:每个答案带 `(session, seq)`、原样引用原文;查询返回空 = 可核验的"没有这样的事实"。
+**历史查询工具(给 Agent)** —— 常驻 host 插件 `dsh-trajectory-tools`:注册 `trajectory_sessions / find / window / trace` 四个只读工具,直接读 DSH 已有的事件日志(存活会话走内存快照,已结算会话走 `sessionPersistence` 句柄),不依赖 `ctx.sessionQuery`。证据优先:每个答案带 `(session, seq@logId)`、原样引用原文;查询返回空 = 可核验的"没有这样的事实"。插件同时注册 `trajectory-query` runtime skill,让查询纪律跟着工具走、无需改 agent preset。
 
 **常驻「分析」标签(Web GUI)** —— 在「对话 | 轨迹」旁边的第三个标签,渲染 **runtime incident view**:
 
@@ -40,6 +40,8 @@ DSH 的会话是一份 append-only 的事件日志:近端在 context 里,远端�
 
 **分析 Skill** —— `skill/analysis.md`:把研究问题变成可核验分析(证据纪律、维度发现、分析器契约);规定入口,不规定结论。
 
+**查询 Skill** —— `skill/trajectory-query.md`(正文随插件注册为 runtime skill):先查再答、逐字引用、引用写 `(session, seq@logId)`、空结果就是可验证的"没有"。
+
 **报告** —— `analyzers/run-digest.mjs` 把一次会话变成可复现的 `*.facts.json` + `*.digest.md`。
 
 ## 怎么用
@@ -49,28 +51,31 @@ DSH 的会话是一份 append-only 的事件日志:近端在 context 里,远端�
 node analyzers/run-digest.mjs <session.jsonl.zstd>
 node analyzers/self-test.mjs
 
-# 查询工具:把 plugin/trajectory-tools.js 作为 host Cordis 插件装载
-# 分析标签:把 plugin/analysis-view 装进 web profile(见其 README)
+# 两个常驻插件:装进 web profile(见各自 README)
+#   plugin/trajectory-tools  —— 四个查询工具 + trajectory-query skill
+#   plugin/analysis-view     —— 常驻「分析」标签 + digest/interpret 路由
 ```
 
 ## 目录
 
-- `plugin/trajectory-tools.js` —— host 插件:四个查询工具
-- `plugin/analysis-view/` —— 常驻「分析」标签(纯客户端插件)
+- `plugin/trajectory-tools/` —— host 插件:四个只读查询工具 + 自带 runtime skill
+- `plugin/analysis-view/` —— 常驻「分析」标签(客户端 + host 路由)
 - `analyzers/` —— 确定性分析器、digest 运行器、自检
 - `skill/` —— `trajectory-query.md`(查询纪律)、`analysis.md`(分析方法)
 - `docs/` —— 设计说明与实验协议
 - `experiments/` —— 语料、探针、manifest、生成的报告
 
-## 安装(分析标签)
+## 安装(两个常驻插件)
 
 ```text
-pnpm pack
+pnpm pack                                  # 在各自的 plugin 目录里执行
 # ~/.dsh/profiles/web/package.json:
-#   dependencies: 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.1.0.tgz"
-#   dsh.profile.bundles: 追加 "dsh-analysis-view"
+#   dependencies: 增加
+#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.3.tgz"
+#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.1.0.tgz"
+#   dsh.profile.bundles: 追加 "dsh-trajectory-tools"、"dsh-analysis-view"
 pnpm install            # 在 ~/.dsh/profiles/web
-# 重建 / 重启 dsh web
+# 重载 / 重启 dsh web(host 插件不会可靠热更新)
 ```
 
 ## 已知缺口
@@ -79,6 +84,8 @@ pnpm install            # 在 ~/.dsh/profiles/web
 - `Harness 反应` 由错误码推导(guard 已拦截 / 无 guard 需模型自纠),不是模板文案。
 - host 分析与 `analyzers/incidents.mjs` 是两份实现(运行时无法 import 仓库脚本),语义分别由 `analyzers/host-self-test.mjs`、`analyzers/self-test.mjs` 钉住。
 - 已结算会话经 `sessionPersistence.open(id, 'read')` 读取(v0.1.3 起;旧版 `inspect()` 仍兜底)。
+- `seq` 只在同一份日志修订内稳定,所以引用必须带 `logId`;跨版本重写过的日志,旧 `seq` 可能指向别的事件。
+- 查询工具是 host 插件:装好后需要重载 `dsh web` 才会出现在模型工具表里;契约由 `plugin/trajectory-tools/self-test.mjs`(40 项)钉住。
 
 ## 许可证
 

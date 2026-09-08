@@ -1,0 +1,8 @@
+# dsh-trajectory-tools bundle layer.
+#
+# Inserts the host row that registers the model-facing trajectory_* tools
+# (trajectory_sessions / trajectory_find / trajectory_window / trajectory_trace).
+# Host-only and read-only: no client half, no HTTP route, no writes to the log.
+- insert:
+    - id: dsh-trajectory-tools
+      name: dsh-trajectory-tools
