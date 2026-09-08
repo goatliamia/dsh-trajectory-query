@@ -117,7 +117,7 @@ window.__ModuleLoader__.load({
         React.createElement("div", { key: "mk", style: { fontSize: 12 } }, React.createElement("span", { style: { color: "var(--dsw-alias-label-secondary, #666)" } }, "Model 知道: "), inc.modelKnew),
         React.createElement("div", { key: "hr", style: { fontSize: 12 } }, React.createElement("span", { style: { color: "var(--dsw-alias-label-secondary, #666)" } }, "Harness 反应: "), inc.harness),
         React.createElement("div", { key: "im", style: { fontSize: 12 } }, React.createElement("span", { style: { color: "var(--dsw-alias-label-secondary, #666)" } }, "影响: "), inc.impact),
-        React.createElement("div", { key: "seq", style: { margin: "4px 0 0" } }, inc.seqs.slice(0, 8).map((s) => chipBtn(s.seq, s.callId)))
+        React.createElement("div", { key: "seq", style: { margin: "4px 0 0" } }, inc.seqs.slice(0, 8).map((s) => chipBtn(s.seq, s.callId)).concat(inc.seqs.length > 8 ? [React.createElement("span", { key: "more", style: sub }, " …+" + (inc.seqs.length - 8))] : []))
       ]);
 
       const strip = React.createElement("div", { key: "strip", style: { margin: "8px 0", padding: 8, border: "1px solid var(--dsw-alias-border-l2, #eee)", borderRadius: 6 } }, [
@@ -129,9 +129,9 @@ window.__ModuleLoader__.load({
         }))
       ]);
 
-      const kpi = [["turns", String(turns)], ["tool calls", String(toolCalls)], ["errors", String(errors)], ["incidents", String(shown.length)]];
+      const kpi = [["turns", String(host ? host.turns : turns)], ["tool calls", String(host ? host.toolCalls : toolCalls)], ["errors", String(host ? host.errors : errors)], ["incidents", String(shown.length)]];
       const facts = [
-        fact("调用失败", errors + " 次(证据已列)"),
+        fact("调用失败", (host ? host.errors : errors) + " 次(证据已列)"),
         fact("同参重复调用", hostIncidents ? ((host.incidents || []).filter((x) => x.type === "retry-loop").length + " 个(host)") : "需 host 分析"),
         fact("空转 turn", host ? String(host.emptyTurns) + " 个(host)" : "需 host 分析"),
         fact("host 分析", hostState),
