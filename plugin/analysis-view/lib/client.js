@@ -132,7 +132,7 @@ window.__ModuleLoader__.load({
       ];
 
       return React.createElement("div", { style: { padding: 12, overflow: "auto", minHeight: 0 } }, [
-        React.createElement("h3", { key: "h", style: { margin: "0 0 4px", fontSize: 14 } }, "分析 (Incident View)", React.createElement("span", { style: sub }, "  ·  只列有证据的 incident;工具名级表面模式不判")),
+        React.createElement("h3", { key: "h", style: { margin: "0 0 4px", fontSize: 14 } }, "分析 (Incident View)", React.createElement("span", { style: sub }, "  ·  client v5 · host: " + hostState + " · 只列有证据的 incident")),
         React.createElement("div", { key: "kpi", style: { display: "flex", gap: 14, margin: "8px 0", flexWrap: "wrap" } }, kpi.map(([k, v]) => React.createElement("span", { key: k, style: { fontSize: 13 } }, React.createElement("b", { style: { marginRight: 4 } }, v), k))),
         shown.length ? React.createElement("div", { key: "inc" }, shown.map(card)) : React.createElement("div", { key: "noinc", style: sub }, "未检测到有证据的 incident。"),
         strip,
