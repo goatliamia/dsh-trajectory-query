@@ -96,13 +96,14 @@ window.__ModuleLoader__.load({
         React.createElement("div", { key: "seq", style: { margin: "4px 0 0" } }, inc.seqs.slice(0, 8).map((s) => chipBtn(s.seq, s.callId)))
       ]);
 
+      const errForTurn = new Map();
+      for (const e of errFirst) if (e.turn !== undefined && !errForTurn.has(e.turn)) errForTurn.set(e.turn, e);
       const strip = React.createElement("div", { key: "strip", style: { margin: "8px 0" } }, [
-        React.createElement("div", { key: "a", style: Object.assign({}, sub, { marginBottom: 4 }) }, "Turn 活动 (tool 密度 · 红=该 turn 有失败)"),
-        React.createElement("div", { key: "b", style: { display: "flex", alignItems: "flex-end", gap: 2, height: 44 } }, [...turnSet].sort((a, b) => a - b).map((t) => {
-          const c = turnTools.get(t) || 0;
-          const h = c ? Math.max(6, Math.round((c / maxT) * 32)) : 4;
-          const col = turnErrors.has(t) ? "#e5484d" : c ? "var(--dsw-alias-state-business-primary, #3b82f6)" : "#c9c9c9";
-          return React.createElement("div", { key: t, title: "turn " + t + " · " + c + " calls" + (turnErrors.has(t) ? " · error" : ""), style: { width: 8, height: h, background: col, borderRadius: 2 } });
+        React.createElement("div", { key: "a", style: Object.assign({}, sub, { marginBottom: 4 }) }, "Turn 地图(红 = 该 turn 有失败,可点跳轨迹 · 灰 = 正常)"),
+        React.createElement("div", { key: "b", style: { display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" } }, [...turnSet].sort((a, b) => a - b).map((t) => {
+          const e = errForTurn.get(t);
+          const isErr = e !== undefined;
+          return React.createElement("button", { key: t, onClick: isErr ? go(e.callId) : void 0, title: "turn " + t + (isErr ? " · 有失败 @seq " + e.seq : ""), style: { width: 12, height: 18, padding: 0, border: "0", borderRadius: 2, cursor: isErr ? "pointer" : "default", background: isErr ? "#e5484d" : "var(--dsw-alias-bg-layer-2, #e6e6e6)" } });
         }))
       ]);
 
