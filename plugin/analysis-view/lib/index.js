@@ -126,6 +126,15 @@ async function loadEvents(ctx, sessionId) {
   const live = sessions && typeof sessions.get === "function" ? sessions.get(sessionId) : void 0;
   if (live && typeof live.snapshotEvents === "function") return live.snapshotEvents();
   const persistence = ctx.get("sessionPersistence");
+  if (persistence && typeof persistence.open === "function") {
+    const handle = await persistence.open(sessionId, "read");
+    try {
+      const result = await handle.read();
+      return (result && result.events) || [];
+    } finally {
+      if (handle && typeof handle.close === "function") await handle.close();
+    }
+  }
   if (persistence && typeof persistence.inspect === "function") {
     const loaded = await persistence.inspect(sessionId);
     return (loaded && loaded.events) || [];

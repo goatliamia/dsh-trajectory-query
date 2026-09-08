@@ -79,6 +79,7 @@ Dynamic plugins are session-scoped and vanish on reload; this one is installed i
 - The host half serves incidents at `GET /analysis-view/digest?session=<id>` (same-args repeat, no-op turn, harness response); the client fetches it and renders evidence only.
 - `Harness response` is derived from error codes, not a template.
 - Host analysis and the repo analyzers are two implementations; each is pinned by its own self-test.
+- Settled (non-live) sessions are read through `sessionPersistence.open(id, 'read')` → `SessionHandle.read()` (the v0.1.3 API); a legacy `inspect()` fallback remains for rc.1.
 
 ---
 
@@ -149,3 +150,4 @@ conversation.view  →  [对话] [轨迹] [分析]
 - host 半边在 `GET /analysis-view/digest?session=<id>` 提供 incidents(同参重复、空转 turn、Harness 反应);客户端 fetch 后只负责渲染证据。
 - `Harness 反应` 由错误码推导,不是模板文案。
 - host 分析与仓库 `analyzers/` 是两份实现,各自由自检钉住。
+- 已结算(非活跃)会话通过 `sessionPersistence.open(id, 'read')` → `SessionHandle.read()`(v0.1.3 API)读取;旧版 `inspect()` 仍作兜底。

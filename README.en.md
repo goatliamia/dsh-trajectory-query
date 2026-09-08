@@ -95,6 +95,7 @@ pnpm install            # in ~/.dsh/profiles/web
 - The panel's incidents come from the host route `/analysis-view/digest` (same-args repeat, no-op turn and harness response are decided on the host); the panel renders evidence only.
 - `Harness response` is derived from error codes (guard intercepted / no guard, model must self-correct), not a template.
 - Host analysis and `analyzers/incidents.mjs` are two implementations (runtime cannot import repo scripts); each is pinned by its own self-test.
+- Settled sessions are read via `sessionPersistence.open(id, 'read')` (v0.1.3+); a legacy `inspect()` fallback remains.
 
 ## License
 

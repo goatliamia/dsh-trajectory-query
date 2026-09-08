@@ -78,6 +78,7 @@ pnpm install            # 在 ~/.dsh/profiles/web
 - 面板的 incident 来自 host 路由 `/analysis-view/digest`(同参重复、空转 turn、Harness 反应由 host 判定);面板自身只渲染证据。
 - `Harness 反应` 由错误码推导(guard 已拦截 / 无 guard 需模型自纠),不是模板文案。
 - host 分析与 `analyzers/incidents.mjs` 是两份实现(运行时无法 import 仓库脚本),语义分别由 `analyzers/host-self-test.mjs`、`analyzers/self-test.mjs` 钉住。
+- 已结算会话经 `sessionPersistence.open(id, 'read')` 读取(v0.1.3 起;旧版 `inspect()` 仍兜底)。
 
 ## 许可证
 
