@@ -6,6 +6,23 @@
 
 **这不是 Memory。** 不做摘要记忆、embedding、向量库或"什么值得记"。DSH 的日志已经是完整无损的事实源;我们只给 Agent 打开一扇门:**3 个查询工具 + 1 条纪律**。
 
+## English
+
+**Make DSH's already-saved session trajectories reachable again** — a minimal historical-query
+layer, not a memory system.
+
+- Near context: read directly. Far past (compacted, or after resume): query back and pull
+  verbatim local evidence into context.
+- No summaries, no embeddings, no vector DB, no "what is worth remembering": the DSH event log is
+  already the lossless source of truth. We add **3 query tools + 1 rule** — when history is
+  missing, look it up instead of guessing.
+- Validated: Tier 0 (controlled) and Tier 1 (a real 24k-event session with real two-level
+  compaction; 6/6 verbatim retrieval, 2/2 verifiable absence). Reports: `experiments/reports/`.
+- Analysis side: `plugin/analysis-view/` — a resident **Analysis** tab in the DSH Web GUI that
+  renders a deterministic, evidence-cited **runtime incident view**; `analyzers/` holds the
+  mechanical incident detection and `self-test.mjs` (semantics pinned by tests).
+- No DSH core changes: the agent-facing tools are host-only plugins over `ctx.sessionQuery`.
+
 ## 为什么值得做
 
 - DSH 事实层全有:事件日志(`dsh-session`)、JSONL 持久化、SQLite FTS5 派生读模型、`ctx.sessionQuery` 查询 API、trace、compaction——全部在运行进程里。

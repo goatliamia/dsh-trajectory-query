@@ -1,14 +1,14 @@
 # Digest: session-e0636aa9-e8d7-4879-9309-7b5ff232037d
 
-- 生成:2026-09-08T13:01:30.210Z;文件:C:\Users\14100\.dsh\sessions\--D-projects-sql~0020event--\session-e0636aa9-e8d7-4879-9309-7b5ff232037d\session.jsonl.zstd
-- 事件(可解析落盘):5135;seq 0–339961
+- 生成:2026-09-08T13:13:49.027Z;文件:C:\Users\14100\.dsh\sessions\--D-projects-sql~0020event--\session-e0636aa9-e8d7-4879-9309-7b5ff232037d\session.jsonl.zstd
+- 事件(可解析落盘):5578;seq 0–371540
 - 复跑:`node analyzers/run-digest.mjs "C:\Users\14100\.dsh\sessions\--D-projects-sql~0020event--\session-e0636aa9-e8d7-4879-9309-7b5ff232037d\session.jsonl.zstd"`
 - 局限:jsonl 打包/截断会漏事件;live 会话最准走 ctx.sessionQuery(分析器同源可复用)。
 
 | analyzer v | facts |
 | --- | --- |
-| turns v1 | 43 turns (end 42) |
-| tools v1 | 277 calls / 31 tools; top: pwsh×77, write×53, read×24 |
+| turns v1 | 49 turns (end 48) |
+| tools v1 | 301 calls / 31 tools; top: pwsh×92, write×61, read×25 |
 | errors v1 | 8 error events / 4 kinds |
 | retry v1 | 0 suspected repeat pairs |
 | incidents v1 |  |
