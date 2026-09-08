@@ -40,6 +40,7 @@ window.__ModuleLoader__.load({
       const callIdBySeq = new Map();
       const nameSeq = [];
       const errorByCall = new Map();
+      const seqTurn = new Map();
       const errFirst = [];
       let toolCalls = 0, errors = 0;
 
@@ -47,6 +48,7 @@ window.__ModuleLoader__.load({
         const k = n && n.kind;
         if (k === "assistant" && n.turn > 0) {
           turnSet.add(n.turn);
+          if (n.turn) seqTurn.set(n.seq, n.turn);
           if (Array.isArray(n.blocks)) for (const b of n.blocks) if (b && b.kind === "tool-call" && b.name) {
             turnTools.set(n.turn, (turnTools.get(n.turn) || 0) + 1);
             nameSeq.push({ name: b.name, seq: n.seq, callId: b.callId });
@@ -79,7 +81,7 @@ window.__ModuleLoader__.load({
         if (j - i >= 2) {
           const run = nameSeq.slice(i, j);
           const hasErr = run.some((x) => errorByCall.get(x.callId));
-          for (const x of run) { const t = turnOfSeq(x.seq); if (t !== undefined) retryRunTurns.add(t); }
+          for (const x of run) { const t = seqTurn.get(x.seq); if (t !== undefined) retryRunTurns.add(t); }
           incidents.push({ type: "retry-loop", severity: run.length + (hasErr ? 2 : 0), title: "重复调用循环", detail: "连续 " + (j - i) + " 次对 \"" + run[0].name + "\" 的重复调用", cause: run[0].name + " 同签名工具连续重复调用" + (hasErr ? "; 且其中含失败结果" : ""), runtimeKnew: hasErr ? "上一次调用失败,重复状态已累积" : "重复调用状态已累积", modelKnew: "仅收到各次 tool result,无重复/失败聚合状态", harness: "未检测到主动打断", impact: (j - i) + " 次冗余调用", seqs: run.map((x) => ({ seq: x.seq, callId: x.callId })) });
         }
         i = j;
@@ -90,7 +92,6 @@ window.__ModuleLoader__.load({
 
       const go = (callId) => () => { if (openView && callId) openView("trajectory", callId); };
       const chipBtn = (seq, callId) => React.createElement("button", { key: String(seq) + "-" + String(callId), onClick: go(callId), style: chip, title: openView ? "切到轨迹" : "" }, String(seq));
-      const turnOfSeq = (seq) => { const n = nodes.find((x) => x.seq === seq); return n ? n.turn : undefined; };
 
       const fact = (k, v) => React.createElement("div", { key: k, style: { padding: "4px 0", borderBottom: "1px solid var(--dsw-alias-border-l2, #eee)" } }, React.createElement("span", { style: { fontSize: 13 } }, k), React.createElement("span", { style: sub }, "  " + v));
 
