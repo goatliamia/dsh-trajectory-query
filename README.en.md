@@ -46,7 +46,7 @@ text verbatim; a search that returns nothing is a verifiable "no such fact".
 | Mechanical facts | deterministic numbers, plus explicit `needs host` markers |
 | Open interpretation | collapsed; generated **only when expanded**, by the analysis skill over bounded evidence, every claim citing `(session, seq)` |
 
-**Host routes** — `GET /analysis-view/digest?session=<id>` returns deterministic incidents (same-args repeat / failures / no-op turns); `GET /analysis-view/interpret?session=<id>` calls the model once, only when *Open interpretation* is expanded, and returns a cited interpretation.
+**Host routes** — `GET /analysis-view/digest?session=<id>` returns deterministic incidents (same-args repeat / failures / no-op turns); `GET /analysis-view/interpret?session=<id>` calls the model once, only when *Open interpretation* is expanded, and returns a cited interpretation. Both carry a **`log` identity** (`id` / `events` / `seq` range); citations read `(session, seq@logId)`, so a seq cannot be misread across log revisions.
 
 **Mechanical analyzers** — five deterministic folds: `turns / tools / errors / retry / incidents`.
 Same-argument repeats, failed calls and no-op turns are decided by code, not by a model.

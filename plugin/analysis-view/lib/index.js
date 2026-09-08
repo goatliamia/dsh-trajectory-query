@@ -5,6 +5,8 @@
 // The client panel only has the trajectory projection (no tool arguments, no state), so it marks
 // those incident types as "needs host". This half provides them.
 
+import { createHash } from "node:crypto";
+
 const ROUTE_PATH = "/analysis-view";
 
 /**
@@ -170,9 +172,18 @@ function evidenceLine(e) {
   return e.type;
 }
 
+/** A log identity so a (session, seq) citation can be resolved to one exact log revision. */
+export function logIdentity(sessionId, events) {
+  const first = (events || []).find((e) => e && typeof e.seq === "number");
+  const last = [...(events || [])].reverse().find((e) => e && typeof e.seq === "number");
+  const parts = [sessionId, (events || []).length, first ? first.seq : -1, last ? last.seq : -1, first ? first.type : "", last ? last.type : ""].join("|");
+  return { id: createHash("sha256").update(parts).digest("hex").slice(0, 12), events: (events || []).length, minSeq: first ? first.seq : null, maxSeq: last ? last.seq : null };
+}
+
 /** Bounded evidence block handed to the model: facts + incident lines + verbatim excerpts. */
-export function buildEvidence(sessionId, events, facts) {
+export function buildEvidence(sessionId, events, facts, log) {
   const lines = ["session: " + sessionId];
+  if (log) lines.push("log: " + log.id + " (events=" + log.events + ", seq " + log.minSeq + "–" + log.maxSeq + ")");
   lines.push("facts: turns=" + facts.turns + " toolCalls=" + facts.toolCalls + " errors=" + facts.errors + " emptyTurns=" + facts.emptyTurns);
   for (const inc of facts.incidents) {
     lines.push("- incident[" + inc.type + "] " + inc.detail + " | cause: " + inc.cause + " | harness: " + inc.harness + " | impact: " + inc.impact + " | seqs: " + (inc.seqs || []).join(","));
@@ -189,17 +200,17 @@ export function buildEvidence(sessionId, events, facts) {
 }
 
 /** Ask the configured model to interpret the incidents; every claim must cite (session, seq). */
-async function interpret(ctx, sessionId, events, facts) {
+async function interpret(ctx, sessionId, events, facts, log) {
   const llm = ctx.get("llm");
   if (llm === undefined || typeof llm.stream !== "function") return { error: "llm service unavailable" };
   const defaultModel = ctx.get("agentDefaultModel");
   const selection = defaultModel && typeof defaultModel.currentSelection === "function" ? defaultModel.currentSelection() : void 0;
   if (!selection || !selection.provider || !selection.model) return { error: "no default model selection" };
-  const system = "你是轨迹分析助手。只依据给定的确定性 incident 事实与逐字证据片段作答;每条事实性陈述必须引用 (session, seq),不得编造 seq。输出中文,不超过 200 字,分四段:发生了什么 / 原因 / Harness 是否响应 / 影响。";
+  const system = "你是轨迹分析助手。只依据给定的确定性 incident 事实与逐字证据片段作答;每条事实性陈述必须引用 (session, seq@" + (log ? log.id : "log") + "),不得编造 seq。输出中文,不超过 200 字,分四段:发生了什么 / 原因 / Harness 是否响应 / 影响。";
   const messages = [{
     id: "analysis-view-interpret",
     role: "user",
-    content: [{ type: "text", text: "会话:" + sessionId + "\n\n" + buildEvidence(sessionId, events, facts) }],
+    content: [{ type: "text", text: "会话:" + sessionId + "\n\n" + buildEvidence(sessionId, events, facts, log) }],
     source: { kind: "plugin", plugin: "dsh-analysis-view", form: "notice" }
   }];
   const ctl = new AbortController();
@@ -242,8 +253,9 @@ export function apply(ctx) {
         if (!sessionId) return send(400, { error: "missing session" });
         const events = await withTimeout(loadEvents(ctx, sessionId), 5000);
         const facts = computeIncidents(events);
-        if (url.pathname === ROUTE_PATH + "/digest") return send(200, { sessionId, ...facts });
-        if (url.pathname === ROUTE_PATH + "/interpret") return send(200, { sessionId, ...(await interpret(ctx, sessionId, events, facts)) });
+        const log = logIdentity(sessionId, events);
+        if (url.pathname === ROUTE_PATH + "/digest") return send(200, { sessionId, log, ...facts });
+        if (url.pathname === ROUTE_PATH + "/interpret") return send(200, { sessionId, log, ...(await interpret(ctx, sessionId, events, facts, log)) });
         return send(404, { error: "not found" });
       } catch (error) {
         return send(500, { error: String((error && error.message) || error) });

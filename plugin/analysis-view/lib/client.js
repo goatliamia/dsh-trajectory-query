@@ -106,7 +106,7 @@ window.__ModuleLoader__.load({
         ? host.incidents.map((inc) => ({ ...inc, seqs: (inc.seqs || []).map((s) => (typeof s === "number" ? { seq: s, callId: callIdBySeq.get(s) } : s)) }))
         : null;
       const shown = hostIncidents || clientIncidents;
-      const hostState = host ? ("已加载 · " + ((host.incidents && host.incidents.length) || 0) + " incidents") : hostErr ? ("不可用: " + hostErr) : sessionId ? "加载中…" : "无 sessionId(未发起请求)";
+      const hostState = host ? ("已加载 · " + ((host.incidents && host.incidents.length) || 0) + " incidents · log " + (host.log ? host.log.id : "?") + " · seq " + (host.log ? host.log.minSeq + "–" + host.log.maxSeq : "?")) : hostErr ? ("不可用: " + hostErr) : sessionId ? "加载中…" : "无 sessionId(未发起请求)";
       const go = (callId) => () => { if (openView && callId) openView("trajectory", callId); };
       const chipBtn = (seq, callId) => React.createElement("button", { key: String(seq) + "-" + String(callId), onClick: go(callId), style: chip, title: openView ? "切到轨迹" : "" }, String(seq));
       const fact = (k, v) => React.createElement("div", { key: k, style: { padding: "4px 0", borderBottom: "1px solid var(--dsw-alias-border-l2, #eee)" } }, React.createElement("span", { style: { fontSize: 13 } }, k), React.createElement("span", { style: sub }, "  " + v));
@@ -137,6 +137,7 @@ window.__ModuleLoader__.load({
         fact("同参重复调用", hostIncidents ? ((host.incidents || []).filter((x) => x.type === "retry-loop").length + " 个(host)") : "需 host 分析"),
         fact("空转 turn", host ? String(host.emptyTurns) + " 个(host)" : "需 host 分析"),
         fact("host 分析", hostState),
+        fact("日志身份", host && host.log ? host.log.id + " (events=" + host.log.events + ", seq " + host.log.minSeq + "–" + host.log.maxSeq + ")" : "—"),
         fact("分析器版本", "incidents v1(host + client 渲染)")
       ];
 

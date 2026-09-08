@@ -69,7 +69,7 @@
 
 影响与建议:
 
-1. 引用格式应附带**日志身份**:`(session, seq@revision)` 或带 log fingerprint,否则跨版本引用会指向错误位置;
+1. 引用格式应附带**日志身份**:`(session, seq@revision)` 或带 log fingerprint,否则跨版本引用会指向错误位置 —— **已实现**:两个 host 路由都返回 `log` 身份(`id`/`events`/`seq` 范围),引用改为 `(session, seq@logId)`;`logIdentity()` 已本地验证(`id=420fac79ba6e, events=3, seq 0–2`),路由暴露待下次 host 重载;
 2. 分析器输出应附带 log identity(事件数/首尾 seq/指纹),便于判定"这份分析基于哪一版日志";
 3. 此前 Tier 1 的结论"compaction 后 seq 稳定"应修正为 **"同一修订内稳定"**——跨修订需重新解析。
 
