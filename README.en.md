@@ -94,3 +94,7 @@ pnpm install            # in ~/.dsh/profiles/web
   (`analyzers/incidents.mjs`).
 - `Harness response` on a card is currently a template, not derived from guard/intervention events.
 - Client-side detection only sees the trajectory projection; richer incidents need host data.
+
+## License
+
+MIT © 2026 goatliamia — see [LICENSE](./LICENSE)

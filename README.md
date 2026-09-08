@@ -76,3 +76,7 @@ pnpm install            # 在 ~/.dsh/profiles/web
 - 面板的 retry 是**名字级**;**同参**检测在 host 分析器 `analyzers/incidents.mjs`。
 - 卡片上的 `Harness 反应` 目前是模板文案,尚未由 guard / 干预事件推导。
 - 客户端只看到轨迹投影;更丰富的 incident 需要 host 数据。
+
+## 许可证
+
+MIT © 2026 goatliamia —— 见 [LICENSE](./LICENSE)
