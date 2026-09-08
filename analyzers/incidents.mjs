@@ -11,12 +11,14 @@ export const incidents = {
     let turns = 0, currentTurn = 0;
     const turnTools = new Map();
     const turnErrors = new Set();
+    const turnAssistant = new Set();
     const nameSeq = [];
     let toolCalls = 0, errors = 0;
     const errorSeqs = new Set();
     const errFirst = [];
     for (const e of events) {
       if (e.type === 'turn/start') { turns++; currentTurn++; continue; }
+      if (e.type === 'assistant/message' && currentTurn) turnAssistant.add(currentTurn);
       if (e.type === 'tool/call') {
         toolCalls++;
         const name = e.data && e.data.name ? e.data.name : '(tool)';
@@ -35,7 +37,7 @@ export const incidents = {
       }
     }
     let emptyTurns = 0;
-    for (let t = 1; t <= turns; t++) if (!(turnTools.get(t) > 0)) emptyTurns++;
+    for (let t = 1; t <= turns; t++) if (!(turnTools.get(t) > 0) && !turnAssistant.has(t)) emptyTurns++;
 
     // retry-loop: consecutive same name + same args
     const list = [];

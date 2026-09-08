@@ -1,29 +1,30 @@
 {
   "session": "session-e0636aa9-e8d7-4879-9309-7b5ff232037d",
-  "events": 4903,
+  "events": 5135,
   "facts": {
     "turns": {
       "version": 1,
-      "turns": 40,
-      "ended": 39,
+      "turns": 43,
+      "ended": 42,
       "openTurns": 1,
       "endReasons": {
-        "completed": 37,
-        "aborted": 2
+        "completed": 39,
+        "aborted": 2,
+        "error": 1
       }
     },
     "tools": {
       "version": 1,
-      "total": 264,
+      "total": 277,
       "distinct": 31,
       "byName": [
         {
           "name": "pwsh",
-          "calls": 69
+          "calls": 77
         },
         {
           "name": "write",
-          "calls": 50
+          "calls": 53
         },
         {
           "name": "read",
@@ -74,15 +75,15 @@
           "calls": 3
         },
         {
-          "name": "ask_user_question",
-          "calls": 2
+          "name": "get_goal",
+          "calls": 3
         }
       ]
     },
     "errors": {
       "version": 1,
-      "total": 7,
-      "distinct": 3,
+      "total": 8,
+      "distinct": 4,
       "firstSeqs": [
         {
           "kind": "ToolNotFoundError:UNKNOWN_TOOL",
@@ -104,6 +105,13 @@
           "code": "WEB_BLOCKED_URL",
           "firstSeq": 277710,
           "count": 1
+        },
+        {
+          "kind": "turn-end-error:INVALID_REQUEST",
+          "name": "turn-end-error",
+          "code": "INVALID_REQUEST",
+          "firstSeq": 329875,
+          "count": 1
         }
       ]
     },
@@ -114,10 +122,10 @@
     },
     "incidents": {
       "version": 1,
-      "turns": 40,
-      "toolCalls": 264,
+      "turns": 43,
+      "toolCalls": 277,
       "errors": 10,
-      "emptyTurns": 14,
+      "emptyTurns": 2,
       "incidentCount": 2,
       "incidents": [
         {
@@ -145,7 +153,7 @@
           "type": "noop",
           "severity": 1,
           "title": "空转 turn",
-          "detail": "14 个 turn 无任何工具调用",
+          "detail": "2 个 turn 无任何工具调用",
           "cause": "该 turn 未产生工具动作",
           "runtimeKnew": "-",
           "modelKnew": "无工具上下文",
