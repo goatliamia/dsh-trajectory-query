@@ -176,7 +176,7 @@ function evidenceLine(e) {
 export function logIdentity(sessionId, events) {
   const first = (events || []).find((e) => e && typeof e.seq === "number");
   const last = [...(events || [])].reverse().find((e) => e && typeof e.seq === "number");
-  const parts = [sessionId, (events || []).length, first ? first.seq : -1, last ? last.seq : -1, first ? first.type : "", last ? last.type : ""].join("|");
+  const parts = [sessionId, first ? first.seq : -1, first ? first.type : "", first ? first.time : 0].join("|");
   return { id: createHash("sha256").update(parts).digest("hex").slice(0, 12), events: (events || []).length, minSeq: first ? first.seq : null, maxSeq: last ? last.seq : null };
 }
 
