@@ -30,3 +30,7 @@
 node analyzers/run-digest.mjs <session.zstd> [outPrefix]
 ```
 输出:<prefix>.facts.json + <prefix>.digest.md(格式见 skill/analysis.md §7)。
+
+## 机械自检(不增负:把语义钉在测试里,不写进 skill)
+
+`node analyzers/self-test.mjs` —— 钉死两条语义:`提及 ≠ 发生`(error 只认事件字段,不认全文提及)、`同名 ≠ 重复`(retry 需同 tool 同参)。改分析器后必须跑通。
