@@ -35,7 +35,7 @@ export function computeIncidents(events) {
       const err = d.error || (Array.isArray(content) && content[0] && content[0].isError);
       if (err) {
         errors++;
-        const kind = (d.error && (d.error.name || d.error.code)) || "error";
+        const er = d.error; const kind = er ? (er.name && er.code ? er.name + ":" + er.code : (er.name || er.code || "error")) : "error";
         if (errFirst.length < 12) errFirst.push({ kind, seq: e.seq, turn: currentTurn });
       }
     }

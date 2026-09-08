@@ -97,7 +97,7 @@ window.__ModuleLoader__.load({
         ? host.incidents.map((inc) => ({ ...inc, seqs: (inc.seqs || []).map((s) => (typeof s === "number" ? { seq: s, callId: callIdBySeq.get(s) } : s)) }))
         : null;
       const shown = hostIncidents || clientIncidents;
-      const hostState = host ? "已加载" : hostErr ? "不可用: " + hostErr : "加载中…";
+      const hostState = host ? ("已加载 · " + ((host.incidents && host.incidents.length) || 0) + " incidents") : hostErr ? ("不可用: " + hostErr) : sessionId ? "加载中…" : "无 sessionId(未发起请求)";
       const go = (callId) => () => { if (openView && callId) openView("trajectory", callId); };
       const chipBtn = (seq, callId) => React.createElement("button", { key: String(seq) + "-" + String(callId), onClick: go(callId), style: chip, title: openView ? "切到轨迹" : "" }, String(seq));
       const fact = (k, v) => React.createElement("div", { key: k, style: { padding: "4px 0", borderBottom: "1px solid var(--dsw-alias-border-l2, #eee)" } }, React.createElement("span", { style: { fontSize: 13 } }, k), React.createElement("span", { style: sub }, "  " + v));
