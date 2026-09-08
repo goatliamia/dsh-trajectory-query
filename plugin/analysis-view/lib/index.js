@@ -117,6 +117,28 @@ export function deriveHarnessResponse(kinds) {
   return "未检测到针对性处理";
 }
 
+
+/** Read a session's events without sessionQuery.readSession (which can block on live sessions). */
+async function loadEvents(ctx, sessionId) {
+  const sessions = ctx.get("sessions");
+  const live = sessions && typeof sessions.get === "function" ? sessions.get(sessionId) : void 0;
+  if (live && typeof live.snapshotEvents === "function") return live.snapshotEvents();
+  const persistence = ctx.get("sessionPersistence");
+  if (persistence && typeof persistence.inspect === "function") {
+    const loaded = await persistence.inspect(sessionId);
+    return (loaded && loaded.events) || [];
+  }
+  throw new Error("no session source available (sessions/sessionPersistence)");
+}
+
+/** Fail fast instead of letting an HTTP request hang forever. */
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("analysis-view: session load timed out")), ms);
+    promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
+  });
+}
+
 export const inject = ["webServer"];
 
 export function apply(ctx) {
@@ -135,10 +157,8 @@ export function apply(ctx) {
         if (req.method !== "GET" || url.pathname !== ROUTE_PATH + "/digest") return send(404, { error: "not found" });
         const sessionId = url.searchParams.get("session");
         if (!sessionId) return send(400, { error: "missing session" });
-        const sessionQuery = ctx.get("sessionQuery");
-        if (sessionQuery === undefined) return send(503, { error: "sessionQuery unavailable" });
-        const snapshot = await sessionQuery.readSession(sessionId);
-        return send(200, { sessionId, ...computeIncidents(snapshot.events) });
+        const events = await withTimeout(loadEvents(ctx, sessionId), 5000);
+        return send(200, { sessionId, ...computeIncidents(events) });
       } catch (error) {
         return send(500, { error: String((error && error.message) || error) });
       }
