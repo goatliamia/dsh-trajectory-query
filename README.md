@@ -1,58 +1,132 @@
 # dsh-trajectory-query
 
-把 DSH 已经保存的会话轨迹**重新可达**——一个极薄的历史查询层实验。
+Make DSH's already-saved session trajectories **reachable again** — for agents when context is
+gone, and for humans who want to see what actually happened.
+把 DSH 已经保存的会话轨迹**重新可达**——给 context 丢失时的 Agent,也给想看"到底发生了什么"的人。
 
-> 近端(context 里)直接看;远端(被 compaction 盖住 / resume 之后)需要时**查询回源**,取原文局部证据,重新进入 context。
+English · [中文](#中文)
 
-**这不是 Memory。** 不做摘要记忆、embedding、向量库或"什么值得记"。DSH 的日志已经是完整无损的事实源;我们只给 Agent 打开一扇门:**3 个查询工具 + 1 条纪律**。
+---
 
 ## English
 
-**Make DSH's already-saved session trajectories reachable again** — a minimal historical-query
-layer, not a memory system.
+Not a memory system: no summaries, no embeddings, no vector DB, no "what is worth remembering".
+The DSH event log is already the lossless source of truth — this project adds a thin read path over
+it and changes no DSH core.
 
-- Near context: read directly. Far past (compacted, or after resume): query back and pull
-  verbatim local evidence into context.
-- No summaries, no embeddings, no vector DB, no "what is worth remembering": the DSH event log is
-  already the lossless source of truth. We add **3 query tools + 1 rule** — when history is
-  missing, look it up instead of guessing.
-- Validated: Tier 0 (controlled) and Tier 1 (a real 24k-event session with real two-level
-  compaction; 6/6 verbatim retrieval, 2/2 verifiable absence). Reports: `experiments/reports/`.
-- Analysis side: `plugin/analysis-view/` — a resident **Analysis** tab in the DSH Web GUI that
-  renders a deterministic, evidence-cited **runtime incident view**; `analyzers/` holds the
-  mechanical incident detection and `self-test.mjs` (semantics pinned by tests).
-- No DSH core changes: the agent-facing tools are host-only plugins over `ctx.sessionQuery`.
+### Features
 
-## 为什么值得做
+**Historical query tools (agent-facing)**
+`trajectory_find` · `trajectory_window` · `trajectory_trace` · `trajectory_sessions`, built on
+`ctx.sessionQuery`. Evidence-first: every answer carries `(session, seq)` and quotes the original
+text verbatim — never a paraphrase. A search that returns nothing is a verifiable "no such fact".
 
-- DSH 事实层全有:事件日志(`dsh-session`)、JSONL 持久化、SQLite FTS5 派生读模型、`ctx.sessionQuery` 查询 API、trace、compaction——全部在运行进程里。
-- 缺的只有:**模型侧没有任何查历史的工具**。`sessionQuery` 目前只被 host 侧消费(UI、`@会话` 引用、子代理簿记)。
-- 后果:compaction 之后模型只剩一段带损摘要,而原始事件仍在日志里(只 shadow 不删除)——补齐"重新可达"这一层,成本极小。
+**Resident Analysis tab (DSH Web GUI)**
+A third tab beside *Conversation | Trajectory* that renders a **runtime incident view**:
+incident cards (`Event / Cause / Runtime knew / Model knew / Harness response / Impact`), a per-turn
+map (red = a turn with a failure, click to jump), and deterministic facts. It reuses the trajectory
+projection and lists only evidence-backed incidents — no profiler counts.
 
-## 三条铁律(详见 `docs/design.md`)
+**Mechanical analyzers**
+Deterministic, versioned folds over typed events: `turns`, `tools`, `errors`, `retry`, `incidents`.
+Same-argument repeats, failed calls and no-op turns are decided by code, not by a model.
+`analyzers/self-test.mjs` pins the semantics.
 
-1. **投影 = 选择 + 指针,不是改写**。返回给模型的内容必须是原文的裁剪;改写或总结 = bug。模型负责解释事实,不负责压缩事实。
-2. 模型不写 SQL。工具是闭集动词:`find / window / trace`。
-3. 引用纪律:结论带 `(session, seq)`,引文原样。
+**Analysis skill**
+`skill/analysis.md` teaches how to turn a research question into a verifiable analysis — evidence
+discipline, dimension discovery, analyzer contract. It defines entry points, not conclusions.
 
-## 目录
+**Reports**
+`analyzers/run-digest.mjs` turns one session into reproducible `*.facts.json` + `*.digest.md`.
+
+### Design principles
+
+1. Detection is deterministic; the model interprets, never invents.
+2. Projection = selection + pointer, not rewriting. Quotes stay verbatim.
+3. The panel renders evidence; surface patterns (tool-name counts, name-only repeats) are not incidents.
+4. Nothing is stored as "memory": analyses are derived views, recomputable from the log.
+
+### Quick start
+
+```text
+# analyzers — no DSH required
+node analyzers/run-digest.mjs <session.jsonl.zstd>
+node analyzers/self-test.mjs
+
+# agent tools — mount plugin/trajectory-tools.js as a host Cordis plugin
+# Analysis tab — install plugin/analysis-view into your web profile (see its README)
+```
+
+### Layout
+
+| Path | What |
+|---|---|
+| `plugin/trajectory-tools.js` | host plugin: the four query tools |
+| `plugin/analysis-view/` | resident Analysis tab (pure client plugin) |
+| `analyzers/` | deterministic analyzers, digest runner, self-test |
+| `skill/trajectory-query.md` | query discipline for agents |
+| `skill/analysis.md` | analysis method (evidence-first, open dimensions) |
+| `docs/` | design notes and the experiment protocol |
+| `experiments/` | corpora, probes, manifests, generated reports |
+
+---
+
+<a id="中文"></a>
+## 中文
+
+**这不是 Memory。** 不做摘要记忆、embedding、向量库,也不回答"什么值得记"。
+DSH 的事件日志已经是完整无损的事实源——本项目只在它之上加一条很薄的读取路径,**不改 DSH core**。
+
+### 功能介绍
+
+**历史查询工具(给 Agent)**
+`trajectory_find` · `trajectory_window` · `trajectory_trace` · `trajectory_sessions`,基于
+`ctx.sessionQuery`。证据优先:每个答案都带 `(session, seq)` 并**原样引用**原文,不做改写;
+查询返回空 = 可核验的"没有这样的事实"。
+
+**常驻「分析」标签(DSH Web GUI)**
+在「对话 | 轨迹」旁边的第三个标签,渲染 **runtime incident view**:incident 卡片
+(`Event / Cause / Runtime 知道 / Model 知道 / Harness 反应 / 影响`)、Turn 地图
+(红 = 该 turn 有失败,可点击跳转)、确定性事实。复用轨迹投影,只列有证据的 incident,
+不做 profiler 计数。
+
+**机械分析器**
+对类型化事件的确定性、可版本化 fold:`turns`、`tools`、`errors`、`retry`、`incidents`。
+同参重复、调用失败、空转 turn 由代码判定,不由模型判断;`analyzers/self-test.mjs` 把语义钉进测试。
+
+**分析 Skill**
+`skill/analysis.md` 教"如何把研究问题变成可核验的分析"——证据纪律、维度发现、分析器契约;
+规定入口,不规定结论。
+
+**报告**
+`analyzers/run-digest.mjs` 把一次会话变成可复现的 `*.facts.json` + `*.digest.md`。
+
+### 设计原则
+
+1. **检测是确定性的**;模型只解释,不发明。
+2. **投影 = 选择 + 指针,不是改写**;引文保持原样。
+3. **面板只渲染证据**;表面模式(工具名计数、仅同名的重复)不算 incident。
+4. **不存"记忆"**;分析是派生视图,随时可从日志重算。
+
+### 快速开始
+
+```text
+# 分析器(不需要 DSH)
+node analyzers/run-digest.mjs <session.jsonl.zstd>
+node analyzers/self-test.mjs
+
+# 查询工具:把 plugin/trajectory-tools.js 作为 host Cordis 插件装载
+# 分析标签:把 plugin/analysis-view 装进你的 web profile(见其 README)
+```
+
+### 目录
 
 | 路径 | 内容 |
 |---|---|
-| `docs/design.md` | 设计判断与收敛过程(为什么不是 Memory)+ 单插件三面解剖 |
-| `docs/experiments/protocol.md` | 可证伪实验协议(Tier 0 / 1 / 2) |
-| `plugin/` | 动态 Cordis 插件源码镜像(装载方式见其 README) |
-| `skill/trajectory-query.md` | 历史查询纪律(agent 自服务) |
-| `skill/analysis.md` | 分析 Skill:把研究问题变成可核验分析(不锁死维度) |
-| `analyzers/` | 分析器注册表:契约 + 事件加载 + 内置示例(turns/tools/errors/retry)+ digest 运行器 |
-| `experiments/` | 实验流水线(语料/探针/盲评/manifest/digest 产物) |
-
-## 状态
-
-- [x] 设计收敛 & 实验协议
-- [x] Tier 0:合成信息体制(5/5 远端取回、2/2 阴性无证据、H1/H2 ✅、H3 弱 ✅、H4 软 ✅;报告 `experiments/reports/tier0-results.md`)
-- [x] Tier 1:真实长会话双盲探针(6/6 存在 verbatim 取回、2/2 阴性;真实两级 compaction 影子事件可查;报告 `experiments/reports/tier1-results.md`)
-- [x] 查询面插件(tqry-1)+ 分析面非 UI 部分(分析器框架 + digest + 分析 Skill + manifest 骨架)
-- [ ] UI:可选面板(待与用户探讨:槽位/常驻形态/是否必要)
-
-> 注:本地目录名为历史遗留的 `sql event`,与仓库名无关。
+| `plugin/trajectory-tools.js` | host 插件:四个查询工具 |
+| `plugin/analysis-view/` | 常驻「分析」标签(纯客户端插件) |
+| `analyzers/` | 确定性分析器、digest 运行器、自检 |
+| `skill/trajectory-query.md` | 给 Agent 的查询纪律 |
+| `skill/analysis.md` | 分析方法(证据优先、维度开放) |
+| `docs/` | 设计说明与实验协议 |
+| `experiments/` | 语料、探针、manifest、生成的报告 |
