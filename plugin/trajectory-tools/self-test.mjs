@@ -3,24 +3,29 @@
 // 运行(必须能解析 @deepseek-ai/dsh-tools,即从安装后的包目录运行):
 //   cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs
 //
-// 覆盖:注册 4 个工具、参数校验、字面量检索(大小写/空白)、seq 区间与类型过滤、
-// 存活/已持久化两条读取路径、窗口上限、trace 两条分支、logId append-stable,
-// 以及三条曾经的缺陷回归:
+// 覆盖:注册 5 个工具、参数校验、字面量检索(大小写/空白/转义归一)、seq 区间与类型过滤、
+// 存活/已持久化两条读取路径、窗口上限、trace 有界渲染、目录统计、logId append-stable,
+// 以及曾经的缺陷回归:
 //   1) 不给 session 时默认扫描集必须包含「当前会话 + 所有 live 会话」(哪怕它 createdAt 最老)
 //   2) 命中片段以命中点为中心,必须包含查询词(1000 字符长事件用例)
 //   3) 默认过滤注入样板(<system-reminder>)与 trajectory_* 自身的调用/结果
+//   4) issue #1:转义路径(双反斜杠)能被单反斜杠查询命中;issue #2:trace 关系链有界
+//   5) issue #3:trajectory_index 只给计数与范围
 
 import {
   apply,
+  boundSeqs,
   buildSelfCallIds,
   clipAround,
   currentSessionId,
   eventText,
   fold,
+  indexEvents,
   isInjectedText,
   isSelfEvent,
   logIdOf,
   logIdentity,
+  norm,
 } from "./lib/index.js";
 
 let passed = 0;
@@ -63,6 +68,8 @@ const EVENTS = [
   { seq: 13, type: "user/message", time: 1013, data: { content: [{ type: "text", text: "the facade seam is the real topic" }] } },
   // 超长事件:查询词只在第 800 字符之后
   { seq: 14, type: "user/message", time: 1014, data: { content: [{ type: "text", text: "x".repeat(800) + " needle-at-the-end " + "y".repeat(200) }] } },
+  // issue #1:日志里是转义过的双反斜杠路径,模型习惯用单反斜杠查
+  { seq: 15, type: "user/message", time: 1015, data: { content: [{ type: "text", text: "open C:\\\\Users\\\\14100\\\\.dsh\\\\settings.yaml now" }] } },
 ];
 
 const CURRENT_EVENTS = [
@@ -135,7 +142,15 @@ const fakeQuery = {
   },
   async traceEvent(request) {
     traceCalls.push(request);
-    return { target: { seq: request.seq, type: "tool/result", time: 1004, surface: "current" }, replacedBy: null, replacementChain: [], replacedEventSeqs: [], sourceEventSeqs: [], derivedEventSeqs: [] };
+    return {
+      target: { seq: request.seq, type: "tool/result", time: 1004, surface: "current" },
+      replacedBy: 530395,
+      replacementChain: [530395, 1066440],
+      replacedEventSeqs: [11, 12],
+      // issue #2:真实会话里 sourceEventSeqs 可达上千项
+      sourceEventSeqs: Array.from({ length: 10 }, (_, index) => 22404 + index),
+      derivedEventSeqs: [7],
+    };
   },
   async traceSession(sessionId) {
     traceCalls.push(sessionId);
@@ -193,14 +208,14 @@ const ctx = {
 apply(ctx);
 
 /* ---------------- 注册 ---------------- */
-eq("registers 4 tools", [...registered.keys()].sort(), ["trajectory_find", "trajectory_sessions", "trajectory_trace", "trajectory_window"]);
-eq("registers one disposer per tool + one for the skill", disposed.filter((label) => label.startsWith("trajectory-tools:")).length, 5);
+eq("registers 5 tools", [...registered.keys()].sort(), ["trajectory_find", "trajectory_index", "trajectory_sessions", "trajectory_trace", "trajectory_window"]);
+eq("registers one disposer per tool + one for the skill", disposed.filter((label) => label.startsWith("trajectory-tools:")).length, 6);
 eq("registers the runtime skill", [...skillsRegistered.keys()], ["trajectory-query"]);
 const skill = skillsRegistered.get("trajectory-query");
 check("skill carries a description", typeof skill.description === "string" && skill.description.length > 0);
 check(
-  "skill body names all four tools",
-  ["trajectory_sessions", "trajectory_find", "trajectory_window", "trajectory_trace"].every((name) => skill.content.includes(name)),
+  "skill body names every tool",
+  ["trajectory_sessions", "trajectory_index", "trajectory_find", "trajectory_window", "trajectory_trace"].every((name) => skill.content.includes(name)),
 );
 check("skill body pins the citation convention", skill.content.includes("(session, seq@logId)"));
 
@@ -220,7 +235,7 @@ apply({
     return name === "skills" ? undefined : services[name];
   },
 });
-eq("tools register without the skills service", toolOnly.size, 4);
+eq("tools register without the skills service", toolOnly.size, 5);
 
 // 重名(常见于上一个进程遗留的动态插件注册)必须显式失败,而不是静默注册一半。
 let conflictError = null;
@@ -251,6 +266,11 @@ check("eventText: tool/call carries name+args", eventText(EVENTS[3]).includes("r
 check("eventText: tool/result carries error name+code", eventText(EVENTS[4]).includes("FsError") && eventText(EVENTS[4]).includes("FS_NOT_OBSERVED"), eventText(EVENTS[4]));
 eq("fold: case + whitespace insensitive", fold("Retry\n   Now"), "retry now");
 
+// issue #1:归一化(转义反斜杠 + 中英文引号)
+eq("norm: folds a backslash run", norm("C:\\\\Users\\\\14100"), "c:\\users\\14100");
+eq("norm: unifies smart quotes", norm("\u201Cx\u201D \u2018y\u2019"), '"x" \'y\'');
+eq("norm: keeps ordinary text", norm("Retry\n   Now"), "retry now");
+
 // 片段居中:命中点在 1000 字符事件的第 800 位
 const longText = "a".repeat(800) + "NEEDLE-token" + "b".repeat(200);
 const centred = clipAround(longText, "needle-token", 400);
@@ -263,6 +283,16 @@ eq("clipAround: no match reports -1", clipAround("short text", "absent").matchAt
 const longNeedle = "q".repeat(500);
 const longNeedleClip = clipAround("head " + longNeedle + " tail", longNeedle, 400);
 check("clipAround: a needle longer than the budget is never truncated", longNeedleClip.text.includes(longNeedle), "len=" + longNeedleClip.text.length);
+// issue #1:原文是双反斜杠、查询是单反斜杠,片段必须命中且仍是原文
+const escapedClip = clipAround("path is C:\\\\Users\\\\14100\\\\.dsh", "C:\\Users\\14100", 400, true);
+check("clipAround: normalized match finds the escaped path verbatim", escapedClip.matchAt >= 0 && escapedClip.text.includes("C:\\\\Users\\\\14100"), JSON.stringify(escapedClip));
+eq("clipAround: normalization can be disabled", clipAround("path is C:\\\\Users\\\\14100", "C:\\Users\\14100", 400, false).matchAt, -1);
+
+// issue #2:关系链有界渲染
+const bounded = boundSeqs([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+eq("boundSeqs: default is count + head/tail", bounded, { count: 10, head: [1, 2, 3], tail: [8, 9, 10], truncated: true });
+eq("boundSeqs: short arrays stay whole", boundSeqs([1, 2]), { count: 2, items: [1, 2], truncated: false });
+eq("boundSeqs: full returns the complete array", boundSeqs([1, 2, 3, 4, 5, 6, 7], true), { count: 7, items: [1, 2, 3, 4, 5, 6, 7] });
 
 // 过滤谓词
 check("isInjectedText: system-reminder prefix", isInjectedText("  <system-reminder>\n...") && !isInjectedText("plain user text"));
@@ -278,7 +308,7 @@ const idBefore = logIdOf(LIVE_ID, EVENTS[0]);
 const idAfterAppend = logIdOf(LIVE_ID, EVENTS[0]);
 eq("logId: append-stable", idAfterAppend, idBefore);
 check("logId: differs when the first event differs", logIdOf(LIVE_ID, { seq: 0, type: "turn/start", time: 999 }) !== idBefore);
-eq("logIdentity: range from full log", logIdentity(LIVE_ID, EVENTS), { id: idBefore, events: 15, minSeq: 0, maxSeq: 14 });
+eq("logIdentity: range from full log", logIdentity(LIVE_ID, EVENTS), { id: idBefore, events: 16, minSeq: 0, maxSeq: 15 });
 
 /* ---------------- trajectory_sessions ---------------- */
 const sessions = await call("trajectory_sessions", { limit: 10 });
@@ -326,6 +356,15 @@ eq("find: long event is a hit", longHit.items.map((item) => item.seq), [14]);
 check("find: long-event snippet contains the needle", longHit.items[0].text.includes("needle-at-the-end"), longHit.items[0].text.slice(0, 80));
 check("find: long-event matchAt points at the needle", longHit.items[0].text.slice(longHit.items[0].matchAt, longHit.items[0].matchAt + 17) === "needle-at-the-end", "matchAt=" + longHit.items[0].matchAt);
 
+// issue #1:模型写单反斜杠,日志里是双反斜杠 —— 归一化默认开,可关
+const escaped = await call("trajectory_find", { session: LIVE_ID, query: "C:\\Users\\14100\\.dsh" });
+eq("find: escaped path is found with a single-backslash query", escaped.items.map((item) => item.seq), [15]);
+eq("find: reports normalized: true", escaped.normalized, true);
+check("find: escaped hit keeps verbatim text", escaped.items[0].text.includes("C:\\\\Users\\\\14100"), escaped.items[0].text.slice(0, 80));
+const escapedOff = await call("trajectory_find", { session: LIVE_ID, query: "C:\\Users\\14100\\.dsh", normalize: false });
+eq("find: normalize=false restores strict matching", escapedOff.hitCount, 0);
+eq("find: reports normalized: false", escapedOff.normalized, false);
+
 // 注入样板 + 自回显:默认过滤,只留真实命中
 const facade = await call("trajectory_find", { session: LIVE_ID, query: "facade" });
 eq("find: default filters leave only the real hit", facade.items.map((item) => item.seq), [13]);
@@ -361,7 +400,7 @@ eq("find: settled log id", settledFind.log.id, persistedLogId);
 const settledWindow = await call("trajectory_window", { session: PERSISTED_ID, from: 3, to: 5, mode: "raw" });
 eq("window: settled slice", settledWindow.events.map((row) => row.seq), [3, 4, 5]);
 eq("window: settled log id", settledWindow.log.id, persistedLogId);
-eq("window: settled event count from stat", settledWindow.log.eventCount, 15);
+eq("window: settled event count from stat", settledWindow.log.eventCount, 16);
 
 /* ---------------- trajectory_window ---------------- */
 const around = await call("trajectory_window", { session: LIVE_ID, seq: 4 });
@@ -389,8 +428,44 @@ check("window: DSL enforces required session", requiredThrew);
 const traced = await call("trajectory_trace", { session: LIVE_ID, seq: 4 });
 eq("trace: event branch", traced.target.seq, 4);
 eq("trace: surface field", traced.target.surface, "current");
+// issue #2:关系链默认有界
+eq("trace: sourceEventSeqs is bounded", traced.sourceEventSeqs, { count: 10, head: [22404, 22405, 22406], tail: [22411, 22412, 22413], truncated: true });
+eq("trace: short chains stay whole", traced.replacementChain, { count: 2, items: [530395, 1066440], truncated: false });
+eq("trace: full=true returns the complete array", (await call("trajectory_trace", { session: LIVE_ID, seq: 4, full: true })).sourceEventSeqs.items.length, 10);
 const lineage = await call("trajectory_trace", { session: LIVE_ID });
 eq("trace: session branch", lineage.complete, true);
+
+/* ---------------- trajectory_index(issue #3:目录,不是搜索) ---------------- */
+const index = await call("trajectory_index", { limit: 10 });
+eq("index: current session first", index.sessions[0].session, CURRENT_ID);
+eq("index: current is marked", index.sessions[0].current, true);
+const liveRow = index.sessions.find((row) => row.session === LIVE_ID);
+check("index: counts events after the default filters", liveRow.events === 12, JSON.stringify(liveRow));
+eq("index: semantic event count", liveRow.semanticEvents, 11);
+eq("index: byType", liveRow.byType["tool/call"], 2);
+eq("index: byTool counts calls", liveRow.byTool.read, 2);
+eq("index: seq range", liveRow.seqRange, [0, 15]);
+eq("index: time range", liveRow.timeRange, [1000, 1015]);
+check("index: returns no content", !("text" in liveRow) && !("items" in liveRow), JSON.stringify(liveRow));
+
+const indexTool = await call("trajectory_index", { tool: "read", limit: 10 });
+const toolRow = indexTool.sessions.find((row) => row.session === LIVE_ID);
+eq("index: tool filter keeps calls + linked results", toolRow.events, 4);
+eq("index: tool filter narrows byType", toolRow.byType["tool/result"], 2);
+
+const indexType = await call("trajectory_index", { type: ["tool/call"], limit: 10 });
+eq("index: type filter", indexType.sessions.find((row) => row.session === LIVE_ID).events, 2);
+
+const indexTime = await call("trajectory_index", { timeFrom: 1004, timeTo: 1006, limit: 10 });
+eq("index: time window", indexTime.sessions.find((row) => row.session === LIVE_ID).events, 3);
+
+const indexCwd = await call("trajectory_index", { cwd: "work", limit: 10 });
+check("index: cwd filter keeps only matching sessions", indexCwd.sessions.every((row) => String(row.cwd).includes("work")), JSON.stringify(indexCwd.sessions.map((row) => row.cwd)));
+eq("index: cwd filter drops the others", indexCwd.sessions.some((row) => row.session === NEWER[0]), false);
+
+// 纯函数直测:indexEvents 与工具同源
+const direct = indexEvents(EVENTS, { toolNeedle: "trajectory_find" });
+eq("indexEvents: tool filter on the tool's own call", direct.events, 0);
 
 /* ---------------- 结果 ---------------- */
 if (failures.length === 0) {

@@ -31,6 +31,9 @@ const MAX_FIND_LIMIT = 20;
 const DEFAULT_FIND_LIMIT = 8;
 const DEFAULT_SESSION_LIMIT = 30;
 const MAX_SESSION_LIMIT = 100;
+const DEFAULT_INDEX_LIMIT = 10;
+const MAX_INDEX_LIMIT = 30;
+const TRACE_EDGE = 3;
 const LOAD_TIMEOUT_MS = 5000;
 
 /* ------------------------------------------------------------------ *
@@ -117,14 +120,14 @@ function clip(value, max) {
 }
 
 /**
- * 以命中点为中心截取片段:保证 needle 一定完整落在返回的 text 里。
- * 匹配是「大小写不敏感 + 空白折叠」的,所以定位分两步:先按原文 indexOf,
- * 失败再用 needle 的分词构造 \s+ 正则找回原文里的真实位置。
+ * 以命中点为中心截取片段:保证命中一定完整落在返回的 text 里。
+ * 定位分两步:先按原文 indexOf(快路径),失败再用 needle 编译的正则找回原文里的真实位置
+ * (空白弹性;normalize 时连续反斜杠与中英文引号也等价)。返回的 text 始终是原文 verbatim。
  * 查询词本身比预算还长时,窗口按查询词长度放宽,不截断查询词。
  */
-export function clipAround(value, needle, budget = 400) {
+export function clipAround(value, needle, budget = 400, normalize = true) {
   const source = String(value === undefined || value === null ? "" : value);
-  const located = needle ? locateInText(source, needle) : null;
+  const located = needle ? locateInText(source, needle, normalize) : null;
   if (located === null) return { text: clip(source, budget), matchAt: -1 };
   const needleLength = located.end - located.start;
   const window = Math.min(source.length, Math.max(budget, needleLength + 2));
@@ -139,13 +142,43 @@ export function clipAround(value, needle, budget = 400) {
   return { text: prefix + source.slice(start, end) + suffix, matchAt: prefix.length + (located.start - start) };
 }
 
-function locateInText(source, needle) {
+/**
+ * 把查询词编译成能匹配「原文」的正则源:
+ * 空白串 → \s+,连续反斜杠 → 一个或多个(或字面),中英文引号互认,其余字符转义。
+ */
+function needlePattern(needle, normalize) {
+  let out = "";
+  for (let index = 0; index < needle.length; index++) {
+    const char = needle[index];
+    if (/\s/.test(char)) {
+      while (index + 1 < needle.length && /\s/.test(needle[index + 1])) index++;
+      out += "\\s+";
+      continue;
+    }
+    if (char === "\\") {
+      while (index + 1 < needle.length && needle[index + 1] === "\\") index++;
+      out += normalize ? "\\\\+" : "\\\\";
+      continue;
+    }
+    if (normalize && char === '"') {
+      out += '["\u201C\u201D]';
+      continue;
+    }
+    if (normalize && char === "'") {
+      out += "['\u2018\u2019]";
+      continue;
+    }
+    out += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  return out;
+}
+
+function locateInText(source, needle, normalize) {
   const direct = source.toLowerCase().indexOf(needle.toLowerCase());
   if (direct >= 0) return { start: direct, end: direct + needle.length };
-  const tokens = needle.trim().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return null;
-  const pattern = new RegExp(tokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"), "i");
-  const found = pattern.exec(source);
+  const pattern = needlePattern(needle, normalize);
+  if (pattern === "") return null;
+  const found = new RegExp(pattern, "i").exec(source);
   if (found === null) return null;
   return { start: found.index, end: found.index + found[0].length };
 }
@@ -218,6 +251,26 @@ export function fold(text) {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+/**
+ * 归一化(issue #1):在 fold 之上再折叠连续反斜杠、统一中英文引号。
+ * 只在「匹配」时使用,查询与事件文本两侧同时归一;返回给模型的引文仍是原文 verbatim。
+ * 代价是 `\\` 与 `\` 等价 —— 对「找回过去的事实」可接受。
+ */
+export function norm(text) {
+  return fold(text)
+    .replace(/\\+/g, "\\")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'");
+}
+
+/** 关系链的有界渲染(issue #2):默认计数 + 首尾,full 时返回完整数组。 */
+export function boundSeqs(values, full = false) {
+  const list = Array.isArray(values) ? values : [];
+  if (full) return { count: list.length, items: list };
+  if (list.length <= TRACE_EDGE * 2) return { count: list.length, items: list, truncated: false };
+  return { count: list.length, head: list.slice(0, TRACE_EDGE), tail: list.slice(-TRACE_EDGE), truncated: true };
 }
 
 /* ------------------------------------------------------------------ *
@@ -456,6 +509,75 @@ async function listSessions(ctx, currentId) {
   );
 }
 
+/**
+ * 目录统计(issue #3):对一份事件日志做计数与范围统计,不返回任何内容。
+ * 与 trajectory_find 共用同一套默认过滤(excludeInjected / excludeSelf)。
+ */
+export function indexEvents(events, options = {}) {
+  const typeFilter = Array.isArray(options.typeFilter) ? options.typeFilter : [];
+  const toolNeedle = String(options.toolNeedle === undefined || options.toolNeedle === null ? "" : options.toolNeedle).toLowerCase();
+  const timeFrom = options.timeFrom === undefined || options.timeFrom === null ? null : Number(options.timeFrom);
+  const timeTo = options.timeTo === undefined || options.timeTo === null ? null : Number(options.timeTo);
+
+  const toolByCallId = new Map();
+  for (const event of events || []) {
+    if (event && event.type === "tool/call" && event.data && event.data.callId !== undefined) {
+      toolByCallId.set(String(event.data.callId), String(event.data.name || ""));
+    }
+  }
+  const selfCallIds = buildSelfCallIds(events);
+
+  const byType = {};
+  const byTool = {};
+  let total = 0;
+  let semantic = 0;
+  let minSeq = null;
+  let maxSeq = null;
+  let minTime = null;
+  let maxTime = null;
+
+  for (const event of events || []) {
+    if (!event || typeof event.seq !== "number") continue;
+    if (typeFilter.length > 0 && !typeFilter.includes(event.type)) continue;
+    if (timeFrom !== null && !(Number(event.time) >= timeFrom)) continue;
+    if (timeTo !== null && !(Number(event.time) <= timeTo)) continue;
+    if (isSelfEvent(event, selfCallIds)) continue;
+    const text = eventText(event);
+    if (isInjectedText(text)) continue;
+
+    let toolName = null;
+    if (event.type === "tool/call") {
+      toolName = String((event.data && event.data.name) || "");
+    } else if (event.type === "tool/result") {
+      const message = (event.data && event.data.message) || {};
+      const callId = (message.source && message.source.callId) || firstToolResultCallId(message);
+      toolName = callId === undefined ? null : toolByCallId.get(String(callId)) || null;
+    }
+    if (toolNeedle !== "" && !(toolName !== null && toolName.toLowerCase().includes(toolNeedle))) continue;
+
+    total++;
+    if (text.trim() !== "") semantic++;
+    byType[event.type] = (byType[event.type] || 0) + 1;
+    if (event.type === "tool/call" && toolName) byTool[toolName] = (byTool[toolName] || 0) + 1;
+    if (minSeq === null || event.seq < minSeq) minSeq = event.seq;
+    if (maxSeq === null || event.seq > maxSeq) maxSeq = event.seq;
+    const time = Number(event.time);
+    if (Number.isFinite(time)) {
+      if (minTime === null || time < minTime) minTime = time;
+      if (maxTime === null || time > maxTime) maxTime = time;
+    }
+  }
+
+  return {
+    events: total,
+    semanticEvents: semantic,
+    byType,
+    byTool,
+    seqRange: minSeq === null ? null : [minSeq, maxSeq],
+    timeRange: minTime === null ? null : [minTime, maxTime],
+  };
+}
+
 /* ------------------------------------------------------------------ *
  * 工具
  * ------------------------------------------------------------------ */
@@ -476,7 +598,7 @@ const OUTPUT = {
 const FAILED = (error) => ({ ok: false, error: String((error && error.message) || error) });
 
 export function apply(ctx) {
-  // 四个工具要么全注册、要么一个都不注册。重名会抛错(例如上一个进程里被 stop/undefine 的
+  // 工具要么全注册、要么一个都不注册。重名会抛错(例如上一个进程里被 stop/undefine 的
   // 动态插件留下了同名注册),此时静默少注册会让模型拿到半个工具集,不如显式失败并给出重启提示。
   const disposers = [];
   const conflicts = [];
@@ -519,9 +641,66 @@ export function apply(ctx) {
   });
 
   register({
+    name: "trajectory_index",
+    description:
+      "会话目录(不是搜索,issue #3):只给计数与范围,不返回内容。用来看「日志里有什么可查」,而不是凭空猜词。与 trajectory_find 共用同一套默认扫描集与过滤(excludeInjected / excludeSelf)。cwd / timeFrom / timeTo / type / tool 可收窄;limit 限制返回的会话数。只读。",
+    parameters: {
+      cwd: { type: "string", description: "只列 cwd 含该串的会话(大小写不敏感)" },
+      timeFrom: { type: "integer", description: "只统计时间 >= 该毫秒时间戳的事件" },
+      timeTo: { type: "integer", description: "只统计时间 <= 该毫秒时间戳的事件" },
+      type: { type: "array", items: { type: "string" }, description: "只统计这些事件类型,如 tool/result、assistant/message" },
+      tool: { type: "string", description: "只统计该工具名(大小写不敏感包含匹配)的 tool/call 及其结果" },
+      limit: { type: "integer", description: "最多返回多少个会话,默认 " + DEFAULT_INDEX_LIMIT + ",上限 " + MAX_INDEX_LIMIT },
+    },
+    output: OUTPUT,
+    async execute(args, exec) {
+      try {
+        const limit = Math.min(Math.max(Number(args.limit || DEFAULT_INDEX_LIMIT), 1), MAX_INDEX_LIMIT);
+        const currentId = currentSessionId(ctx, exec);
+        const all = await listSessions(ctx, currentId);
+        const cwdNeedle = typeof args.cwd === "string" ? args.cwd.trim().toLowerCase() : "";
+        const typeFilter = Array.isArray(args.type) ? args.type.map((value) => String(value)) : [];
+        const toolNeedle = typeof args.tool === "string" ? args.tool.trim().toLowerCase() : "";
+        const candidates = cwdNeedle === "" ? all : all.filter((record) => String(record.cwd || "").toLowerCase().includes(cwdNeedle));
+
+        const sessions = [];
+        let scanned = 0;
+        let failed = 0;
+        for (const record of candidates) {
+          if (sessions.length >= limit) break;
+          scanned++;
+          try {
+            const loaded = await withTimeout(loadEvents(ctx, record.id), LOAD_TIMEOUT_MS, "trajectory_index");
+            const stats = indexEvents(loaded.events, {
+              typeFilter,
+              toolNeedle,
+              timeFrom: args.timeFrom,
+              timeTo: args.timeTo,
+            });
+            sessions.push({
+              session: record.id,
+              cwd: record.cwd,
+              current: record.current === true,
+              live: record.live,
+              persisted: record.persisted,
+              log: logIdentity(record.id, loaded.events).id,
+              ...stats,
+            });
+          } catch {
+            failed++;
+          }
+        }
+        return { ok: true, current: currentId || null, scanned, failed, returned: sessions.length, sessions };
+      } catch (error) {
+        return FAILED(error);
+      }
+    },
+  });
+
+  register({
     name: "trajectory_find",
     description:
-      "在会话事件日志里按字面量子串查找(大小写不敏感、空白灵活)。只给事实与位置:每条命中返回 (session, seq, type, time) 与逐字片段,片段以命中点为中心、保证包含查询词,并给出 matchAt。给 session 时在该会话内查;否则默认扫描「当前会话 + 所有 live 会话 + 最近若干已持久化会话」。默认过滤注入样板(<system-reminder> 的 workspace 指令)与 trajectory_* 自身的调用/结果,可用 excludeInjected / excludeSelf 关闭。空结果 = 日志里确实没有,不要用常识补。",
+      "在会话事件日志里按字面量子串查找(大小写不敏感、空白灵活;默认还会把连续反斜杠折叠为一个、统一中英文引号,便于查转义过的路径)。只给事实与位置:每条命中返回 (session, seq, type, time) 与逐字片段,片段以命中点为中心、保证包含命中文本,并给出 matchAt。给 session 时在该会话内查;否则默认扫描「当前会话 + 所有 live 会话 + 最近若干已持久化会话」。默认过滤注入样板(<system-reminder> 的 workspace 指令)与 trajectory_* 自身的调用/结果,可用 excludeInjected / excludeSelf 关闭。空结果 = 日志里确实没有,不要用常识补。",
     parameters: {
       session: { type: "string", description: "会话 id;缺省则扫描当前会话 + live 会话 + 最近若干已持久化会话" },
       query: { type: "string", description: "查找词(按字面子串匹配)" },
@@ -531,6 +710,7 @@ export function apply(ctx) {
       timeFrom: { type: "integer", description: "时间下界(毫秒时间戳,含)" },
       timeTo: { type: "integer", description: "时间上界(毫秒时间戳,含)" },
       sessionCount: { type: "integer", description: "缺省 session 时额外扫描的已持久化会话数,默认 3,上限 10(当前会话与所有 live 会话总是包含)" },
+      normalize: { type: "boolean", description: "默认 true:匹配时把连续反斜杠折叠为一个、中英文引号互认(引文仍是原文);查转义路径建议保持开启" },
       excludeInjected: { type: "boolean", description: "默认 true:跳过注入样板(如 <system-reminder> 的 workspace 指令)" },
       excludeSelf: { type: "boolean", description: "默认 true:跳过 trajectory_* 工具自身的调用与结果" },
       limit: { type: "integer", description: "最大返回条数,默认 " + DEFAULT_FIND_LIMIT + ",上限 " + MAX_FIND_LIMIT },
@@ -547,7 +727,8 @@ export function apply(ctx) {
         }
         const excludeInjected = args.excludeInjected !== false;
         const excludeSelf = args.excludeSelf !== false;
-        const foldedNeedle = needle ? fold(needle) : "";
+        const normalize = args.normalize !== false;
+        const needleKey = needle ? (normalize ? norm(needle) : fold(needle)) : "";
 
         const scan = (events) => {
           const selfCallIds = excludeSelf ? buildSelfCallIds(events) : null;
@@ -561,7 +742,7 @@ export function apply(ctx) {
             if (args.timeFrom !== undefined && !(Number(event.time) >= Number(args.timeFrom))) continue;
             if (args.timeTo !== undefined && !(Number(event.time) <= Number(args.timeTo))) continue;
             const text = eventText(event);
-            if (foldedNeedle && !fold(text).includes(foldedNeedle)) continue;
+            if (needleKey && !(normalize ? norm(text) : fold(text)).includes(needleKey)) continue;
             if (excludeInjected && isInjectedText(text)) {
               filtered.injected++;
               continue;
@@ -576,7 +757,7 @@ export function apply(ctx) {
         };
 
         const toItem = (sessionId, hit, logId) => {
-          const snippet = clipAround(hit.text, needle, 400);
+          const snippet = clipAround(hit.text, needle, 400, normalize);
           return {
             session: sessionId,
             seq: hit.event.seq,
@@ -601,6 +782,7 @@ export function apply(ctx) {
             log,
             hitCount: hits.length,
             returned: Math.min(hits.length, limit),
+            normalized: normalize,
             filtered,
             items: hits.slice(0, limit).map((hit) => toItem(sessionId, hit, log.id)),
           };
@@ -643,6 +825,7 @@ export function apply(ctx) {
           failed: failures,
           targets: targets.map((record) => record.id),
           returned: items.length,
+          normalized: normalize,
           filtered: filteredTotal,
           items,
         };
@@ -708,10 +891,11 @@ export function apply(ctx) {
   register({
     name: "trajectory_trace",
     description:
-      "关系链:给 (session, seq) 返回该事件的替换/引用/派生链;只给 session 返回谱系(祖先 / 子会话 / 子代理)。需要 sessionQuery 服务。只读。",
+      "关系链:给 (session, seq) 返回该事件的替换/引用/派生链;只给 session 返回谱系(祖先 / 子会话 / 子代理)。链默认只给计数与首尾(实测 sourceEventSeqs 可达上千项,避免烧 token);需要完整集合用 full=true,或改用 trajectory_window 分段读取。需要 sessionQuery 服务。只读。",
     parameters: {
       session: { type: "string", required: true, description: "会话 id" },
       seq: { type: "integer", description: "事件 seq;给定时返回事件关系,缺省返回会话谱系" },
+      full: { type: "boolean", description: "默认 false:关系链只给 count + 首/尾;true 返回完整数组(可能上千项)" },
     },
     output: OUTPUT,
     async execute(args) {
@@ -719,6 +903,7 @@ export function apply(ctx) {
         const query = ctx.get("sessionQuery");
         if (query === undefined) return { ok: false, error: "sessionQuery 服务不可用" };
         const sessionId = String(args.session);
+        const full = args.full === true;
         if (args.seq !== undefined && args.seq !== null) {
           const traced = await query.traceEvent({ sessionId, seq: Number(args.seq) });
           const target = traced.target || {};
@@ -726,11 +911,12 @@ export function apply(ctx) {
             ok: true,
             session: sessionId,
             target: { seq: target.seq, type: target.type, time: target.time, surface: target.surface },
-            replacedBy: traced.replacedBy,
-            replacementChain: traced.replacementChain,
-            replacedEventSeqs: traced.replacedEventSeqs,
-            sourceEventSeqs: traced.sourceEventSeqs,
-            derivedEventSeqs: traced.derivedEventSeqs,
+            replacedBy: traced.replacedBy === undefined ? null : traced.replacedBy,
+            replacementChain: boundSeqs(traced.replacementChain, full),
+            replacedEventSeqs: boundSeqs(traced.replacedEventSeqs, full),
+            sourceEventSeqs: boundSeqs(traced.sourceEventSeqs, full),
+            derivedEventSeqs: boundSeqs(traced.derivedEventSeqs, full),
+            full,
           };
         }
         const traced = await query.traceSession(sessionId);
@@ -762,7 +948,7 @@ export function apply(ctx) {
       }
     }
     throw new Error(
-      "dsh-trajectory-tools: 工具名已被占用,四个工具都不注册(" +
+      "dsh-trajectory-tools: 工具名已被占用,全部工具都不注册(" +
         conflicts.join("; ") +
         ")。常见原因:上一个进程里被 stop/undefine 的动态插件留下了同名注册。重启 dsh web 后即可恢复。",
     );
