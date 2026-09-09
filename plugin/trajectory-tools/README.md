@@ -21,10 +21,25 @@ interprets facts instead of reconstructing them.
 
 | Tool | What it returns |
 |---|---|
-| `trajectory_sessions` | queryable sessions (live + persisted): id, createdAt, cwd, parent, preset |
-| `trajectory_find` | literal substring search over events → `(session, seq, type, time)` + verbatim snippet |
+| `trajectory_sessions` | queryable sessions, ordered current → live → persisted: id, createdAt, cwd, parent, preset, `current` |
+| `trajectory_find` | literal substring search over events → `(session, seq, type, time)` + a snippet centred on the match (`matchAt`), always containing the query text |
 | `trajectory_window` | verbatim window by `(session, seq range)`, max 60 events |
 | `trajectory_trace` | event replacement / source / derived chain, or session lineage |
+
+### Default scope and filtering
+
+Without `session`, `trajectory_find` scans **the current session + every live session + a few
+persisted sessions** (persisted sessions are ranked by `createdAt` — there is no cheap
+"last activity" signal for them). The current session is resolved from the tool execution context,
+so a long session whose `createdAt` is ancient is still searched.
+
+Two filters are on by default, because the naive result set is mostly noise:
+
+- `excludeInjected` — drops injected boilerplate (the `<system-reminder>` workspace instructions).
+- `excludeSelf` — drops `trajectory_*`'s own calls and results, so searching for a word does not
+  return the search itself.
+
+Both can be turned off; the response reports `filtered: { injected, self }` either way.
 
 ### Principles
 
@@ -55,9 +70,9 @@ legacy fallback   → ctx.sessionPersistence.inspect(id)
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.1.3.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.1.4.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.3.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.4.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. reload/restart `dsh web`       # host plugins do not hot-reload reliably
@@ -69,7 +84,7 @@ legacy fallback   → ctx.sessionPersistence.inspect(id)
 |---|---|
 | `lib/index.js` | host half: reads the log and registers the four tools |
 | `lib/skill.js` | the `trajectory-query` runtime skill body |
-| `self-test.mjs` | 40 contract checks against a fake ctx + synthetic log (no real session) |
+| `self-test.mjs` | 75 contract checks against a fake ctx + synthetic log (no real session) |
 | `cordis.patch.yml` | bundle layer that inserts the plugin row |
 | `package.json` | `dsh.bundle.patch` (host-only; no client half) |
 
@@ -97,10 +112,23 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 
 | 工具 | 返回 |
 |---|---|
-| `trajectory_sessions` | 可查询的会话(存活 + 已持久化):id、创建时间、cwd、父会话、preset |
-| `trajectory_find` | 事件字面量子串检索 → `(session, seq, type, time)` + 逐字片段 |
+| `trajectory_sessions` | 可查询的会话,排序:当前 → live → 已持久化:id、创建时间、cwd、父会话、preset、`current` |
+| `trajectory_find` | 事件字面量子串检索 → `(session, seq, type, time)` + 以命中点为中心的片段(`matchAt`),必定包含查询词 |
 | `trajectory_window` | 按 `(session, seq 区间)` 取原文窗口,上限 60 个事件 |
 | `trajectory_trace` | 事件替换 / 引用 / 派生链,或会话谱系 |
+
+### 默认范围与过滤
+
+不给 `session` 时,`trajectory_find` 扫描 **当前会话 + 所有 live 会话 + 最近若干已持久化会话**
+(已持久化会话按 `createdAt` 排序——它们没有便宜的"最近活动"信号)。当前会话取自工具执行上下文,
+所以一个 `createdAt` 很老的长会话依然会被搜到。
+
+两个过滤器默认开启,因为不过滤的结果集大半是噪声:
+
+- `excludeInjected` — 丢掉注入样板(`<system-reminder>` 的 workspace 指令)。
+- `excludeSelf` — 丢掉 `trajectory_*` 自己的调用与结果,避免"查什么就命中这次查询本身"。
+
+两者都可关闭;无论开关,返回里都带 `filtered: { injected, self }`。
 
 ### 原则
 
@@ -130,9 +158,9 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.1.3.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.1.4.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.3.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.4.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新
@@ -144,7 +172,7 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 |---|---|
 | `lib/index.js` | host 半边:读日志并注册四个工具 |
 | `lib/skill.js` | `trajectory-query` runtime skill 正文 |
-| `self-test.mjs` | 40 项契约检查(假 ctx + 合成日志,不连真实会话) |
+| `self-test.mjs` | 75 项契约检查(假 ctx + 合成日志,不连真实会话) |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch`(纯 host,无客户端半边) |
 

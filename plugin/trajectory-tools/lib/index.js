@@ -116,6 +116,102 @@ function clip(value, max) {
   return text.length <= max ? text : text.slice(0, max) + "…[+truncated]";
 }
 
+/**
+ * 以命中点为中心截取片段:保证 needle 一定完整落在返回的 text 里。
+ * 匹配是「大小写不敏感 + 空白折叠」的,所以定位分两步:先按原文 indexOf,
+ * 失败再用 needle 的分词构造 \s+ 正则找回原文里的真实位置。
+ * 查询词本身比预算还长时,窗口按查询词长度放宽,不截断查询词。
+ */
+export function clipAround(value, needle, budget = 400) {
+  const source = String(value === undefined || value === null ? "" : value);
+  const located = needle ? locateInText(source, needle) : null;
+  if (located === null) return { text: clip(source, budget), matchAt: -1 };
+  const needleLength = located.end - located.start;
+  const window = Math.min(source.length, Math.max(budget, needleLength + 2));
+  let start = Math.max(0, located.start - Math.max(0, Math.floor((window - needleLength) / 2)));
+  let end = start + window;
+  if (end > source.length) {
+    end = source.length;
+    start = Math.max(0, end - window);
+  }
+  const prefix = start > 0 ? "…" : "";
+  const suffix = end < source.length ? "…" : "";
+  return { text: prefix + source.slice(start, end) + suffix, matchAt: prefix.length + (located.start - start) };
+}
+
+function locateInText(source, needle) {
+  const direct = source.toLowerCase().indexOf(needle.toLowerCase());
+  if (direct >= 0) return { start: direct, end: direct + needle.length };
+  const tokens = needle.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+  const pattern = new RegExp(tokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"), "i");
+  const found = pattern.exec(source);
+  if (found === null) return null;
+  return { start: found.index, end: found.index + found[0].length };
+}
+
+/** 注入样板(workspace 指令等)的固定前缀。 */
+const INJECTED_PREFIX = "<system-reminder>";
+
+export function isInjectedText(text) {
+  return String(text === undefined || text === null ? "" : text).trimStart().startsWith(INJECTED_PREFIX);
+}
+
+export function isTrajectoryTool(name) {
+  return typeof name === "string" && name.startsWith("trajectory_");
+}
+
+/** 收集 trajectory_* 工具的 callId,用于把对应的 tool/result 一并排除。 */
+export function buildSelfCallIds(events) {
+  const ids = new Set();
+  for (const event of events || []) {
+    if (!event || event.type !== "tool/call") continue;
+    const data = event.data || {};
+    if (isTrajectoryTool(data.name) && data.callId !== undefined) ids.add(String(data.callId));
+  }
+  return ids;
+}
+
+/**
+ * 是否由 trajectory_* 自己产生:工具调用、对应结果,以及「只含 trajectory_* 调用块、
+ * 没有其它内容」的助手消息(模型只是在请求这次查询)。
+ */
+export function isSelfEvent(event, selfCallIds) {
+  const data = (event && event.data) || {};
+  if (event.type === "tool/call") return isTrajectoryTool(data.name);
+  if (event.type === "tool/result") {
+    const message = data.message || {};
+    const callId = (message.source && message.source.callId) || firstToolResultCallId(message);
+    return callId !== undefined && selfCallIds instanceof Set && selfCallIds.has(String(callId));
+  }
+  if (event.type === "assistant/message") {
+    const blocks = (data.message && data.message.content) || [];
+    let own = 0;
+    let other = 0;
+    for (const block of blocks) {
+      if (!block || typeof block !== "object") continue;
+      if (block.type === "reasoning") continue;
+      if (block.type === "tool-call") {
+        if (isTrajectoryTool(block.name)) own++;
+        else other++;
+      } else if (block.type === "text") {
+        if (String(block.text || "").trim() !== "") other++;
+      } else {
+        other++;
+      }
+    }
+    return own > 0 && other === 0;
+  }
+  return false;
+}
+
+function firstToolResultCallId(message) {
+  for (const block of (message && message.content) || []) {
+    if (block && block.type === "tool-result" && block.toolCallId !== undefined) return block.toolCallId;
+  }
+  return undefined;
+}
+
 /** 折叠空白,让换行/多空格与单空格等价(大小写不敏感)。 */
 export function fold(text) {
   return String(text === undefined || text === null ? "" : text)
@@ -271,7 +367,7 @@ async function readWindow(ctx, sessionId, from, to) {
  * 会话清单
  * ------------------------------------------------------------------ */
 
-function headerFields(header, live, persisted) {
+function headerFields(header, live, persisted, current, lastEventTime) {
   const source = header || {};
   return {
     id: source.id || null,
@@ -282,34 +378,82 @@ function headerFields(header, live, persisted) {
     isSeeded: source.isSeeded === true,
     live,
     persisted,
+    current: current === true,
+    ...(lastEventTime === undefined || lastEventTime === null ? {} : { lastEventTime }),
   };
 }
 
-async function listSessions(ctx) {
+/** 当前会话 id:优先取工具执行上下文里的 agent,再退到 agents.currentInitiator()。 */
+export function currentSessionId(ctx, exec) {
+  const fromExec = exec && exec.agent && exec.agent.session && exec.agent.session.id;
+  if (typeof fromExec === "string" && fromExec !== "") return fromExec;
+  const agents = ctx.get("agents");
+  const agent = agents !== undefined && typeof agents.currentInitiator === "function" ? agents.currentInitiator() : undefined;
+  const id = agent && agent.session && agent.session.id;
+  return typeof id === "string" && id !== "" ? id : undefined;
+}
+
+/**
+ * 会话清单,排序:当前会话 → live(最近事件时间降序)→ 已持久化(createdAt 降序)。
+ * live 的 lastEventTime 来自内存快照(很便宜);已持久化会话没有便宜的最近活动信号,
+ * 只能按 createdAt —— 这是已知局限,长会话请显式传 session。
+ */
+async function listSessions(ctx, currentId) {
   const query = ctx.get("sessionQuery");
+  let records;
   if (query !== undefined && typeof query.listSessions === "function") {
-    const records = await query.listSessions();
-    return records.map((record) => headerFields(record.header, record.live === true, record.persisted === true));
-  }
-  // 兜底:存活会话 + 持久化快照,按 id 合并(存活优先)。
-  const byId = new Map();
-  const persistence = ctx.get("sessionPersistence");
-  if (persistence !== undefined && typeof persistence.list === "function") {
-    for (const snapshot of (await persistence.list()) || []) {
-      const header = (snapshot && snapshot.header) || null;
-      if (header && header.id) byId.set(header.id, headerFields(header, false, true));
+    records = (await query.listSessions()).map((record) => ({
+      header: record.header,
+      live: record.live === true,
+      persisted: record.persisted === true,
+    }));
+  } else {
+    // 兜底:存活会话 + 持久化快照,按 id 合并(存活优先)。
+    const byId = new Map();
+    const persistence = ctx.get("sessionPersistence");
+    if (persistence !== undefined && typeof persistence.list === "function") {
+      for (const snapshot of (await persistence.list()) || []) {
+        const header = (snapshot && snapshot.header) || null;
+        if (header && header.id) byId.set(header.id, { header, live: false, persisted: true });
+      }
     }
+    const sessions = ctx.get("sessions");
+    if (sessions !== undefined && typeof sessions.list === "function") {
+      for (const session of sessions.list() || []) {
+        const header = session.header || session;
+        if (!header || !header.id) continue;
+        const previous = byId.get(header.id);
+        byId.set(header.id, { header, live: true, persisted: previous ? previous.persisted : false });
+      }
+    }
+    records = [...byId.values()];
   }
+
   const sessions = ctx.get("sessions");
-  if (sessions !== undefined && typeof sessions.list === "function") {
-    for (const session of sessions.list() || []) {
-      const header = session.header || session;
-      if (!header || !header.id) continue;
-      const previous = byId.get(header.id);
-      byId.set(header.id, headerFields(header, true, previous ? previous.persisted : false));
+  for (const record of records) {
+    if (!record.live) continue;
+    const live = sessions !== undefined && typeof sessions.get === "function" ? sessions.get(record.header.id) : undefined;
+    if (live !== undefined && typeof live.snapshotEvents === "function") {
+      const last = lastEventOf(live.snapshotEvents());
+      record.lastEventTime = last ? last.time : null;
     }
   }
-  return [...byId.values()].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  records.sort((a, b) => {
+    const aCurrent = a.header.id === currentId;
+    const bCurrent = b.header.id === currentId;
+    if (aCurrent !== bCurrent) return aCurrent ? -1 : 1;
+    if (a.live !== b.live) return a.live ? -1 : 1;
+    if (a.live) {
+      const delta = (b.lastEventTime || 0) - (a.lastEventTime || 0);
+      if (delta !== 0) return delta;
+    }
+    return (b.header.createdAt || 0) - (a.header.createdAt || 0) || String(a.header.id).localeCompare(String(b.header.id));
+  });
+
+  return records.map((record) =>
+    headerFields(record.header, record.live, record.persisted, record.header.id === currentId, record.lastEventTime),
+  );
 }
 
 /* ------------------------------------------------------------------ *
@@ -349,18 +493,25 @@ export function apply(ctx) {
   register({
     name: "trajectory_sessions",
     description:
-      "列出可查询的会话(当前存活 + 已持久化),返回 id、创建时间、cwd、父会话、preset、live/persisted。先用它确定 session id,再传给其它 trajectory_* 工具。只读。",
+      "列出可查询的会话(当前存活 + 已持久化),返回 id、创建时间、cwd、父会话、preset、live/persisted/current。排序:当前会话 → live(最近事件时间降序)→ 已持久化(createdAt 降序)。先用它确定 session id,再传给其它 trajectory_* 工具。只读。",
     parameters: {
       limit: { type: "integer", description: "返回条数,默认 " + DEFAULT_SESSION_LIMIT + ",上限 " + MAX_SESSION_LIMIT },
       liveOnly: { type: "boolean", description: "只列当前存活会话(默认 false:存活 + 已持久化)" },
     },
     output: OUTPUT,
-    async execute(args) {
+    async execute(args, exec) {
       try {
         const limit = Math.min(Math.max(Number(args.limit || DEFAULT_SESSION_LIMIT), 1), MAX_SESSION_LIMIT);
-        const all = await listSessions(ctx);
+        const currentId = currentSessionId(ctx, exec);
+        const all = await listSessions(ctx, currentId);
         const filtered = args.liveOnly === true ? all.filter((item) => item.live) : all;
-        return { ok: true, total: all.length, returned: Math.min(filtered.length, limit), items: filtered.slice(0, limit) };
+        return {
+          ok: true,
+          current: currentId || null,
+          total: all.length,
+          returned: Math.min(filtered.length, limit),
+          items: filtered.slice(0, limit),
+        };
       } catch (error) {
         return FAILED(error);
       }
@@ -370,20 +521,22 @@ export function apply(ctx) {
   register({
     name: "trajectory_find",
     description:
-      "在会话事件日志里按字面量子串查找(大小写不敏感、空白灵活)。只给事实与位置:每条命中返回 (session, seq, type, time) 与逐字片段,不做语义改写。给 session 时在该会话内查;否则扫描最近若干会话。空结果 = 日志里确实没有,不要用常识补。",
+      "在会话事件日志里按字面量子串查找(大小写不敏感、空白灵活)。只给事实与位置:每条命中返回 (session, seq, type, time) 与逐字片段,片段以命中点为中心、保证包含查询词,并给出 matchAt。给 session 时在该会话内查;否则默认扫描「当前会话 + 所有 live 会话 + 最近若干已持久化会话」。默认过滤注入样板(<system-reminder> 的 workspace 指令)与 trajectory_* 自身的调用/结果,可用 excludeInjected / excludeSelf 关闭。空结果 = 日志里确实没有,不要用常识补。",
     parameters: {
-      session: { type: "string", description: "会话 id;缺省则跨最近若干会话搜索" },
+      session: { type: "string", description: "会话 id;缺省则扫描当前会话 + live 会话 + 最近若干已持久化会话" },
       query: { type: "string", description: "查找词(按字面子串匹配)" },
       types: { type: "array", items: { type: "string" }, description: "事件类型过滤,如 user/message、tool/call、tool/result、assistant/message" },
       from: { type: "integer", description: "seq 下界(含)" },
       to: { type: "integer", description: "seq 上界(含)" },
       timeFrom: { type: "integer", description: "时间下界(毫秒时间戳,含)" },
       timeTo: { type: "integer", description: "时间上界(毫秒时间戳,含)" },
-      sessionCount: { type: "integer", description: "缺省 session 时扫描的最近会话数,默认 3,上限 10" },
+      sessionCount: { type: "integer", description: "缺省 session 时额外扫描的已持久化会话数,默认 3,上限 10(当前会话与所有 live 会话总是包含)" },
+      excludeInjected: { type: "boolean", description: "默认 true:跳过注入样板(如 <system-reminder> 的 workspace 指令)" },
+      excludeSelf: { type: "boolean", description: "默认 true:跳过 trajectory_* 工具自身的调用与结果" },
       limit: { type: "integer", description: "最大返回条数,默认 " + DEFAULT_FIND_LIMIT + ",上限 " + MAX_FIND_LIMIT },
     },
     output: OUTPUT,
-    async execute(args) {
+    async execute(args, exec) {
       try {
         const limit = Math.min(Math.max(Number(args.limit || DEFAULT_FIND_LIMIT), 1), MAX_FIND_LIMIT);
         const needle = typeof args.query === "string" ? args.query.trim() : "";
@@ -392,66 +545,107 @@ export function apply(ctx) {
         if (!needle && types.length === 0 && !hasRange) {
           return { ok: false, error: "至少需要 query、types、from/to 或 timeFrom/timeTo 之一" };
         }
-        const matches = (event) => {
-          if (!event || typeof event.seq !== "number") return false;
-          if (types.length > 0 && !types.includes(event.type)) return false;
-          if (args.from !== undefined && event.seq < Number(args.from)) return false;
-          if (args.to !== undefined && event.seq > Number(args.to)) return false;
-          if (args.timeFrom !== undefined && !(Number(event.time) >= Number(args.timeFrom))) return false;
-          if (args.timeTo !== undefined && !(Number(event.time) <= Number(args.timeTo))) return false;
-          if (needle && !fold(eventText(event)).includes(fold(needle))) return false;
-          return true;
+        const excludeInjected = args.excludeInjected !== false;
+        const excludeSelf = args.excludeSelf !== false;
+        const foldedNeedle = needle ? fold(needle) : "";
+
+        const scan = (events) => {
+          const selfCallIds = excludeSelf ? buildSelfCallIds(events) : null;
+          const hits = [];
+          const filtered = { injected: 0, self: 0 };
+          for (const event of events || []) {
+            if (!event || typeof event.seq !== "number") continue;
+            if (types.length > 0 && !types.includes(event.type)) continue;
+            if (args.from !== undefined && event.seq < Number(args.from)) continue;
+            if (args.to !== undefined && event.seq > Number(args.to)) continue;
+            if (args.timeFrom !== undefined && !(Number(event.time) >= Number(args.timeFrom))) continue;
+            if (args.timeTo !== undefined && !(Number(event.time) <= Number(args.timeTo))) continue;
+            const text = eventText(event);
+            if (foldedNeedle && !fold(text).includes(foldedNeedle)) continue;
+            if (excludeInjected && isInjectedText(text)) {
+              filtered.injected++;
+              continue;
+            }
+            if (excludeSelf && isSelfEvent(event, selfCallIds)) {
+              filtered.self++;
+              continue;
+            }
+            hits.push({ event, text });
+          }
+          return { hits, filtered };
+        };
+
+        const toItem = (sessionId, hit, logId) => {
+          const snippet = clipAround(hit.text, needle, 400);
+          return {
+            session: sessionId,
+            seq: hit.event.seq,
+            type: hit.event.type,
+            time: hit.event.time,
+            log: logId,
+            text: snippet.text,
+            matchAt: snippet.matchAt,
+          };
         };
 
         if (args.session) {
-          const loaded = await withTimeout(loadEvents(ctx, String(args.session)), LOAD_TIMEOUT_MS, "trajectory_find");
-          const hits = loaded.events.filter(matches);
+          const sessionId = String(args.session);
+          const loaded = await withTimeout(loadEvents(ctx, sessionId), LOAD_TIMEOUT_MS, "trajectory_find");
+          const { hits, filtered } = scan(loaded.events);
+          const log = logIdentity(sessionId, loaded.events);
           return {
             ok: true,
             mode: "literal-in-session",
-            session: String(args.session),
+            session: sessionId,
             source: loaded.source,
-            log: logIdentity(String(args.session), loaded.events),
+            log,
             hitCount: hits.length,
             returned: Math.min(hits.length, limit),
-            items: hits.slice(0, limit).map((event) => ({
-              session: String(args.session),
-              seq: event.seq,
-              type: event.type,
-              time: event.time,
-              text: clip(eventText(event), 400),
-            })),
+            filtered,
+            items: hits.slice(0, limit).map((hit) => toItem(sessionId, hit, log.id)),
           };
         }
 
+        const currentId = currentSessionId(ctx, exec);
         const sessionCount = Math.min(Math.max(Number(args.sessionCount || 3), 1), 10);
-        const targets = (await listSessions(ctx)).slice(0, sessionCount);
+        const all = await listSessions(ctx, currentId);
+        const always = all.filter((record) => record.current === true || record.live === true);
+        const alwaysIds = new Set(always.map((record) => record.id));
+        const extra = all.filter((record) => !alwaysIds.has(record.id)).slice(0, sessionCount);
+        const targets = [...always, ...extra];
+
         const items = [];
         let scanned = 0;
         let failures = 0;
+        const filteredTotal = { injected: 0, self: 0 };
         for (const target of targets) {
           if (items.length >= limit) break;
           scanned++;
           try {
             const loaded = await withTimeout(loadEvents(ctx, target.id), LOAD_TIMEOUT_MS, "trajectory_find");
             const log = logIdentity(target.id, loaded.events);
-            for (const event of loaded.events) {
+            const { hits, filtered } = scan(loaded.events);
+            filteredTotal.injected += filtered.injected;
+            filteredTotal.self += filtered.self;
+            for (const hit of hits) {
               if (items.length >= limit) break;
-              if (!matches(event)) continue;
-              items.push({
-                session: target.id,
-                seq: event.seq,
-                type: event.type,
-                time: event.time,
-                log: log.id,
-                text: clip(eventText(event), 400),
-              });
+              items.push(toItem(target.id, hit, log.id));
             }
           } catch {
             failures++;
           }
         }
-        return { ok: true, mode: "literal-cross-session", scanned, failed: failures, returned: items.length, items };
+        return {
+          ok: true,
+          mode: "literal-cross-session",
+          current: currentId || null,
+          scanned,
+          failed: failures,
+          targets: targets.map((record) => record.id),
+          returned: items.length,
+          filtered: filteredTotal,
+          items,
+        };
       } catch (error) {
         return FAILED(error);
       }

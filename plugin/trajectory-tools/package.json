@@ -1,6 +1,6 @@
 {
   "name": "dsh-trajectory-tools",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "面向模型的会话轨迹查询工具:在 DSH 已有的事件日志上做逐字检索/窗口/关系链,只读、不改写事实。",
   "type": "module",
   "main": "lib/index.js",

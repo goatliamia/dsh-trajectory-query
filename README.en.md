@@ -67,8 +67,10 @@ Three things: **fetch facts**, **organize facts**, **constrain the discipline**.
 registers four read-only tools (`trajectory_sessions / find / window / trace`) that read the event
 log DSH already keeps (live sessions from an in-memory snapshot, settled sessions through a
 `sessionPersistence` handle) without depending on `ctx.sessionQuery`. Evidence-first: every answer
-carries `(session, seq@logId)` and quotes the original text verbatim; a search that returns nothing
-is a verifiable "no such fact".
+carries `(session, seq@logId)` and quotes the original text verbatim, with a snippet centred on the
+match; a search that returns nothing is a verifiable "no such fact". Without `session`, `find`
+searches the current session plus every live session by default, and drops injected boilerplate and
+the tools' own calls (`excludeInjected` / `excludeSelf`), so "searching" does not return the search.
 
 **2. Resident Analysis tab (Web GUI)** — a third tab beside *Conversation | Trajectory* that renders
 a **runtime incident view**:
@@ -128,7 +130,7 @@ node analyzers/self-test.mjs
 pnpm pack                                  # in each plugin directory
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: add
-#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.3.tgz"
+#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.4.tgz"
 #     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.1.0.tgz"
 #   dsh.profile.bundles: append "dsh-trajectory-tools" and "dsh-analysis-view"
 pnpm install            # in ~/.dsh/profiles/web
@@ -138,23 +140,24 @@ pnpm install            # in ~/.dsh/profiles/web
 ## Verify
 
 ```text
-cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (46 checks)
+cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (75 checks)
 node analyzers/self-test.mjs        # analyzer semantics
 node analyzers/host-self-test.mjs   # host-side incident detection
 ```
 
-After restarting `dsh web`, confirm that the model's tool list contains `trajectory_*` (the one
-with a `liveOnly` parameter is the new implementation), that the skill catalog contains
-`trajectory-query`, and that `/analysis-view/digest` returns 200 for a settled session.
+After restarting `dsh web`, confirm that the model's tool list contains `trajectory_*`, that the
+skill catalog contains `trajectory-query`, that `trajectory_find` results carry `matchAt` and
+`filtered` (the 0.1.4 markers), and that `/analysis-view/digest` returns 200 for a settled session.
 
 ## Known gaps
 
 - The panel's incidents come from the host route `/analysis-view/digest` (same-args repeat, no-op turn and harness response are decided on the host); the panel renders evidence only.
 - `Harness response` is derived from error codes (guard intercepted / no guard, model must self-correct), not a template.
 - Host analysis and `analyzers/incidents.mjs` are two implementations (runtime cannot import repo scripts); each is pinned by its own self-test.
-- Settled sessions are read via `sessionPersistence.open(id, 'read')` (v0.1.3+); a legacy `inspect()` fallback remains.
+- Settled sessions are read via `sessionPersistence.open(id, 'read')` (DSH v0.1.3+); a legacy `inspect()` fallback remains.
 - `seq` is only stable inside one log revision, so citations must carry `logId`; after a version rewrite an old `seq` may point at a different event.
-- The query tools are a host plugin: `dsh web` must be restarted before they appear in the model's tool list; if a tool name is already taken the plugin fails loudly instead of half-registering. Its contract is pinned by `plugin/trajectory-tools/self-test.mjs` (46 checks).
+- The query tools are a host plugin: `dsh web` must be restarted before they appear in the model's tool list; if a tool name is already taken the plugin fails loudly instead of half-registering. Its contract is pinned by `plugin/trajectory-tools/self-test.mjs` (75 checks).
+- Without `session`, `find` scans the current session + every live session + a few persisted ones; persisted sessions are ranked by `createdAt` (there is no cheap last-activity signal), so pass `session` explicitly for a long-settled session.
 - `trajectory_trace` is the only one of the four that still depends on `ctx.sessionQuery`; the other three need only `sessions` / `sessionPersistence`.
 
 ## License
