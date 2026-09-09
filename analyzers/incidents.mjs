@@ -71,5 +71,14 @@ export const incidents = {
     });
     list.sort((a, b) => b.severity - a.severity);
     return { turns, toolCalls, errors, emptyTurns, incidentCount: list.length, incidents: list };
+  },
+  // 表格摘要随 analyzer 自带(issue #4):空表也不能是空单元格
+  summary(f) {
+    const list = f.incidents || [];
+    if (list.length === 0) return '0 incidents';
+    const byType = {};
+    for (const inc of list) byType[inc.type] = (byType[inc.type] || 0) + 1;
+    const noun = f.incidentCount === 1 ? 'incident' : 'incidents';
+    return `${f.incidentCount} ${noun}: ` + Object.entries(byType).map(([type, n]) => `${type}×${n}`).join(', ');
   }
 };

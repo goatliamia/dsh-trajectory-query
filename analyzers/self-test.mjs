@@ -2,6 +2,9 @@
 // Usage: node analyzers/self-test.mjs   (失败退出码 1)
 import { incidents } from './incidents.mjs';
 import { errors } from './errors.mjs';
+import { turns } from './turns.mjs';
+import { tools } from './tools.mjs';
+import { retry } from './retry.mjs';
 
 let failed = 0;
 const check = (name, cond, extra) => {
@@ -54,6 +57,20 @@ check('同名不同参 → 不报 retry-loop', !a4.incidents.some((x) => x.type 
 const emptyTurn = [ev('turn/start', 0, { turn: 1 }), ev('turn/start', 1, { turn: 2 }), ev('assistant/message', 2, { message: { content: [{ type: 'text', text: 'ok' }] } })];
 const a5 = incidents.run(emptyTurn);
 check('空 turn = 无工具且无助手产出', a5.emptyTurns === 1, a5);
+
+// 6) 表格契约(issue #4):每个 analyzer 必须自带 summary,runner 不再逐个 if;
+//    摘要对空日志也非空,否则 digest 表会出现空单元格。
+const ANALYZERS = [turns, tools, errors, retry, incidents];
+for (const a of ANALYZERS) {
+  check(`${a.id} 暴露 summary()`, typeof a.summary === 'function', a.id);
+  const empty = typeof a.summary === 'function' ? a.summary(a.run([])) : '';
+  check(`${a.id} summary 对空日志非空`, typeof empty === 'string' && empty.trim() !== '', empty);
+  const filled = typeof a.summary === 'function' ? a.summary(a.run(withError)) : '';
+  check(`${a.id} summary 对真实日志非空`, typeof filled === 'string' && filled.trim() !== '', filled);
+}
+const incidentsSummary = incidents.summary(a1);
+check('incidents summary 报条数与类型', incidentsSummary.includes(String(a1.incidentCount)) && incidentsSummary.includes('error×'), incidentsSummary);
+check('incidents summary 空结果也不留空', incidents.summary(incidents.run(mentionOnly)) === '0 incidents', incidents.summary(incidents.run(mentionOnly)));
 
 console.log(failed === 0 ? '\nALL PASS' : '\n' + failed + ' FAILED');
 process.exit(failed === 0 ? 0 : 1);

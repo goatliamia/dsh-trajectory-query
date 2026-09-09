@@ -15,5 +15,7 @@ export const retry = {
       }
     }
     return { suspectedPairs: pairs.length, samples: pairs.slice(0, 10) };
-  }
+  },
+  // 表格摘要随 analyzer 自带(issue #4)
+  summary: (f) => `${f.suspectedPairs} suspected repeat pairs`
 };

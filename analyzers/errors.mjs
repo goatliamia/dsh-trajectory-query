@@ -31,5 +31,7 @@ export const errors = {
       distinct: kinds.size,
       firstSeqs: firstSeqs.slice(0, 20).map((f) => ({ ...f, count: kinds.get(f.kind) }))
     };
-  }
+  },
+  // 表格摘要随 analyzer 自带(issue #4)
+  summary: (f) => `${f.total} error events / ${f.distinct} kinds`
 };

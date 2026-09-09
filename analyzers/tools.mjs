@@ -16,5 +16,7 @@ export const tools = {
     }
     const names = Object.keys(byName).sort((a, b) => byName[b] - byName[a]);
     return { total, distinct: names.length, byName: names.slice(0, 15).map((n) => ({ name: n, calls: byName[n] })) };
-  }
+  },
+  // 表格摘要随 analyzer 自带(issue #4)
+  summary: (f) => `${f.total} calls / ${f.distinct} tools; top: ${f.byName.slice(0, 3).map((x) => `${x.name}×${x.calls}`).join(', ')}`
 };

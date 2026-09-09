@@ -22,16 +22,11 @@ const { id, events } = loadSession(file);
 const facts = {};
 for (const a of ANALYZERS) facts[a.id] = { version: a.version, ...a.run(events) };
 
-const rows = [];
-for (const a of ANALYZERS) {
-  const f = facts[a.id];
-  const cells = [];
-  if (a.id === 'turns') cells.push(`${f.turns} turns (end ${f.ended})`);
-  if (a.id === 'tools') cells.push(`${f.total} calls / ${f.distinct} tools; top: ${f.byName.slice(0, 3).map((x) => `${x.name}×${x.calls}`).join(', ')}`);
-  if (a.id === 'errors') cells.push(`${f.total} error events / ${f.distinct} kinds`);
-  if (a.id === 'retry') cells.push(`${f.suspectedPairs} suspected repeat pairs`);
-  rows.push(`| ${a.id} v${a.version} | ${cells.join(' ')} |`);
-}
+// 每个 analyzer 自带 summary(facts);漏写时显式渲染 "(no summary)",不再静默留空(issue #4)。
+const rows = ANALYZERS.map((a) => {
+  const summary = typeof a.summary === 'function' ? a.summary(facts[a.id]) : '(no summary)';
+  return `| ${a.id} v${a.version} | ${summary} |`;
+});
 
 const incidentLines = facts.incidents && facts.incidents.incidents ? facts.incidents.incidents.map((x) => `- **${x.title}** (sev ${x.severity}) — ${x.detail}; cause: ${x.cause}; runtime: ${x.runtimeKnew}; model: ${x.modelKnew}; harness: ${x.harness}; impact: ${x.impact}; evidence seq: ${(x.seqs || []).join(', ')}`) : ['- 无'];
 const md = [

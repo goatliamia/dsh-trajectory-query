@@ -17,5 +17,7 @@ export const turns = {
     }
     const ended = Object.values(endReasons).reduce((a, b) => a + b, 0);
     return { turns: starts, ended, openTurns: Math.max(0, starts - ended), endReasons };
-  }
+  },
+  // 表格摘要随 analyzer 自带:runner 不再逐个 if(issue #4)
+  summary: (f) => `${f.turns} turns (end ${f.ended})`
 };
