@@ -76,9 +76,9 @@ legacy fallback   → ctx.sessionPersistence.inspect(id)
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.1.5.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.1.6.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.5.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.6.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. reload/restart `dsh web`       # host plugins do not hot-reload reliably
@@ -98,9 +98,10 @@ legacy fallback   → ctx.sessionPersistence.inspect(id)
 
 ```text
 node self-test.mjs                                 # from the installed package dir -> ALL PASS
-trajectory_sessions(limit=5)                       # ids + live/persisted
-trajectory_find(session=<id>, query="<literal>")   # hits with seq + logId
+trajectory_index(limit=5)                          # catalog: counts + ranges, no content
+trajectory_find(query="C:\Users\14100\.dsh")       # normalized match; hits carry matchAt + logId
 trajectory_window(session=<id>, seq=<hit seq>)     # verbatim context
+trajectory_trace(session=<id>, seq=<hit seq>)      # bounded chain (full: true for the whole array)
 ```
 
 ---
@@ -169,9 +170,9 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.1.5.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.1.6.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.5.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.6.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新
@@ -191,7 +192,8 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 
 ```text
 node self-test.mjs                                 # 在安装后的包目录里运行 → ALL PASS
-trajectory_sessions(limit=5)                       # 拿到 id 与 live/persisted
-trajectory_find(session=<id>, query="<字面词>")    # 命中带 seq 与 logId
+trajectory_index(limit=5)                          # 目录:计数 + 范围,不含内容
+trajectory_find(query="C:\Users\14100\.dsh")       # 归一化命中;带 matchAt 与 logId
 trajectory_window(session=<id>, seq=<命中 seq>)    # 逐字上下文
+trajectory_trace(session=<id>, seq=<命中 seq>)     # 有界关系链(full: true 才给完整数组)
 ```

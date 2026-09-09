@@ -65,9 +65,9 @@ trajectory_window(session="session-e0636aa9-…", seq=1248)
 
 **Host 路由** —— `GET /analysis-view/digest?session=<id>` 返回确定性 incidents(同参重复 / 失败 / 空转 turn);`GET /analysis-view/interpret?session=<id>` 在展开「开放解读」时才调用一次模型,返回带引用的解读。两者都带 **`log` 身份**(`id` / `events` / `seq` 范围);引用格式为 `(session, seq@logId)`,避免跨日志修订误引。
 
-**机械分析器** —— `turns / tools / errors / retry / incidents` 五个确定性 fold:同参重复、调用失败、空转 turn 由代码判定,不由模型判断;`analyzers/self-test.mjs` 把语义钉进测试。
+**机械分析器** —— `turns / tools / errors / retry / incidents` 五个确定性 fold:同参重复、调用失败、空转 turn 由代码判定,不由模型判断;每个分析器自带 `summary(facts)`,runner 直接渲染表格(漏写显示 `(no summary)`,不会静默留空);`analyzers/self-test.mjs` 把语义与这个契约一起钉进测试。
 
-**报告** —— `analyzers/run-digest.mjs` 把一次会话变成可复现的 `*.facts.json` + `*.digest.md`。
+**报告** —— `analyzers/run-digest.mjs` 把一次会话变成可复现的 `*.facts.json` + `*.digest.md`(表格每行由对应分析器自己的 `summary` 产出,加分析器不必再改 runner)。
 
 **3. 两份 Skill** —— `trajectory-query`(随查询插件注册为 runtime skill):先查再答、逐字引用、引用写 `(session, seq@logId)`、空结果就是可验证的"没有";`analysis.md`:把研究问题变成可核验分析(证据纪律、维度发现、分析器契约),规定入口,不规定结论。
 
@@ -104,7 +104,7 @@ node analyzers/self-test.mjs
 pnpm pack                                  # 在各自的 plugin 目录里执行
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: 增加
-#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.5.tgz"
+#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.6.tgz"
 #     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.1.0.tgz"
 #   dsh.profile.bundles: 追加 "dsh-trajectory-tools"、"dsh-analysis-view"
 pnpm install            # 在 ~/.dsh/profiles/web
@@ -119,7 +119,7 @@ node analyzers/self-test.mjs        # 分析器语义
 node analyzers/host-self-test.mjs   # host 侧 incident 判定
 ```
 
-装好后重启 `dsh web`,确认:模型工具表里出现 `trajectory_*`、skill 目录里出现 `trajectory-query`、`trajectory_find` 的返回里带 `matchAt` 与 `filtered`(0.1.5 起的标志)、`/analysis-view/digest` 对已结算会话返回 200。
+装好后重启 `dsh web`,确认:模型工具表里出现 `trajectory_*`(含 `trajectory_index`)、skill 目录里出现 `trajectory-query`、`trajectory_find` 的返回里带 `matchAt` / `filtered` / `normalized`、`trajectory_trace` 的关系链是 `{count, head, tail}` 形态、`/analysis-view/digest` 对已结算会话返回 200。
 
 ## 已知缺口
 

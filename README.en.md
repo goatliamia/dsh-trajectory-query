@@ -87,11 +87,14 @@ a **runtime incident view**:
 **Host routes** — `GET /analysis-view/digest?session=<id>` returns deterministic incidents (same-args repeat / failures / no-op turns); `GET /analysis-view/interpret?session=<id>` calls the model once, only when *Open interpretation* is expanded, and returns a cited interpretation. Both carry a **`log` identity** (`id` / `events` / `seq` range); citations read `(session, seq@logId)`, so a seq cannot be misread across log revisions.
 
 **Mechanical analyzers** — five deterministic folds: `turns / tools / errors / retry / incidents`.
-Same-argument repeats, failed calls and no-op turns are decided by code, not by a model.
-`analyzers/self-test.mjs` pins the semantics.
+Same-argument repeats, failed calls and no-op turns are decided by code, not by a model. Each
+analyzer owns a `summary(facts)`, so the runner renders the table directly (a missing summary shows
+`(no summary)` instead of a silent blank cell); `analyzers/self-test.mjs` pins the semantics and
+that contract.
 
 **Reports** — `analyzers/run-digest.mjs` turns one session into reproducible `*.facts.json` +
-`*.digest.md`.
+`*.digest.md` (each table row comes from its analyzer's own `summary`, so adding an analyzer no
+longer means editing the runner).
 
 **3. Two skills** — `trajectory-query` (registered as a runtime skill by the query plugin): query
 before answering, quote verbatim, cite `(session, seq@logId)`, and treat an empty result as
@@ -132,7 +135,7 @@ node analyzers/self-test.mjs
 pnpm pack                                  # in each plugin directory
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: add
-#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.5.tgz"
+#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.6.tgz"
 #     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.1.0.tgz"
 #   dsh.profile.bundles: append "dsh-trajectory-tools" and "dsh-analysis-view"
 pnpm install            # in ~/.dsh/profiles/web
@@ -147,9 +150,10 @@ node analyzers/self-test.mjs        # analyzer semantics
 node analyzers/host-self-test.mjs   # host-side incident detection
 ```
 
-After restarting `dsh web`, confirm that the model's tool list contains `trajectory_*`, that the
-skill catalog contains `trajectory-query`, that `trajectory_find` results carry `matchAt` and
-`filtered` (the 0.1.5 markers), and that `/analysis-view/digest` returns 200 for a settled session.
+After restarting `dsh web`, confirm that the model's tool list contains `trajectory_*` (including
+`trajectory_index`), that the skill catalog contains `trajectory-query`, that `trajectory_find`
+results carry `matchAt` / `filtered` / `normalized`, that `trajectory_trace` chains come back as
+`{count, head, tail}`, and that `/analysis-view/digest` returns 200 for a settled session.
 
 ## Known gaps
 
