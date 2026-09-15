@@ -3,20 +3,24 @@
 // 运行(必须能解析 @deepseek-ai/dsh-tools,即从安装后的包目录运行):
 //   cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs
 //
-// 覆盖:注册 5 个工具、参数校验、字面量检索(大小写/空白/转义归一)、seq 区间与类型过滤、
-// 存活/已持久化两条读取路径、窗口上限、trace 有界渲染、目录统计、logId append-stable,
+// 覆盖:注册 6 个工具、参数校验、字面量检索(大小写/空白/转义归一)、seq 区间与类型过滤、
+// 存活/已持久化两条读取路径、窗口上限、trace 有界渲染、目录统计、成本 fold、logId append-stable,
 // 以及曾经的缺陷回归:
 //   1) 不给 session 时默认扫描集必须包含「当前会话 + 所有 live 会话」(哪怕它 createdAt 最老)
 //   2) 命中片段以命中点为中心,必须包含查询词(1000 字符长事件用例)
 //   3) 默认过滤注入样板(<system-reminder>)与 trajectory_* 自身的调用/结果
 //   4) issue #1:转义路径(双反斜杠)能被单反斜杠查询命中;issue #2:trace 关系链有界
-//   5) issue #3:trajectory_index 只给计数与范围
+//   5) issue #3:trajectory_index 只给计数与范围;issue #5:trajectory_cost 的 usage 缺失记 unknown
 
 import {
   apply,
   boundSeqs,
   buildSelfCallIds,
+  cacheEfficiency,
   clipAround,
+  costByTurn,
+  costRequests,
+  costTotals,
   currentSessionId,
   eventText,
   fold,
@@ -82,6 +86,15 @@ const newerEvents = (tag) => [
   { seq: 1, type: "user/message", time: 9001, data: { content: [{ type: "text", text: "newer session " + tag }] } },
 ];
 
+// 成本夹具(issue #5):刻意不出现在 listSessions 的返回里,只用于 trajectory_cost 的单元验证。
+const COST_ID = "session-cost-0004";
+const COST_EVENTS = [
+  { seq: 0, type: "assistant/message", time: 1, data: { turn: 1, step: 1, message: { source: { provider: "deepseek-official", model: "m1" } }, usage: { inputTokens: 604, outputTokens: 63, totalTokens: 7835, cacheReadTokens: 7168, cacheWriteTokens: 0, reasoningTokens: 0 } } },
+  { seq: 1, type: "assistant/message", time: 2, data: { turn: 1, step: 2, message: { source: { provider: "deepseek-official", model: "m1" } }, usage: { inputTokens: 215, outputTokens: 316, totalTokens: 8211, cacheReadTokens: 7680, reasoningTokens: 150 } } },
+  { seq: 2, type: "assistant/message", time: 3, data: { turn: 2, step: 1, message: { source: { provider: "deepseek-official", model: "m2" } } } },
+  { seq: 3, type: "user/message", time: 4, data: { content: [{ type: "text", text: "not a request" }] } },
+];
+
 const HEADERS = new Map([
   [LIVE_ID, { id: LIVE_ID, createdAt: 5000, cwd: "D:/work", isSeeded: false }],
   [PERSISTED_ID, { id: PERSISTED_ID, createdAt: 4000, cwd: "D:/work", isSeeded: false }],
@@ -89,6 +102,7 @@ const HEADERS = new Map([
   [NEWER[0], { id: NEWER[0], createdAt: 9000 }],
   [NEWER[1], { id: NEWER[1], createdAt: 8000 }],
   [NEWER[2], { id: NEWER[2], createdAt: 7000 }],
+  [COST_ID, { id: COST_ID, createdAt: 300, cwd: "D:/work", isSeeded: false }],
 ]);
 const LOGS = new Map([
   [LIVE_ID, EVENTS],
@@ -97,6 +111,7 @@ const LOGS = new Map([
   [NEWER[0], newerEvents("a")],
   [NEWER[1], newerEvents("b")],
   [NEWER[2], newerEvents("c")],
+  [COST_ID, COST_EVENTS],
 ]);
 const LIVE_IDS = new Set([LIVE_ID, CURRENT_ID]);
 
@@ -223,14 +238,14 @@ const ctx = {
 apply(ctx);
 
 /* ---------------- 注册 ---------------- */
-eq("registers 5 tools", [...registered.keys()].sort(), ["trajectory_find", "trajectory_index", "trajectory_sessions", "trajectory_trace", "trajectory_window"]);
-eq("registers one disposer per tool + one for the skill", disposed.filter((label) => label.startsWith("trajectory-tools:")).length, 6);
+eq("registers 6 tools", [...registered.keys()].sort(), ["trajectory_cost", "trajectory_find", "trajectory_index", "trajectory_sessions", "trajectory_trace", "trajectory_window"]);
+eq("registers one disposer per tool + one for the skill", disposed.filter((label) => label.startsWith("trajectory-tools:")).length, 7);
 eq("registers the runtime skill", [...skillsRegistered.keys()], ["trajectory-query"]);
 const skill = skillsRegistered.get("trajectory-query");
 check("skill carries a description", typeof skill.description === "string" && skill.description.length > 0);
 check(
   "skill body names every tool",
-  ["trajectory_sessions", "trajectory_index", "trajectory_find", "trajectory_window", "trajectory_trace"].every((name) => skill.content.includes(name)),
+  ["trajectory_sessions", "trajectory_index", "trajectory_find", "trajectory_window", "trajectory_trace", "trajectory_cost"].every((name) => skill.content.includes(name)),
 );
 check("skill body pins the citation convention", skill.content.includes("(session, seq@logId)"));
 
@@ -250,7 +265,7 @@ apply({
     return name === "skills" ? undefined : services[name];
   },
 });
-eq("tools register without the skills service", toolOnly.size, 5);
+eq("tools register without the skills service", toolOnly.size, 6);
 
 // 重名(常见于上一个进程遗留的动态插件注册)必须显式失败,而不是静默注册一半。
 let conflictError = null;
@@ -481,6 +496,38 @@ eq("index: cwd filter drops the others", indexCwd.sessions.some((row) => row.ses
 // 纯函数直测:indexEvents 与工具同源
 const direct = indexEvents(EVENTS, { toolNeedle: "trajectory_find" });
 eq("indexEvents: tool filter on the tool's own call", direct.events, 0);
+
+/* ---------------- trajectory_cost(issue #5) ---------------- */
+const costRows = costRequests(COST_EVENTS);
+eq("cost(fold): one row per assistant/message", costRows.length, 3);
+eq("cost(fold): totals only add reported values", costTotals(costRows), {
+  requests: 3,
+  unknownRequests: 1,
+  input: 819,
+  cacheRead: 14848,
+  cacheWrite: 0,
+  output: 379,
+  reasoning: 150,
+  total: 16046,
+  cacheEfficiency: 14848 / 15667,
+});
+eq("cost(fold): missing usage stays null, not zero", [costRows[2].input, costRows[2].total, costRows[2].cacheEfficiency], [null, null, null]);
+eq("cost(fold): a field missing on one request is null and not summed as zero", [costRows[1].cacheWrite, costTotals(costRows).cacheWrite], [null, 0]);
+check("cost(fold): cache efficiency = cacheRead/(cacheRead+input)", Math.abs(costRows[0].cacheEfficiency - 7168 / 7772) < 1e-12);
+eq("cost(fold): efficiency is null when nothing is reported", cacheEfficiency(null, 100), null);
+eq("cost(fold): turn grouping keeps the unknown bucket", costByTurn(costRows).map((g) => [g.turn, g.requests]), [[1, 2], [2, 1]]);
+
+const costTool = await call("trajectory_cost", { session: COST_ID });
+eq("cost: reports the request count", costTool.requestCount, 3);
+eq("cost: reports unknown requests", costTool.unknownRequests, 1);
+eq("cost: coverage counts reported fields", costTool.coverage.cacheWrite, 1);
+eq("cost: carries the log identity", costTool.log.id, logIdOf(COST_ID, COST_EVENTS[0]));
+check("cost: rows keep seq/turn/step/model", costTool.rows[0].seq === 0 && costTool.rows[0].turn === 1 && costTool.rows[0].step === 1 && costTool.rows[0].model === "m1", JSON.stringify(costTool.rows[0]));
+eq("cost: groupBy turn", (await call("trajectory_cost", { session: COST_ID, groupBy: "turn" })).rows.length, 2);
+eq("cost: seq range narrows the fold", (await call("trajectory_cost", { session: COST_ID, from: 1, to: 1 })).requestCount, 1);
+eq("cost: limit bounds the rows", (await call("trajectory_cost", { session: COST_ID, limit: 1 })).returned, 1);
+eq("cost: truncated flag", (await call("trajectory_cost", { session: COST_ID, limit: 1 })).truncated, true);
+eq("cost: defaults to the current session", (await call("trajectory_cost", {})).session, CURRENT_ID);
 
 /* ---------------- 读取路径:observeSession(0.1.6 官方路径)与兼容退路 ---------------- */
 check("reads go through sessionQuery.observeSession", observations.opened > 0, JSON.stringify(observations));

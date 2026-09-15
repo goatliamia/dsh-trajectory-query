@@ -64,7 +64,7 @@ trajectory view.
 Three things: **fetch facts**, **organize facts**, **constrain the discipline**.
 
 **1. Historical query tools (agent-facing)** — the resident host plugin `dsh-trajectory-tools`
-registers five read-only tools (`trajectory_sessions / index / find / window / trace`) that read the event
+registers six read-only tools (`trajectory_sessions / index / find / window / trace / cost`) that read the event
 log DSH already keeps (preferred: `sessionQuery.observeSession`; compatible fallbacks: the in-memory
 snapshot and a `sessionPersistence` handle). Evidence-first: every answer
 carries `(session, seq@logId)` and quotes the original text verbatim, with a snippet centred on the
@@ -122,7 +122,7 @@ node analyzers/self-test.mjs
 
 ## Layout
 
-- `plugin/trajectory-tools/` — host plugin: five read-only query tools + bundled runtime skill
+- `plugin/trajectory-tools/` — host plugin: six read-only query tools + bundled runtime skill
 - `plugin/analysis-view/` — resident Analysis tab (client + host routes)
 - `analyzers/` — deterministic analyzers, digest runner, self-test
 - `skill/` — `trajectory-query.md` (query discipline), `analysis.md` (analysis method)
@@ -135,8 +135,8 @@ node analyzers/self-test.mjs
 pnpm pack                                  # in each plugin directory
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: add
-#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.7.tgz"
-#     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.1.1.tgz"
+#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.8.tgz"
+#     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.1.2.tgz"
 #   dsh.profile.bundles: append "dsh-trajectory-tools" and "dsh-analysis-view"
 pnpm install            # in ~/.dsh/profiles/web
 # restart `dsh web` (host plugins do not hot-reload reliably)
@@ -145,7 +145,7 @@ pnpm install            # in ~/.dsh/profiles/web
 ## Verify
 
 ```text
-cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (111 checks)
+cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (128 checks)
 node analyzers/self-test.mjs        # analyzer semantics
 node analyzers/host-self-test.mjs   # host-side incident detection
 ```
@@ -162,11 +162,12 @@ results carry `matchAt` / `filtered` / `normalized`, that `trajectory_trace` cha
 - Host analysis and `analyzers/incidents.mjs` are two implementations (runtime cannot import repo scripts); each is pinned by its own self-test.
 - Sessions are read via `sessionQuery.observeSession(id)` (DSH 0.1.6 deprecated the synchronous readers such as `snapshotEvents`; fallbacks: in-memory snapshot → `sessionPersistence.open(id, 'read')` → legacy `inspect()`).
 - `seq` is only stable inside one log revision, so citations must carry `logId`; after a version rewrite an old `seq` may point at a different event.
-- The query tools are a host plugin: `dsh web` must be restarted before they appear in the model's tool list; if a tool name is already taken the plugin fails loudly instead of half-registering. Its contract is pinned by `plugin/trajectory-tools/self-test.mjs` (111 checks).
+- The query tools are a host plugin: `dsh web` must be restarted before they appear in the model's tool list; if a tool name is already taken the plugin fails loudly instead of half-registering. Its contract is pinned by `plugin/trajectory-tools/self-test.mjs` (128 checks).
 - Without `session`, `find` scans the current session + every live session + a few persisted ones; persisted sessions are ranked by `createdAt` (there is no cheap last-activity signal), so pass `session` explicitly for a long-settled session.
 - `trajectory_trace` is the only one of the five that still depends on `ctx.sessionQuery`; the other four need only `sessions` / `sessionPersistence`.
 - Every host/client API these plugins use was checked against DSH 0.1.6-alpha.1: the `defineTool` parameter DSL, the `sessionQuery` method set, `SessionHandle`, `skills.register`, `webServer.register`, `llm.stream`, the `conversation.view` slot and `uiConversation.views/binding` are unchanged; the only migration needed is the deprecated synchronous read above.
-- Runtime: DSH 0.1.6-alpha.1 with both plugins at 0.1.7 / 0.1.1. Verified live: all five tools return `ok: true`, `/analysis-view/digest` returns 200 for settled and live sessions, and the offline analyzers parse the **v3** logs written after the upgrade.
+- Runtime: DSH 0.1.6-alpha.1, plugins 0.1.8 / 0.1.2. The first five tools and both routes are verified live (all `ok: true`; `/analysis-view/digest` returns 200 for settled and live sessions, and the analyzers parse the v3 logs written after the upgrade). `trajectory_cost` and the cost block are new in this revision, covered by the 128-check self-test and an offline check on real data; a live check is pending the next restart.
+- `trajectory_cost` reads `assistant/message.usage` only — no new instrumentation. A request whose adapter reported no usage is `unknown` (never zero), and a single missing field is `null` and stays out of the sums. The DeepSeek adapter usually does not report `cacheWriteTokens`: that means "not reported", not "no cache write".
 - Trap: after the format migration a session directory keeps **both `session.v3.jsonl.zstd` (current) and `session.v2.jsonl.zstd` (pre-migration copy)**. Pass the v3 file to the analyzers by hand, or you will read the stale copy as if it were the newest session. `experiments/corpus/scan-sessions.mjs` now picks the highest version per directory.
 
 ## License

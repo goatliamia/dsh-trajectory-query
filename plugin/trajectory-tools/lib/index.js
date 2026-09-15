@@ -35,6 +35,8 @@ const DEFAULT_SESSION_LIMIT = 30;
 const MAX_SESSION_LIMIT = 100;
 const DEFAULT_INDEX_LIMIT = 10;
 const MAX_INDEX_LIMIT = 30;
+const DEFAULT_COST_LIMIT = 20;
+const MAX_COST_LIMIT = 50;
 const TRACE_EDGE = 3;
 const LOAD_TIMEOUT_MS = 5000;
 
@@ -615,6 +617,110 @@ export function indexEvents(events, options = {}) {
 }
 
 /* ------------------------------------------------------------------ *
+ * 成本:确定性地 fold assistant/message.usage(issue #5)
+ *
+ * 实测(真实 v3 会话 839 个 assistant/message):
+ *   totalTokens === inputTokens + cacheReadTokens + outputTokens,837/837 全等;
+ *   cacheWriteTokens 只有 26 条上报、reasoningTokens 811 条 —— 缺失是"没上报",不是 0。
+ * 所以整个 usage 缺失的请求记 unknown,单字段缺失记 null,求和只加已上报的值。
+ * 成本不套用 find 的自回显/样板过滤:那是"检索噪声"的概念,记账要记全量。
+ * ------------------------------------------------------------------ */
+
+function usageNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function sumKnown(values) {
+  let sum = null;
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    sum = (sum || 0) + value;
+  }
+  return sum;
+}
+
+/** cache 效率 = cacheRead / (cacheRead + input);两侧都上报且分母 > 0 才给值。 */
+export function cacheEfficiency(cacheRead, input) {
+  if (cacheRead === null || input === null || cacheRead === undefined || input === undefined) return null;
+  const denominator = cacheRead + input;
+  return denominator > 0 ? cacheRead / denominator : null;
+}
+
+/** 逐请求抽取 usage;缺失即 unknown(不按 0)。 */
+export function costRequests(events) {
+  const requests = [];
+  for (const event of events || []) {
+    if (!event || event.type !== "assistant/message") continue;
+    const data = event.data || {};
+    const source = (data.message && data.message.source) || {};
+    const usage = data.usage;
+    const unknown = usage === undefined || usage === null || typeof usage !== "object";
+    const row = {
+      seq: event.seq,
+      turn: typeof data.turn === "number" ? data.turn : null,
+      step: typeof data.step === "number" ? data.step : null,
+      provider: typeof source.provider === "string" ? source.provider : null,
+      model: typeof source.model === "string" ? source.model : null,
+      unknown,
+      input: unknown ? null : usageNumber(usage.inputTokens),
+      cacheRead: unknown ? null : usageNumber(usage.cacheReadTokens),
+      cacheWrite: unknown ? null : usageNumber(usage.cacheWriteTokens),
+      output: unknown ? null : usageNumber(usage.outputTokens),
+      reasoning: unknown ? null : usageNumber(usage.reasoningTokens),
+      total: unknown ? null : usageNumber(usage.totalTokens),
+    };
+    row.cacheEfficiency = cacheEfficiency(row.cacheRead, row.input);
+    requests.push(row);
+  }
+  return requests;
+}
+
+/** 汇总一组请求:只加已上报的值;coverage 说明每个字段有多少请求报了。 */
+export function costTotals(requests) {
+  const rows = requests || [];
+  const cacheRead = sumKnown(rows.map((row) => row.cacheRead));
+  const input = sumKnown(rows.map((row) => row.input));
+  return {
+    requests: rows.length,
+    unknownRequests: rows.filter((row) => row.unknown).length,
+    input,
+    cacheRead,
+    cacheWrite: sumKnown(rows.map((row) => row.cacheWrite)),
+    output: sumKnown(rows.map((row) => row.output)),
+    reasoning: sumKnown(rows.map((row) => row.reasoning)),
+    total: sumKnown(rows.map((row) => row.total)),
+    cacheEfficiency: cacheEfficiency(cacheRead, input),
+  };
+}
+
+export function costCoverage(requests) {
+  const rows = requests || [];
+  const reported = (field) => rows.filter((row) => row[field] !== null).length;
+  return {
+    input: reported("input"),
+    cacheRead: reported("cacheRead"),
+    cacheWrite: reported("cacheWrite"),
+    output: reported("output"),
+    reasoning: reported("reasoning"),
+    total: reported("total"),
+  };
+}
+
+/** 按 turn 汇总(没有 turn 的请求归到一个 turn:null 的桶)。 */
+export function costByTurn(requests) {
+  const groups = new Map();
+  for (const row of requests || []) {
+    const key = row.turn === null ? "null" : String(row.turn);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return [...groups.entries()].map(([key, list]) => ({
+    turn: key === "null" ? null : Number(key),
+    ...costTotals(list),
+  }));
+}
+
+/* ------------------------------------------------------------------ *
  * 工具
  * ------------------------------------------------------------------ */
 
@@ -727,6 +833,57 @@ export function apply(ctx) {
           }
         }
         return { ok: true, current: currentId || null, scanned, failed, returned: sessions.length, sessions };
+      } catch (error) {
+        return FAILED(error);
+      }
+    },
+  });
+
+  register({
+    name: "trajectory_cost",
+    description:
+      "成本(确定性 fold,issue #5):按 assistant/message 携带的 usage 逐请求汇总 token —— input(未命中的新输入)、cacheRead(命中前缀)、cacheWrite、output、reasoning、total,并给出 cache 效率 = cacheRead/(cacheRead+input)。groupBy='turn' 时按轮汇总。适配器没上报 usage 的请求记 unknown(不按 0 算)。工具只给数字,不判断\"值不值\"。缺 session 时用当前会话。只读。",
+    parameters: {
+      session: { type: "string", description: "会话 id;缺省用当前会话" },
+      from: { type: "integer", description: "只看 seq >= 该值的事件(含)" },
+      to: { type: "integer", description: "只看 seq <= 该值的事件(含)" },
+      groupBy: { type: "string", enum: ["request", "turn"], description: "默认 request(每请求一行);turn=按轮汇总" },
+      limit: { type: "integer", description: "返回行数上限,默认 " + DEFAULT_COST_LIMIT + ",上限 " + MAX_COST_LIMIT },
+    },
+    output: OUTPUT,
+    async execute(args, exec) {
+      try {
+        const limit = Math.min(Math.max(Number(args.limit || DEFAULT_COST_LIMIT), 1), MAX_COST_LIMIT);
+        const groupBy = args.groupBy === "turn" ? "turn" : "request";
+        const sessionId = typeof args.session === "string" && args.session !== "" ? args.session : currentSessionId(ctx, exec);
+        if (sessionId === undefined) return { ok: false, error: "需要 session(当前会话无法确定)" };
+        const loaded = await withTimeout(loadEvents(ctx, sessionId), LOAD_TIMEOUT_MS, "trajectory_cost");
+        const scoped = args.from === undefined && args.to === undefined
+          ? loaded.events
+          : (loaded.events || []).filter((event) => {
+              if (!event || typeof event.seq !== "number") return false;
+              if (args.from !== undefined && event.seq < Number(args.from)) return false;
+              if (args.to !== undefined && event.seq > Number(args.to)) return false;
+              return true;
+            });
+        const requests = costRequests(scoped);
+        const totals = costTotals(requests);
+        const rows = groupBy === "turn" ? costByTurn(requests) : requests;
+        return {
+          ok: true,
+          session: sessionId,
+          source: loaded.source,
+          log: logIdentity(sessionId, loaded.events),
+          groupBy,
+          requestCount: totals.requests,
+          unknownRequests: totals.unknownRequests,
+          coverage: costCoverage(requests),
+          totals,
+          rowCount: rows.length,
+          returned: Math.min(rows.length, limit),
+          truncated: rows.length > limit,
+          rows: rows.slice(0, limit),
+        };
       } catch (error) {
         return FAILED(error);
       }

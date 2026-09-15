@@ -10,8 +10,9 @@ import { tools } from './tools.mjs';
 import { errors } from './errors.mjs';
 import { retry } from './retry.mjs';
 import { incidents } from './incidents.mjs';
+import { cost } from './cost.mjs';
 
-const ANALYZERS = [turns, tools, errors, retry, incidents];
+const ANALYZERS = [turns, tools, errors, retry, incidents, cost];
 const here = dirname(fileURLToPath(import.meta.url));
 
 const file = process.argv[2];

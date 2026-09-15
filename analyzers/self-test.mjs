@@ -5,6 +5,7 @@ import { errors } from './errors.mjs';
 import { turns } from './turns.mjs';
 import { tools } from './tools.mjs';
 import { retry } from './retry.mjs';
+import { cost } from './cost.mjs';
 
 let failed = 0;
 const check = (name, cond, extra) => {
@@ -60,7 +61,7 @@ check('空 turn = 无工具且无助手产出', a5.emptyTurns === 1, a5);
 
 // 6) 表格契约(issue #4):每个 analyzer 必须自带 summary,runner 不再逐个 if;
 //    摘要对空日志也非空,否则 digest 表会出现空单元格。
-const ANALYZERS = [turns, tools, errors, retry, incidents];
+const ANALYZERS = [turns, tools, errors, retry, incidents, cost];
 for (const a of ANALYZERS) {
   check(`${a.id} 暴露 summary()`, typeof a.summary === 'function', a.id);
   const empty = typeof a.summary === 'function' ? a.summary(a.run([])) : '';
@@ -71,6 +72,22 @@ for (const a of ANALYZERS) {
 const incidentsSummary = incidents.summary(a1);
 check('incidents summary 报条数与类型', incidentsSummary.includes(String(a1.incidentCount)) && incidentsSummary.includes('error×'), incidentsSummary);
 check('incidents summary 空结果也不留空', incidents.summary(incidents.run(mentionOnly)) === '0 incidents', incidents.summary(incidents.run(mentionOnly)));
+
+// 7) cost(issue #5):usage 缺失 = unknown,不按 0 计;派生量确定性
+const costEvents = [
+  ev('assistant/message', 0, { turn: 1, step: 1, message: { source: { provider: 'deepseek-official', model: 'm' } }, usage: { inputTokens: 604, outputTokens: 63, totalTokens: 7835, cacheReadTokens: 7168, cacheWriteTokens: 0, reasoningTokens: 0 } }),
+  ev('assistant/message', 1, { turn: 1, step: 2, message: { source: { provider: 'deepseek-official', model: 'm' } }, usage: { inputTokens: 215, outputTokens: 316, totalTokens: 8211, cacheReadTokens: 7680, reasoningTokens: 150 } }),
+  ev('assistant/message', 2, { turn: 2, step: 1, message: { source: { provider: 'deepseek-official', model: 'm' } } })
+];
+const c7 = cost.run(costEvents);
+check('cost: 每请求一行', c7.requestCount === 3 && c7.requests.length === 3, c7.requestCount);
+check('cost: 未上报 usage 记 unknown(不按 0)', c7.unknownRequests === 1 && c7.requests[2].input === null && c7.requests[2].unknown === true, c7.requests[2]);
+check('cost: totals 只加已上报的值', c7.totals.input === 819 && c7.totals.cacheRead === 14848 && c7.totals.output === 379 && c7.totals.total === 16046, c7.totals);
+check('cost: 单字段缺失记 null 并反映在 coverage', c7.requests[1].cacheWrite === null && c7.coverage.cacheWrite === 1 && c7.totals.cacheWrite === 0, c7.coverage);
+check('cost: cache 效率 = cacheRead/(cacheRead+input)', Math.abs(c7.totals.cacheEfficiency - 14848 / 15667) < 1e-12, c7.totals.cacheEfficiency);
+check('cost: 已上报请求的效率取自本请求', Math.abs(c7.requests[0].cacheEfficiency - 7168 / 7772) < 1e-12, c7.requests[0].cacheEfficiency);
+check('cost: 按 turn 汇总', c7.byTurn.length === 2 && c7.byTurn[0].requests === 2 && c7.byTurn[1].requests === 1, c7.byTurn);
+check('cost: summary 非空且带 cache 效率', typeof cost.summary(c7) === 'string' && cost.summary(c7).includes('cache'), cost.summary(c7));
 
 console.log(failed === 0 ? '\nALL PASS' : '\n' + failed + ' FAILED');
 process.exit(failed === 0 ? 0 : 1);

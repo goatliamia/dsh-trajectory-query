@@ -119,6 +119,94 @@ export function deriveHarnessResponse(kinds) {
   return "未检测到针对性处理";
 }
 
+/**
+ * Deterministic token-usage fold over `assistant/message.usage` (issue #5; mirror of
+ * analyzers/cost.mjs). Numbers only — whether the spend was worth it is the model's job.
+ * A request whose adapter reported no usage is `unknown`, never zero; a single missing
+ * field is null and is excluded from the sums.
+ */
+export function computeCost(events) {
+  const requests = [];
+  for (const e of events || []) {
+    if (!e || e.type !== "assistant/message") continue;
+    const d = e.data || {};
+    const u = d.usage;
+    const unknown = u === undefined || u === null || typeof u !== "object";
+    const pick = (field) => (unknown || typeof u[field] !== "number" ? null : u[field]);
+    const row = {
+      seq: e.seq,
+      turn: typeof d.turn === "number" ? d.turn : null,
+      unknown,
+      input: pick("inputTokens"),
+      cacheRead: pick("cacheReadTokens"),
+      cacheWrite: pick("cacheWriteTokens"),
+      output: pick("outputTokens"),
+      reasoning: pick("reasoningTokens"),
+      total: pick("totalTokens"),
+    };
+    row.cacheEfficiency = row.cacheRead === null || row.input === null || row.cacheRead + row.input === 0 ? null : row.cacheRead / (row.cacheRead + row.input);
+    requests.push(row);
+  }
+  const sum = (field) => {
+    let value = null;
+    for (const row of requests) if (row[field] !== null) value = (value || 0) + row[field];
+    return value;
+  };
+  const input = sum("input");
+  const cacheRead = sum("cacheRead");
+  const turns = new Map();
+  for (const row of requests) {
+    const key = row.turn === null ? "null" : String(row.turn);
+    if (!turns.has(key)) turns.set(key, []);
+    turns.get(key).push(row);
+  }
+  const byTurn = [...turns.entries()].map(([key, list]) => {
+    const turnInput = list.reduce((acc, row) => (row.input === null ? acc : (acc || 0) + row.input), null);
+    const turnCacheRead = list.reduce((acc, row) => (row.cacheRead === null ? acc : (acc || 0) + row.cacheRead), null);
+    const turnOutput = list.reduce((acc, row) => (row.output === null ? acc : (acc || 0) + row.output), null);
+    return {
+      turn: key === "null" ? null : Number(key),
+      requests: list.length,
+      input: turnInput,
+      cacheRead: turnCacheRead,
+      output: turnOutput,
+      cacheEfficiency: turnCacheRead === null || turnInput === null || turnCacheRead + turnInput === 0 ? null : turnCacheRead / (turnCacheRead + turnInput),
+    };
+  });
+  return {
+    requestCount: requests.length,
+    unknownRequests: requests.filter((row) => row.unknown).length,
+    input,
+    cacheRead,
+    cacheWrite: sum("cacheWrite"),
+    output: sum("output"),
+    reasoning: sum("reasoning"),
+    total: sum("total"),
+    cacheEfficiency: cacheRead === null || input === null || cacheRead + input === 0 ? null : cacheRead / (cacheRead + input),
+    byTurn,
+  };
+}
+
+/** Bounded one-line cost evidence for the interpretation prompt. */
+export function costEvidenceLine(cost) {
+  if (!cost || cost.requestCount === 0) return "cost: 无 usage 记录";
+  const compact = (value) => {
+    if (value === null || value === undefined) return "n/a";
+    if (value >= 1000000) return (value / 1000000).toFixed(1) + "M";
+    if (value >= 1000) return (value / 1000).toFixed(1) + "k";
+    return String(value);
+  };
+  const expensive = [...(cost.byTurn || [])]
+    .filter((turn) => typeof turn.input === "number")
+    .sort((a, b) => b.input - a.input)
+    .slice(0, 3)
+    .map((turn) => "turn " + turn.turn + "(in " + compact(turn.input) + ")");
+  return "cost: " + cost.requestCount + " requests" + (cost.unknownRequests > 0 ? " (+" + cost.unknownRequests + " unknown)" : "") +
+    ", in " + compact(cost.input) + " / cached " + compact(cost.cacheRead) + " / out " + compact(cost.output) +
+    ", cache " + (cost.cacheEfficiency === null ? "n/a" : (cost.cacheEfficiency * 100).toFixed(1) + "%") +
+    (expensive.length > 0 ? "; 最贵输入:" + expensive.join(", ") : "");
+}
+
 
 /** Release one session observation (SessionObservation is Disposable). */
 function disposeObservation(observation) {
@@ -216,11 +304,12 @@ export function logIdentity(sessionId, events) {
   return { id: createHash("sha256").update(parts).digest("hex").slice(0, 12), events: (events || []).length, minSeq: first ? first.seq : null, maxSeq: last ? last.seq : null };
 }
 
-/** Bounded evidence block handed to the model: facts + incident lines + verbatim excerpts. */
-export function buildEvidence(sessionId, events, facts, log) {
+/** Bounded evidence block handed to the model: facts + incident lines + cost + verbatim excerpts. */
+export function buildEvidence(sessionId, events, facts, log, cost) {
   const lines = ["session: " + sessionId];
   if (log) lines.push("log: " + log.id + " (events=" + log.events + ", seq " + log.minSeq + "–" + log.maxSeq + ")");
   lines.push("facts: turns=" + facts.turns + " toolCalls=" + facts.toolCalls + " errors=" + facts.errors + " emptyTurns=" + facts.emptyTurns);
+  if (cost !== undefined) lines.push(costEvidenceLine(cost));
   for (const inc of facts.incidents) {
     lines.push("- incident[" + inc.type + "] " + inc.detail + " | cause: " + inc.cause + " | harness: " + inc.harness + " | impact: " + inc.impact + " | seqs: " + (inc.seqs || []).join(","));
   }
@@ -236,7 +325,7 @@ export function buildEvidence(sessionId, events, facts, log) {
 }
 
 /** Ask the configured model to interpret the incidents; every claim must cite (session, seq). */
-async function interpret(ctx, sessionId, events, facts, log) {
+async function interpret(ctx, sessionId, events, facts, log, cost) {
   const llm = ctx.get("llm");
   if (llm === undefined || typeof llm.stream !== "function") return { error: "llm service unavailable" };
   const defaultModel = ctx.get("agentDefaultModel");
@@ -246,7 +335,7 @@ async function interpret(ctx, sessionId, events, facts, log) {
   const messages = [{
     id: "analysis-view-interpret",
     role: "user",
-    content: [{ type: "text", text: "会话:" + sessionId + "\n\n" + buildEvidence(sessionId, events, facts, log) }],
+    content: [{ type: "text", text: "会话:" + sessionId + "\n\n" + buildEvidence(sessionId, events, facts, log, cost) }],
     source: { kind: "plugin", plugin: "dsh-analysis-view", form: "notice" }
   }];
   const ctl = new AbortController();
@@ -289,9 +378,10 @@ export function apply(ctx) {
         if (!sessionId) return send(400, { error: "missing session" });
         const events = await withTimeout(loadEvents(ctx, sessionId), 5000);
         const facts = computeIncidents(events);
+        const cost = computeCost(events);
         const log = logIdentity(sessionId, events);
-        if (url.pathname === ROUTE_PATH + "/digest") return send(200, { sessionId, log, ...facts });
-        if (url.pathname === ROUTE_PATH + "/interpret") return send(200, { sessionId, log, ...(await interpret(ctx, sessionId, events, facts, log)) });
+        if (url.pathname === ROUTE_PATH + "/digest") return send(200, { sessionId, log, ...facts, cost });
+        if (url.pathname === ROUTE_PATH + "/interpret") return send(200, { sessionId, log, ...(await interpret(ctx, sessionId, events, facts, log, cost)) });
         return send(404, { error: "not found" });
       } catch (error) {
         return send(500, { error: String((error && error.message) || error) });

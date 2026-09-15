@@ -26,6 +26,20 @@ interprets facts instead of reconstructing them.
 | `trajectory_find` | literal substring search → `(session, seq, type, time)` + a snippet centred on the match (`matchAt`), always containing the matched text; normalization on by default |
 | `trajectory_window` | verbatim window by `(session, seq range)`, max 60 events |
 | `trajectory_trace` | event replacement / source / derived chain, or session lineage; chains are bounded by default (`full: true` returns the complete array) |
+| `trajectory_cost` | token cost per request (or per turn): `input` / `cacheRead` / `cacheWrite` / `output` / `reasoning` / `total` plus cache efficiency `cacheRead/(cacheRead+input)` |
+
+### Cost
+
+`trajectory_cost` folds `assistant/message.usage` — no new instrumentation. The numbers only; whether
+the spend was worth it stays the model's interpretation.
+
+- `input` is the part of the context that missed the cache this request (the genuinely new tokens);
+  `cacheRead` is the reused prefix. `cacheEfficiency` dropping below ~1.0 means the prefix was
+  rewritten or the sequence changed.
+- A request whose adapter reported no usage is `unknown`, never zero; a single missing field is
+  `null` and stays out of the sums. `coverage` says how many requests reported each field — on the
+  DeepSeek adapter `cacheWriteTokens` is usually absent, which means "not reported", not "no cache".
+- `cost` deliberately ignores `excludeInjected` / `excludeSelf`: accounting counts everything.
 
 ### Default scope, filtering, normalization
 
@@ -81,9 +95,9 @@ materializing the whole log.
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.1.7.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.1.8.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.7.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.8.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. reload/restart `dsh web`       # host plugins do not hot-reload reliably
@@ -129,6 +143,15 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 | `trajectory_find` | 事件字面量子串检索 → `(session, seq, type, time)` + 以命中点为中心的片段(`matchAt`),必定包含命中文本;默认归一化 |
 | `trajectory_window` | 按 `(session, seq 区间)` 取原文窗口,上限 60 个事件 |
 | `trajectory_trace` | 事件替换 / 引用 / 派生链,或会话谱系;关系链默认有界(`full: true` 才给完整数组) |
+| `trajectory_cost` | 逐请求(或按轮)的 token 成本:`input` / `cacheRead` / `cacheWrite` / `output` / `reasoning` / `total`,以及 cache 效率 `cacheRead/(cacheRead+input)` |
+
+### 成本
+
+`trajectory_cost` 只 fold `assistant/message.usage`,不新增埋点;只给数字,"这次花得值不值"仍是模型的解释。
+
+- `input` 是本次**没命中缓存**的那部分上下文(真正新增的 token),`cacheRead` 是复用的前缀;`cacheEfficiency` 掉到 1.0 以下就说明前缀被改写或换了序列。
+- usage 整个缺失的请求记 `unknown`,不按 0;单字段缺失记 `null`,不进求和。`coverage` 说明每个字段有多少请求报了 —— DeepSeek 适配器基本不报 `cacheWriteTokens`,那是"没上报",不是"没写缓存"。
+- `cost` 刻意不套 `excludeInjected` / `excludeSelf`:记账要记全量。
 
 ### 默认范围、过滤与归一化
 
@@ -179,9 +202,9 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.1.7.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.1.8.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.7.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.8.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新
@@ -193,7 +216,7 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 |---|---|
 | `lib/index.js` | host 半边:读日志并注册全部工具 |
 | `lib/skill.js` | `trajectory-query` runtime skill 正文 |
-| `self-test.mjs` | 111 项契约检查(假 ctx + 合成日志,不连真实会话) |
+| `self-test.mjs` | 128 项契约检查(假 ctx + 合成日志,不连真实会话) |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch`(纯 host,无客户端半边) |
 
