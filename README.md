@@ -85,13 +85,13 @@ trajectory_trace(session=<id>, seq=<命中 seq>)          # 引用 / 替换 / �
 curl "http://127.0.0.1:3080/analysis-view/digest?session=<id>"
 
 # 3. 离线分析器(不需要 DSH)
-node analyzers/run-digest.mjs <session.jsonl.zstd>
+node analyzers/run-digest.mjs <session.v3.jsonl.zstd>   # 迁移后的会话:取 v3,别读同目录里的 v2 旧副本
 node analyzers/self-test.mjs
 ```
 
 ## 目录
 
-- `plugin/trajectory-tools/` —— host 插件:四个只读查询工具 + 自带 runtime skill
+- `plugin/trajectory-tools/` —— host 插件:五个只读查询工具 + 自带 runtime skill
 - `plugin/analysis-view/` —— 常驻「分析」标签(客户端 + host 路由)
 - `analyzers/` —— 确定性分析器、digest 运行器、自检
 - `skill/` —— `trajectory-query.md`(查询纪律)、`analysis.md`(分析方法)
@@ -132,6 +132,8 @@ node analyzers/host-self-test.mjs   # host 侧 incident 判定
 - 不给 `session` 时,`find` 的默认扫描集是「当前会话 + 所有 live 会话 + 最近若干已持久化会话」;已持久化会话按 `createdAt` 排序(没有便宜的"最近活动"信号),很久以前的会话请显式传 session。
 - `trajectory_trace` 是五个工具里唯一仍依赖 `ctx.sessionQuery` 的;其余四个只依赖 `sessions` / `sessionPersistence`。
 - 面向 DSH 0.1.6-alpha.1 核对过全部用到的 host/客户端 API:`defineTool` 参数 DSL、`sessionQuery` 方法表、`SessionHandle`、`skills.register`、`webServer.register`、`llm.stream`、`conversation.view` slot 与 `uiConversation.views/binding` 均未变;唯一需要迁移的就是上面那条同步读取弃用。
+- 运行环境:DSH 0.1.6-alpha.1 + 两个插件 0.1.7 / 0.1.1。实机验收过五个工具全部 `ok:true`、`/analysis-view/digest` 对已结算与 live 会话均 200、离线分析器能解析升级后写出的 **v3** 日志。
+- 陷阱:会话格式迁移后,同一个会话目录里**同时留着 `session.v3.jsonl.zstd`(当前)与 `session.v2.jsonl.zstd`(迁移前旧副本)**。手动跑分析器要取 v3,否则会把旧副本当成"最近的会话"。`experiments/corpus/scan-sessions.mjs` 已按目录取版本号最高的一份。
 
 ## 许可证
 

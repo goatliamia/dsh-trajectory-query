@@ -116,13 +116,13 @@ trajectory_trace(session=<id>, seq=<hit seq>)          # replacement / source / 
 curl "http://127.0.0.1:3080/analysis-view/digest?session=<id>"
 
 # 3. offline analyzers (no DSH required)
-node analyzers/run-digest.mjs <session.jsonl.zstd>
+node analyzers/run-digest.mjs <session.v3.jsonl.zstd>   # for a migrated session use v3, not the stale v2 copy
 node analyzers/self-test.mjs
 ```
 
 ## Layout
 
-- `plugin/trajectory-tools/` — host plugin: four read-only query tools + bundled runtime skill
+- `plugin/trajectory-tools/` — host plugin: five read-only query tools + bundled runtime skill
 - `plugin/analysis-view/` — resident Analysis tab (client + host routes)
 - `analyzers/` — deterministic analyzers, digest runner, self-test
 - `skill/` — `trajectory-query.md` (query discipline), `analysis.md` (analysis method)
@@ -166,6 +166,8 @@ results carry `matchAt` / `filtered` / `normalized`, that `trajectory_trace` cha
 - Without `session`, `find` scans the current session + every live session + a few persisted ones; persisted sessions are ranked by `createdAt` (there is no cheap last-activity signal), so pass `session` explicitly for a long-settled session.
 - `trajectory_trace` is the only one of the five that still depends on `ctx.sessionQuery`; the other four need only `sessions` / `sessionPersistence`.
 - Every host/client API these plugins use was checked against DSH 0.1.6-alpha.1: the `defineTool` parameter DSL, the `sessionQuery` method set, `SessionHandle`, `skills.register`, `webServer.register`, `llm.stream`, the `conversation.view` slot and `uiConversation.views/binding` are unchanged; the only migration needed is the deprecated synchronous read above.
+- Runtime: DSH 0.1.6-alpha.1 with both plugins at 0.1.7 / 0.1.1. Verified live: all five tools return `ok: true`, `/analysis-view/digest` returns 200 for settled and live sessions, and the offline analyzers parse the **v3** logs written after the upgrade.
+- Trap: after the format migration a session directory keeps **both `session.v3.jsonl.zstd` (current) and `session.v2.jsonl.zstd` (pre-migration copy)**. Pass the v3 file to the analyzers by hand, or you will read the stale copy as if it were the newest session. `experiments/corpus/scan-sessions.mjs` now picks the highest version per directory.
 
 ## License
 

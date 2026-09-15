@@ -1,7 +1,7 @@
 // Digest runner: session artifact → structured facts (analyzers) → md report + facts json.
 // Usage: node analyzers/run-digest.mjs <session.zstd> [outPrefix]
 // outPrefix 缺省为 "experiments/reports/digest-<sessionId-or-file>"
-import { writeFileSync } from 'node:fs';
+import { readdirSync, writeFileSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSession } from './load-session.mjs';
@@ -16,6 +16,31 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 const file = process.argv[2];
 if (!file) { console.error('usage: node run-digest.mjs <session.zstd> [outPrefix]'); process.exit(1); }
+
+// 格式迁移会在同一目录里生成 v3、保留 v2 旧副本。拿到旧副本时提醒一句(只提醒,不拒绝:
+// 对比版本时读旧文件是合法的),免得把迁移前的老日志当成"最近的会话"。
+const LOG_RE = /^session(?:\.v(\d+))?\.jsonl\.zstd$/;
+function newerSibling(path) {
+  const match = LOG_RE.exec(basename(path));
+  if (match === null) return null;
+  const version = Number(match[1] ?? -1);
+  let newer = null;
+  try {
+    for (const name of readdirSync(dirname(path))) {
+      const other = LOG_RE.exec(name);
+      if (other === null) continue;
+      const otherVersion = Number(other[1] ?? -1);
+      if (otherVersion > version && (newer === null || otherVersion > newer.version)) newer = { name, version: otherVersion };
+    }
+  } catch { return null; }
+  return newer;
+}
+const newer = newerSibling(file);
+if (newer !== null) {
+  console.error('注意:' + basename(file) + ' 不是这个目录里最新的日志,同目录还有 ' + newer.name +
+    '。要看当前会话请用:' + join(dirname(file), newer.name));
+}
+
 const outPrefix = process.argv[3] || join(here, '..', 'experiments', 'reports', 'digest-' + basename(file).replace(/\.jsonl\.zstd$/i, ''));
 
 const { id, events } = loadSession(file);
