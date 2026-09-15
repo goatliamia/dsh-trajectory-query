@@ -63,22 +63,27 @@ quote verbatim, cite `(session, seq@logId)`, and treat an empty result as verifi
 
 ### Data source
 
-No dependency on `sessionQuery` (whose `readSession` replay-validates the whole log):
+Preferred: `ctx.sessionQuery.observeSession(id)` — the sanctioned path since DSH 0.1.6 deprecated the
+synchronous Session readers (`snapshotEvents` / `eventAt` / `ownEvents`). It returns a live-preferred
+immutable cut, caches cold reads, and the observation is disposed right after use.
 
 ```text
-live session      → ctx.sessions.get(id).snapshotEvents()
-persisted session → ctx.sessionPersistence.open(id, "read") → handle.read() → close()
-legacy fallback   → ctx.sessionPersistence.inspect(id)
+preferred → ctx.sessionQuery.observeSession(id)     live-preferred, cached, disposed after read
+fallback  → ctx.sessions.get(id).snapshotEvents()   only when the deployment has no sessionQuery
+fallback  → ctx.sessionPersistence.open(id,"read") → handle.read() → close()
+fallback  → ctx.sessionPersistence.inspect(id)      legacy backends
 ```
 
 `trajectory_trace` is the one tool that uses `sessionQuery` (`traceEvent` / `traceSession`).
+A window on a non-live session reads a seq slice through the persistence handle instead of
+materializing the whole log.
 
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.1.6.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.1.7.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.6.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.7.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. reload/restart `dsh web`       # host plugins do not hot-reload reliably
@@ -157,22 +162,26 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 
 ### 数据来源
 
-不依赖 `sessionQuery`(`readSession` 会 replay 校验整份日志):
+首选 `ctx.sessionQuery.observeSession(id)` —— DSH 0.1.6 起 Session 的同步读取
+(`snapshotEvents` / `eventAt` / `ownEvents`)已弃用,这是官方推荐路径:返回 live 优先的不可变切片,
+冷读可复用缓存,用完立即释放观察。
 
 ```text
-存活会话   → ctx.sessions.get(id).snapshotEvents()
-已持久化   → ctx.sessionPersistence.open(id, "read") → handle.read() → close()
-旧版兜底   → ctx.sessionPersistence.inspect(id)
+首选   → ctx.sessionQuery.observeSession(id)     live 优先、可缓存,读完即 dispose
+退路   → ctx.sessions.get(id).snapshotEvents()   仅当部署里没有 sessionQuery
+退路   → ctx.sessionPersistence.open(id,"read") → handle.read() → close()
+退路   → ctx.sessionPersistence.inspect(id)      旧版后端
 ```
 
 `trajectory_trace` 是唯一用到 `sessionQuery`(`traceEvent` / `traceSession`)的工具。
+非存活会话的窗口走 persistence 句柄的切片读,不整份物化。
 
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.1.6.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.1.7.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.6.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.7.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新
@@ -184,7 +193,7 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 |---|---|
 | `lib/index.js` | host 半边:读日志并注册全部工具 |
 | `lib/skill.js` | `trajectory-query` runtime skill 正文 |
-| `self-test.mjs` | 107 项契约检查(假 ctx + 合成日志,不连真实会话) |
+| `self-test.mjs` | 111 项契约检查(假 ctx + 合成日志,不连真实会话) |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch`(纯 host,无客户端半边) |
 

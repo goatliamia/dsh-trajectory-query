@@ -120,8 +120,35 @@ export function deriveHarnessResponse(kinds) {
 }
 
 
-/** Read a session's events without sessionQuery.readSession (which can block on live sessions). */
+/** Release one session observation (SessionObservation is Disposable). */
+function disposeObservation(observation) {
+  if (observation === undefined || observation === null) return;
+  const dispose = observation[Symbol.dispose] || observation.dispose;
+  if (typeof dispose === "function") {
+    try {
+      dispose.call(observation);
+    } catch {
+      /* best-effort release */
+    }
+  }
+}
+
+/**
+ * Read a session's events without sessionQuery.readSession (which replay-validates the whole log).
+ * Preferred: sessionQuery.observeSession — the sanctioned path since DSH 0.1.6 deprecated the
+ * synchronous Session readers (snapshotEvents/eventAt/ownEvents). Fallbacks keep older deployments
+ * working: in-memory snapshot, persistence handle, legacy inspect().
+ */
 async function loadEvents(ctx, sessionId) {
+  const query = ctx.get("sessionQuery");
+  if (query && typeof query.observeSession === "function") {
+    const observation = await query.observeSession(sessionId);
+    try {
+      return observation.events || [];
+    } finally {
+      disposeObservation(observation);
+    }
+  }
   const sessions = ctx.get("sessions");
   const live = sessions && typeof sessions.get === "function" ? sessions.get(sessionId) : void 0;
   if (live && typeof live.snapshotEvents === "function") return live.snapshotEvents();
@@ -139,7 +166,7 @@ async function loadEvents(ctx, sessionId) {
     const loaded = await persistence.inspect(sessionId);
     return (loaded && loaded.events) || [];
   }
-  throw new Error("no session source available (sessions/sessionPersistence)");
+  throw new Error("no session source available (sessionQuery/sessions/sessionPersistence)");
 }
 
 /** Fail fast instead of letting an HTTP request hang forever. */

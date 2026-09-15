@@ -52,7 +52,7 @@ trajectory_window(session="session-e0636aa9-…", seq=1248)
 
 三件事:**取回事实**、**组织事实**、**约束纪律**。
 
-**1. 历史查询工具(给 Agent)** —— 常驻 host 插件 `dsh-trajectory-tools`:注册 `trajectory_sessions / index / find / window / trace` 五个只读工具,直接读 DSH 已有的事件日志(存活会话走内存快照,已结算会话走 `sessionPersistence` 句柄),不依赖 `ctx.sessionQuery`。证据优先:每个答案带 `(session, seq@logId)`、原样引用原文,片段以命中点为中心;查询返回空 = 可核验的"没有这样的事实"。不给 `session` 时默认搜「当前会话 + 所有 live 会话」,并默认丢掉注入样板与工具自己的调用(`excludeInjected` / `excludeSelf`);匹配默认归一化(`normalize`),单反斜杠也能查到日志里转义过的路径。`trajectory_index` 是**目录而非搜索**:先看"有什么可查"再挑词。
+**1. 历史查询工具(给 Agent)** —— 常驻 host 插件 `dsh-trajectory-tools`:注册 `trajectory_sessions / index / find / window / trace` 五个只读工具,直接读 DSH 已有的事件日志(首选 `sessionQuery.observeSession`,兼容退路是内存快照与 `sessionPersistence` 句柄)。证据优先:每个答案带 `(session, seq@logId)`、原样引用原文,片段以命中点为中心;查询返回空 = 可核验的"没有这样的事实"。不给 `session` 时默认搜「当前会话 + 所有 live 会话」,并默认丢掉注入样板与工具自己的调用(`excludeInjected` / `excludeSelf`);匹配默认归一化(`normalize`),单反斜杠也能查到日志里转义过的路径。`trajectory_index` 是**目录而非搜索**:先看"有什么可查"再挑词。
 
 **2. 常驻「分析」标签(Web GUI)** —— 在「对话 | 轨迹」旁边的第三个标签,渲染 **runtime incident view**:
 
@@ -104,8 +104,8 @@ node analyzers/self-test.mjs
 pnpm pack                                  # 在各自的 plugin 目录里执行
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: 增加
-#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.6.tgz"
-#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.1.0.tgz"
+#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.7.tgz"
+#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.1.1.tgz"
 #   dsh.profile.bundles: 追加 "dsh-trajectory-tools"、"dsh-analysis-view"
 pnpm install            # 在 ~/.dsh/profiles/web
 # 重启 dsh web(host 插件不会可靠热更新)
@@ -114,7 +114,7 @@ pnpm install            # 在 ~/.dsh/profiles/web
 ## 验证
 
 ```text
-cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (107 checks)
+cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (111 checks)
 node analyzers/self-test.mjs        # 分析器语义
 node analyzers/host-self-test.mjs   # host 侧 incident 判定
 ```
@@ -126,11 +126,12 @@ node analyzers/host-self-test.mjs   # host 侧 incident 判定
 - 面板的 incident 来自 host 路由 `/analysis-view/digest`(同参重复、空转 turn、Harness 反应由 host 判定);面板自身只渲染证据。
 - `Harness 反应` 由错误码推导(guard 已拦截 / 无 guard 需模型自纠),不是模板文案。
 - host 分析与 `analyzers/incidents.mjs` 是两份实现(运行时无法 import 仓库脚本),语义分别由 `analyzers/host-self-test.mjs`、`analyzers/self-test.mjs` 钉住。
-- 已结算会话经 `sessionPersistence.open(id, 'read')` 读取(DSH v0.1.3 起;旧版 `inspect()` 仍兜底)。
+- 会话经 `sessionQuery.observeSession(id)` 读取(DSH 0.1.6 起 `snapshotEvents` 等同步读取已弃用;兼容退路依次是内存快照 → `sessionPersistence.open(id, 'read')` → 旧版 `inspect()`)。
 - `seq` 只在同一份日志修订内稳定,所以引用必须带 `logId`;跨版本重写过的日志,旧 `seq` 可能指向别的事件。
-- 查询工具是 host 插件:装好后必须重启 `dsh web` 才会出现在模型工具表里;若同名工具已被别的插件注册,插件会显式报错而不是静默注册一半。契约由 `plugin/trajectory-tools/self-test.mjs`(107 项)钉住。
+- 查询工具是 host 插件:装好后必须重启 `dsh web` 才会出现在模型工具表里;若同名工具已被别的插件注册,插件会显式报错而不是静默注册一半。契约由 `plugin/trajectory-tools/self-test.mjs`(111 项)钉住。
 - 不给 `session` 时,`find` 的默认扫描集是「当前会话 + 所有 live 会话 + 最近若干已持久化会话」;已持久化会话按 `createdAt` 排序(没有便宜的"最近活动"信号),很久以前的会话请显式传 session。
-- `trajectory_trace` 是四个工具里唯一仍依赖 `ctx.sessionQuery` 的;其余三个只依赖 `sessions` / `sessionPersistence`。
+- `trajectory_trace` 是五个工具里唯一仍依赖 `ctx.sessionQuery` 的;其余四个只依赖 `sessions` / `sessionPersistence`。
+- 面向 DSH 0.1.6-alpha.1 核对过全部用到的 host/客户端 API:`defineTool` 参数 DSL、`sessionQuery` 方法表、`SessionHandle`、`skills.register`、`webServer.register`、`llm.stream`、`conversation.view` slot 与 `uiConversation.views/binding` 均未变;唯一需要迁移的就是上面那条同步读取弃用。
 
 ## 许可证
 

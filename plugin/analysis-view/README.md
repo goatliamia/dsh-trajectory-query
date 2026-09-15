@@ -51,9 +51,9 @@ no separate data source — and renders a **deterministic, evidence-cited** view
 Dynamic plugins are session-scoped and vanish on reload; this one is installed into the web profile.
 
 ```text
-1. pnpm pack                      # -> dsh-analysis-view-0.1.0.tgz
+1. pnpm pack                      # -> dsh-analysis-view-0.1.1.tgz
 2. add to ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.1.0.tgz"
+     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.1.1.tgz"
      dsh.profile.bundles: append "dsh-analysis-view"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. rebuild / restart `dsh web`    # so the new client module enters the bundle
@@ -79,7 +79,7 @@ Dynamic plugins are session-scoped and vanish on reload; this one is installed i
 - The host half serves incidents at `GET /analysis-view/digest?session=<id>` (same-args repeat, no-op turn, harness response); the client fetches it and renders evidence only.
 - `Harness response` is derived from error codes, not a template.
 - Host analysis and the repo analyzers are two implementations; each is pinned by its own self-test.
-- Settled (non-live) sessions are read through `sessionPersistence.open(id, 'read')` → `SessionHandle.read()` (the v0.1.3 API); a legacy `inspect()` fallback remains for rc.1.
+- Sessions are read through `sessionQuery.observeSession(id)` (the sanctioned path since DSH 0.1.6 deprecated `snapshotEvents`); the observation is disposed right after use. Fallbacks keep older deployments working: in-memory snapshot → `sessionPersistence.open(id, 'read')` → `SessionHandle.read()` → legacy `inspect()`.
 
 ---
 
@@ -122,9 +122,9 @@ conversation.view  →  [对话] [轨迹] [分析]
 动态插件是会话级、刷新即失;这个是装进 web profile 的常驻插件。
 
 ```text
-1. pnpm pack                      # 生成 dsh-analysis-view-0.1.0.tgz
+1. pnpm pack                      # 生成 dsh-analysis-view-0.1.1.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.1.0.tgz"
+     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.1.1.tgz"
      dsh.profile.bundles 追加 "dsh-analysis-view"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重建/重启 `dsh web`,让新的 client 模块进入前端包
@@ -150,4 +150,4 @@ conversation.view  →  [对话] [轨迹] [分析]
 - host 半边在 `GET /analysis-view/digest?session=<id>` 提供 incidents(同参重复、空转 turn、Harness 反应);客户端 fetch 后只负责渲染证据。
 - `Harness 反应` 由错误码推导,不是模板文案。
 - host 分析与仓库 `analyzers/` 是两份实现,各自由自检钉住。
-- 已结算(非活跃)会话通过 `sessionPersistence.open(id, 'read')` → `SessionHandle.read()`(v0.1.3 API)读取;旧版 `inspect()` 仍作兜底。
+- 会话经 `sessionQuery.observeSession(id)` 读取(DSH 0.1.6 起 `snapshotEvents` 已弃用,这是官方路径),读完立即释放观察;兼容退路依次是内存快照 → `sessionPersistence.open(id, 'read')` → `SessionHandle.read()` → 旧版 `inspect()`。

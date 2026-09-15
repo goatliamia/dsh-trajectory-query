@@ -15,10 +15,12 @@
 //   3. 空结果 = 可验证的"没有":查不到就是日志里没有,不做语义补全。
 //   4. seq 只在同一份日志修订内稳定,引用必须带 logId。
 //
-// 数据来源优先级(不依赖 sessionQuery,避免 readSession 的 replay 校验开销):
-//   存活会话 → ctx.sessions.get(id).snapshotEvents()
-//   已持久化 → ctx.sessionPersistence.open(id, "read") → handle.read() → close()
-//   (旧版后端兜底:sessionPersistence.inspect())
+// 数据来源优先级(不用 readSession:它会 replay 校验整份日志):
+//   首选 → ctx.sessionQuery.observeSession(id)(官方路径;live 优先、冷启动可复用观察缓存;
+//          DSH 0.1.6 起 Session 的同步读取 snapshotEvents()/eventAt() 已弃用,禁止新增调用)
+//   退路 → ctx.sessionPersistence.open(id, "read") → handle.read() → close()
+//   再退 → sessionPersistence.inspect()(旧版后端)
+//   末选 → ctx.sessions.get(id).snapshotEvents()(仅当部署里没有 sessionQuery 时的兼容退路)
 
 import { createHash } from "node:crypto";
 import { defineTool } from "@deepseek-ai/dsh-tools";
@@ -337,13 +339,45 @@ function liveSession(ctx, sessionId) {
   return sessions.get(sessionId);
 }
 
-/** 读取整份事件日志(存活优先)。 */
+/** 释放一次会话观察(SessionObservation 是 Disposable)。 */
+function disposeObservation(observation) {
+  if (observation === undefined || observation === null) return;
+  const dispose = observation[Symbol.dispose] || observation.dispose;
+  if (typeof dispose === "function") {
+    try {
+      dispose.call(observation);
+    } catch {
+      /* 释放尽力而为 */
+    }
+  }
+}
+
+/**
+ * 读取整份事件日志。
+ * 首选 ctx.sessionQuery.observeSession():官方路径(Session 的同步读取 `snapshotEvents()` /
+ * `eventAt()` 自 DSH 0.1.6 起弃用、禁止新增调用),返回 live 优先、冷启动可复用的不可变快照。
+ * 退路(按序):sessionPersistence 句柄 → 旧版 inspect() → 无 sessionQuery 时的内存快照。
+ */
 async function loadEvents(ctx, sessionId) {
+  const query = ctx.get("sessionQuery");
+  if (query !== undefined && typeof query.observeSession === "function") {
+    const observation = await query.observeSession(sessionId);
+    try {
+      return {
+        header: observation.header || null,
+        events: observation.events || [],
+        source: observation.source === "live" ? "live" : "persisted",
+      };
+    } finally {
+      disposeObservation(observation);
+    }
+  }
+  const persistence = ctx.get("sessionPersistence");
+  // 兼容退路(仅当部署里没有 sessionQuery):存活会话以内存快照为准 —— 它比落盘副本新。
   const live = liveSession(ctx, sessionId);
   if (live !== undefined && typeof live.snapshotEvents === "function") {
     return { header: live.header || null, events: live.snapshotEvents() || [], source: "live" };
   }
-  const persistence = ctx.get("sessionPersistence");
   if (persistence !== undefined && typeof persistence.open === "function") {
     const handle = await persistence.open(sessionId, "read");
     try {
@@ -357,25 +391,18 @@ async function loadEvents(ctx, sessionId) {
     const inspected = await persistence.inspect(sessionId);
     return { header: (inspected && inspected.meta) || null, events: (inspected && inspected.events) || [], source: "persisted" };
   }
-  throw new Error("没有可用的会话来源(sessions / sessionPersistence)");
+  throw new Error("没有可用的会话来源(sessionQuery / sessions / sessionPersistence)");
 }
 
-/** 只读一段 seq 区间,另外补一个 seq 0 事件用于算 logId。 */
+/**
+ * 只读一段 seq 区间,另外补一个 seq 0 事件用于算 logId。
+ * 冷会话(非存活)走 persistence 句柄切片读,不必整份物化;其余走 loadEvents 后截窗口。
+ */
 async function readWindow(ctx, sessionId, from, to) {
   const length = to - from + 1;
   const live = liveSession(ctx, sessionId);
-  if (live !== undefined && typeof live.snapshotEvents === "function") {
-    const all = live.snapshotEvents() || [];
-    return {
-      header: live.header || null,
-      source: "live",
-      events: all.filter((event) => event && event.seq >= from && event.seq <= to),
-      first: firstEventOf(all),
-      total: all.length,
-    };
-  }
   const persistence = ctx.get("sessionPersistence");
-  if (persistence !== undefined && typeof persistence.open === "function") {
+  if (live === undefined && persistence !== undefined && typeof persistence.open === "function") {
     const handle = await persistence.open(sessionId, "read");
     try {
       // 先读头部再读窗口:句柄的 read 不承诺可回退,顺序只向前。
@@ -448,7 +475,7 @@ export function currentSessionId(ctx, exec) {
 
 /**
  * 会话清单,排序:当前会话 → live(最近事件时间降序)→ 已持久化(createdAt 降序)。
- * live 的 lastEventTime 来自内存快照(很便宜);已持久化会话没有便宜的最近活动信号,
+ * live 的 lastEventTime 走 observeSession(可复用观察缓存);已持久化会话没有便宜的最近活动信号,
  * 只能按 createdAt —— 这是已知局限,长会话请显式传 session。
  */
 async function listSessions(ctx, currentId) {
@@ -482,13 +509,22 @@ async function listSessions(ctx, currentId) {
     records = [...byId.values()];
   }
 
-  const sessions = ctx.get("sessions");
-  for (const record of records) {
-    if (!record.live) continue;
-    const live = sessions !== undefined && typeof sessions.get === "function" ? sessions.get(record.header.id) : undefined;
-    if (live !== undefined && typeof live.snapshotEvents === "function") {
-      const last = lastEventOf(live.snapshotEvents());
-      record.lastEventTime = last ? last.time : null;
+  // live 会话的最近事件时间:走 observeSession(官方路径,可复用观察缓存)。
+  // 拿不到就退化为 live 内部按 createdAt 排序,不阻塞列表。
+  if (query !== undefined && typeof query.observeSession === "function") {
+    for (const record of records) {
+      if (!record.live) continue;
+      try {
+        const observation = await query.observeSession(record.header.id);
+        try {
+          const last = lastEventOf(observation.events);
+          record.lastEventTime = last ? last.time : null;
+        } finally {
+          disposeObservation(observation);
+        }
+      } catch {
+        /* 单个 live 会话取不到活动时间不影响列表 */
+      }
     }
   }
 

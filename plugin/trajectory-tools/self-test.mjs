@@ -128,6 +128,7 @@ const fakePersistence = {
 };
 
 const traceCalls = [];
+const observations = { opened: 0, disposed: 0 };
 const fakeQuery = {
   async listSessions() {
     // 故意按 createdAt 降序返回(真实服务的顺序),排序应由插件自己负责。
@@ -139,6 +140,20 @@ const fakeQuery = {
       { header: HEADERS.get(PERSISTED_ID), live: false, persisted: true },
       { header: HEADERS.get(CURRENT_ID), live: true, persisted: true },
     ];
+  },
+  // DSH 0.1.6 起的官方读取路径;Observation 是 Disposable,必须由调用方释放
+  async observeSession(sessionId) {
+    const events = LOGS.get(sessionId);
+    if (events === undefined) throw new Error('session "' + sessionId + '" not found');
+    observations.opened++;
+    return {
+      source: LIVE_IDS.has(sessionId) ? "live" : "prepared",
+      header: HEADERS.get(sessionId),
+      events,
+      [Symbol.dispose]() {
+        observations.disposed++;
+      },
+    };
   },
   async traceEvent(request) {
     traceCalls.push(request);
@@ -466,6 +481,31 @@ eq("index: cwd filter drops the others", indexCwd.sessions.some((row) => row.ses
 // 纯函数直测:indexEvents 与工具同源
 const direct = indexEvents(EVENTS, { toolNeedle: "trajectory_find" });
 eq("indexEvents: tool filter on the tool's own call", direct.events, 0);
+
+/* ---------------- 读取路径:observeSession(0.1.6 官方路径)与兼容退路 ---------------- */
+check("reads go through sessionQuery.observeSession", observations.opened > 0, JSON.stringify(observations));
+eq("every observation is disposed", observations.disposed, observations.opened);
+
+// 没有 sessionQuery.observeSession 的老部署:退回内存快照 / persistence 句柄
+const fallbackRegistered = new Map();
+apply({
+  tools: {
+    register(tool) {
+      fallbackRegistered.set(tool.name, tool);
+      return () => {};
+    },
+  },
+  effect(callback) {
+    return callback();
+  },
+  get(name) {
+    if (name === "sessionQuery") return { async listSessions() { return fakeQuery.listSessions(); } };
+    return services[name];
+  },
+});
+const fallbackFind = await fallbackRegistered.get("trajectory_find").execute({ session: LIVE_ID, query: "fs_not_observed" }, EXEC);
+eq("find: falls back to the in-memory snapshot without observeSession", fallbackFind.hitCount, 2);
+eq("find: fallback reports a live source", fallbackFind.source, "live");
 
 /* ---------------- 结果 ---------------- */
 if (failures.length === 0) {
