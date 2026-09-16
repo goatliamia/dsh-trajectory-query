@@ -25,11 +25,11 @@ trajectory into an **evidence-cited incident view**. No DSH core changes.
 One real query (this repository's own session):
 
 ```text
-trajectory_find(session="session-e0636aa9-…", query="FS_NOT_OBSERVED", types=["tool/result"])
+search(view="events", session="session-e0636aa9-…", query="FS_NOT_OBSERVED", filter={types:["tool/result"]})
 → seq=1248  tool/result  FsError:FS_NOT_OBSERVED
   log=2981dc3bba29
 
-trajectory_window(session="session-e0636aa9-…", seq=1248)
+read(session="session-e0636aa9-…", seq=1248)
 → the verbatim text of seq 1243…1253 (tool call / error / assistant output)
 ```
 
@@ -64,15 +64,19 @@ trajectory view.
 Three things: **fetch facts**, **organize facts**, **constrain the discipline**.
 
 **1. Historical query tools (agent-facing)** — the resident host plugin `dsh-trajectory-tools`
-registers six read-only tools (`trajectory_sessions / index / find / window / trace / cost`) that read the event
+registers three read-only entries split by question, not by data source: `trajectory_search` (`view` is
+required: `events` literal hits / `catalog` counts and ranges / `cost` tokens / `sessions` list),
+`trajectory_read` (verbatim text for a seq range) and `trajectory_graph` (replacement/source/derived
+chains and lineage). They read the event
 log DSH already keeps (preferred: `sessionQuery.observeSession`; compatible fallbacks: the in-memory
 snapshot and a `sessionPersistence` handle). Evidence-first: every answer
 carries `(session, seq@logId)` and quotes the original text verbatim, with a snippet centred on the
-match; a search that returns nothing is a verifiable "no such fact". Without `session`, `find`
-searches the current session plus every live session by default, and drops injected boilerplate and
-the tools' own calls (`excludeInjected` / `excludeSelf`); matching is normalized (`normalize`), so a
-single-backslash path finds the escaped form in the log. `trajectory_index` is a **catalog, not a
-search**: see what is queryable before guessing a word.
+match; a search that returns nothing is a verifiable "no such fact". Without `session`,
+`search(view="events")` covers the current session plus every live session by default, and drops
+injected boilerplate and the tools' own calls (`filter.excludeInjected` / `filter.excludeSelf`);
+matching is normalized (`filter.normalize`), so a single-backslash path finds the escaped form in the
+log. Optional narrowing lives in one `filter` object whose keys depend on the view; `view="catalog"`
+is the "see what is queryable before guessing a word" entry.
 
 **2. Resident Analysis tab (Web GUI)** — a third tab beside *Conversation | Trajectory* that renders
 a **runtime incident view**:
@@ -106,10 +110,11 @@ conclusions.
 
 ```text
 # 1. let the agent query for itself (once the plugin is installed, the model calls these directly)
-trajectory_sessions(limit=10)                          # get a session id first
-trajectory_find(session=<id>, query="<literal>")       # hits with seq + logId
-trajectory_window(session=<id>, seq=<hit seq>)         # verbatim context
-trajectory_trace(session=<id>, seq=<hit seq>)          # replacement / source / derived chain
+search(view="sessions")                                # which sessions are queryable
+search(view="events", query="<literal>")               # hits with seq / logId / matchAt
+read(session=<id>, seq=<hit seq>)                      # verbatim context
+graph(session=<id>, seq=<hit seq>)                     # replacement / source / derived chain
+search(view="cost", session=<id>)                      # tokens and cache efficiency
 
 # 2. read the Analysis panel: the "Analysis" tab in the Web GUI (current session)
 #    or hit the host route directly:
@@ -122,7 +127,7 @@ node analyzers/self-test.mjs
 
 ## Layout
 
-- `plugin/trajectory-tools/` — host plugin: six read-only query tools + bundled runtime skill
+- `plugin/trajectory-tools/` — host plugin: three read-only entries (search/read/graph) + bundled runtime skill
 - `plugin/analysis-view/` — resident Analysis tab (client + host routes)
 - `analyzers/` — deterministic analyzers, digest runner, self-test
 - `skill/` — `trajectory-query.md` (query discipline), `analysis.md` (analysis method)
@@ -135,7 +140,7 @@ node analyzers/self-test.mjs
 pnpm pack                                  # in each plugin directory
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: add
-#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.8.tgz"
+#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.2.0.tgz"
 #     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.1.2.tgz"
 #   dsh.profile.bundles: append "dsh-trajectory-tools" and "dsh-analysis-view"
 pnpm install            # in ~/.dsh/profiles/web
@@ -145,15 +150,16 @@ pnpm install            # in ~/.dsh/profiles/web
 ## Verify
 
 ```text
-cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (128 checks)
+cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (123 checks)
 node analyzers/self-test.mjs        # analyzer semantics
 node analyzers/host-self-test.mjs   # host-side incident detection
 ```
 
-After restarting `dsh web`, confirm that the model's tool list contains `trajectory_*` (including
-`trajectory_index`), that the skill catalog contains `trajectory-query`, that `trajectory_find`
-results carry `matchAt` / `filtered` / `normalized`, that `trajectory_trace` chains come back as
-`{count, head, tail}`, and that `/analysis-view/digest` returns 200 for a settled session.
+After restarting `dsh web`, confirm that the model's tool list contains the three entries
+`trajectory_search` / `trajectory_read` / `trajectory_graph` (no longer six), that the skill catalog
+contains `trajectory-query`, that `search(view="events")` results carry `matchAt` / `filtered` /
+`normalized`, that `graph` chains come back as `{count, head, tail}`, and that
+`/analysis-view/digest` returns 200 for a settled session.
 
 ## Known gaps
 
@@ -162,12 +168,12 @@ results carry `matchAt` / `filtered` / `normalized`, that `trajectory_trace` cha
 - Host analysis and `analyzers/incidents.mjs` are two implementations (runtime cannot import repo scripts); each is pinned by its own self-test.
 - Sessions are read via `sessionQuery.observeSession(id)` (DSH 0.1.6 deprecated the synchronous readers such as `snapshotEvents`; fallbacks: in-memory snapshot → `sessionPersistence.open(id, 'read')` → legacy `inspect()`).
 - `seq` is only stable inside one log revision, so citations must carry `logId`; after a version rewrite an old `seq` may point at a different event.
-- The query tools are a host plugin: `dsh web` must be restarted before they appear in the model's tool list; if a tool name is already taken the plugin fails loudly instead of half-registering. Its contract is pinned by `plugin/trajectory-tools/self-test.mjs` (128 checks).
-- Without `session`, `find` scans the current session + every live session + a few persisted ones; persisted sessions are ranked by `createdAt` (there is no cheap last-activity signal), so pass `session` explicitly for a long-settled session.
-- `trajectory_trace` is the only one of the five that still depends on `ctx.sessionQuery`; the other four need only `sessions` / `sessionPersistence`.
+- The query tools are a host plugin: `dsh web` must be restarted before they appear in the model's tool list; if a tool name is already taken the plugin fails loudly instead of half-registering. Its contract is pinned by `plugin/trajectory-tools/self-test.mjs` (123 checks).
+- Without `session`, `view="events"` scans the current session + every live session + a few persisted ones; persisted sessions are ranked by `createdAt` (there is no cheap last-activity signal), so pass `session` explicitly for a long-settled session.
+- `trajectory_graph` is the only one of the three that depends on `ctx.sessionQuery`; search and read need only `sessions` / `sessionPersistence`.
 - Every host/client API these plugins use was checked against DSH 0.1.6-alpha.1: the `defineTool` parameter DSL, the `sessionQuery` method set, `SessionHandle`, `skills.register`, `webServer.register`, `llm.stream`, the `conversation.view` slot and `uiConversation.views/binding` are unchanged; the only migration needed is the deprecated synchronous read above.
-- Runtime: DSH 0.1.6-alpha.1, plugins 0.1.8 / 0.1.2. The first five tools and both routes are verified live (all `ok: true`; `/analysis-view/digest` returns 200 for settled and live sessions, and the analyzers parse the v3 logs written after the upgrade). `trajectory_cost` and the cost block are new in this revision, covered by the 128-check self-test and an offline check on real data; a live check is pending the next restart.
-- `trajectory_cost` reads `assistant/message.usage` only — no new instrumentation. A request whose adapter reported no usage is `unknown` (never zero), and a single missing field is `null` and stays out of the sums. The DeepSeek adapter usually does not report `cacheWriteTokens`: that means "not reported", not "no cache write".
+- Runtime: DSH 0.1.6-alpha.1, plugins 0.2.0 / 0.1.2. The previous 6-tool surface was verified live (all `ok: true`, both routes 200, analyzers parse v3). This revision merges those six into three entries and cuts the tool-table footprint by ~68%; the contract is covered by the 123-check self-test and an offline check on real data, with a live check pending the next restart.
+- `trajectory_search(view="cost")` reads `assistant/message.usage` only — no new instrumentation. A request whose adapter reported no usage is `unknown` (never zero), and a single missing field is `null` and stays out of the sums. The DeepSeek adapter usually does not report `cacheWriteTokens`: that means "not reported", not "no cache write".
 - Trap: after the format migration a session directory keeps **both `session.v3.jsonl.zstd` (current) and `session.v2.jsonl.zstd` (pre-migration copy)**. Pass the v3 file to the analyzers by hand, or you will read the stale copy as if it were the newest session. `experiments/corpus/scan-sessions.mjs` now picks the highest version per directory.
 
 ## License

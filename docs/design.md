@@ -36,9 +36,11 @@
 
 | Tool | `ctx.sessionQuery` |
 |---|---|
-| `trajectory_find` | searchEvents / searchSessions(结构化过滤:type / seq / time + FTS query,返回 hit:{session, seq, type, time, snippet}) |
-| `trajectory_window` | readEvent / readSession + seq 切片;输出 **verbatim** 原文 |
-| `trajectory_trace` | traceSession / traceEvent(祖先链、子代理关系、事件间引用) |
+| `trajectory_search(view="events")` | searchEvents / searchSessions(结构化过滤:type / seq / time,返回 hit:{session, seq, type, time, snippet}) |
+| `trajectory_read` | readEvent / readSession + seq 切片;输出 **verbatim** 原文 |
+| `trajectory_graph` | traceSession / traceEvent(祖先链、子代理关系、事件间引用) |
+
+(工具面在 0.2.0 收敛为三个入口;上表按当时草案的名字记录映射关系。)
 
 ## 风险清单(交给实验回答)
 
@@ -55,7 +57,7 @@ trajectory 收敛为**一个插件**,内部三个 facet,全部惰性——不用
 
 ```text
 trajectory 插件
-├─ 查询面(host 工具):trajectory_find / window / trace / sessions —— 人和 AI 共用
+├─ 查询面(host 工具):trajectory_search / read / graph —— 人和 AI 共用
 ├─ 分析面:
 │    ├─ 分析管线(host,按需):确定性分析器(fold → 事实)→ digest(md/json)→ 对比表
 │    ├─ 可选面板(client,占位):纯模板渲染分析结果,零 token(UI 待与用户探讨,未实现)

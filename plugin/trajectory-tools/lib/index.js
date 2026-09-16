@@ -4,10 +4,9 @@
 // 消息历史与工具结果。一旦内容被 compaction 覆盖、或事情发生在很久以前/别的会话/子代理,
 // 模型只能靠记忆或让用户复述。本插件把日志本身变成模型可查的事实源:
 //
-//   trajectory_sessions  列出可查会话(先拿 session id)
-//   trajectory_find      字面量子串检索事件 → (session, seq, type, time) + 逐字片段
-//   trajectory_window    按 (session, seq 区间) 取原文窗口
-//   trajectory_trace     事件替换/引用/派生链 + 会话谱系
+//   trajectory_search  查事实与数字:会话清单 / 会话目录 / 事件命中 / token 成本(view 区分)
+//   trajectory_read    按 (session, seq 区间) 逐字取原文
+//   trajectory_graph   事件替换/引用/派生链 + 会话谱系
 //
 // 原则(与 skill/trajectory-query.md 一致):
 //   1. 只读:不写入、不改写任何事件;返回文本逐字来自日志。
@@ -29,14 +28,8 @@ import { SKILL_BODY, SKILL_DESCRIPTION, SKILL_NAME, SKILL_WHEN_TO_USE } from "./
 export const inject = ["tools"];
 
 const MAX_WINDOW = 60;
-const MAX_FIND_LIMIT = 20;
-const DEFAULT_FIND_LIMIT = 8;
-const DEFAULT_SESSION_LIMIT = 30;
-const MAX_SESSION_LIMIT = 100;
-const DEFAULT_INDEX_LIMIT = 10;
-const MAX_INDEX_LIMIT = 30;
-const DEFAULT_COST_LIMIT = 20;
-const MAX_COST_LIMIT = 50;
+const DEFAULT_ROWS = 10;
+const MAX_ROWS = 100;
 const TRACE_EDGE = 3;
 const LOAD_TIMEOUT_MS = 5000;
 
@@ -549,7 +542,7 @@ async function listSessions(ctx, currentId) {
 
 /**
  * 目录统计(issue #3):对一份事件日志做计数与范围统计,不返回任何内容。
- * 与 trajectory_find 共用同一套默认过滤(excludeInjected / excludeSelf)。
+ * 与 trajectory_search 的 events 视图共用同一套默认过滤(excludeInjected / excludeSelf)。
  */
 export function indexEvents(events, options = {}) {
   const typeFilter = Array.isArray(options.typeFilter) ? options.typeFilter : [];
@@ -754,382 +747,394 @@ export function apply(ctx) {
     }
   };
 
-  register({
-    name: "trajectory_sessions",
-    description:
-      "列出可查询的会话(当前存活 + 已持久化),返回 id、创建时间、cwd、父会话、preset、live/persisted/current。排序:当前会话 → live(最近事件时间降序)→ 已持久化(createdAt 降序)。先用它确定 session id,再传给其它 trajectory_* 工具。只读。",
-    parameters: {
-      limit: { type: "integer", description: "返回条数,默认 " + DEFAULT_SESSION_LIMIT + ",上限 " + MAX_SESSION_LIMIT },
-      liveOnly: { type: "boolean", description: "只列当前存活会话(默认 false:存活 + 已持久化)" },
-    },
-    output: OUTPUT,
-    async execute(args, exec) {
-      try {
-        const limit = Math.min(Math.max(Number(args.limit || DEFAULT_SESSION_LIMIT), 1), MAX_SESSION_LIMIT);
-        const currentId = currentSessionId(ctx, exec);
-        const all = await listSessions(ctx, currentId);
-        const filtered = args.liveOnly === true ? all.filter((item) => item.live) : all;
-        return {
-          ok: true,
-          current: currentId || null,
-          total: all.length,
-          returned: Math.min(filtered.length, limit),
-          items: filtered.slice(0, limit),
-        };
-      } catch (error) {
-        return FAILED(error);
-      }
-    },
-  });
+  /* ------------------------------------------------------------------ *
+   * 三个入口:search(查事实)/ read(取原文)/ graph(看关系)
+   * 可选维度统一收进 filter 对象;键清单写在 filter 的描述里,未知键由这里报
+   * (运行时只说 "not a declared property",不列可选项)。
+   * ------------------------------------------------------------------ */
 
-  register({
-    name: "trajectory_index",
-    description:
-      "会话目录(不是搜索,issue #3):只给计数与范围,不返回内容。用来看「日志里有什么可查」,而不是凭空猜词。与 trajectory_find 共用同一套默认扫描集与过滤(excludeInjected / excludeSelf)。cwd / timeFrom / timeTo / type / tool 可收窄;limit 限制返回的会话数。只读。",
-    parameters: {
-      cwd: { type: "string", description: "只列 cwd 含该串的会话(大小写不敏感)" },
-      timeFrom: { type: "integer", description: "只统计时间 >= 该毫秒时间戳的事件" },
-      timeTo: { type: "integer", description: "只统计时间 <= 该毫秒时间戳的事件" },
-      type: { type: "array", items: { type: "string" }, description: "只统计这些事件类型,如 tool/result、assistant/message" },
-      tool: { type: "string", description: "只统计该工具名(大小写不敏感包含匹配)的 tool/call 及其结果" },
-      limit: { type: "integer", description: "最多返回多少个会话,默认 " + DEFAULT_INDEX_LIMIT + ",上限 " + MAX_INDEX_LIMIT },
-    },
-    output: OUTPUT,
-    async execute(args, exec) {
-      try {
-        const limit = Math.min(Math.max(Number(args.limit || DEFAULT_INDEX_LIMIT), 1), MAX_INDEX_LIMIT);
-        const currentId = currentSessionId(ctx, exec);
-        const all = await listSessions(ctx, currentId);
-        const cwdNeedle = typeof args.cwd === "string" ? args.cwd.trim().toLowerCase() : "";
-        const typeFilter = Array.isArray(args.type) ? args.type.map((value) => String(value)) : [];
-        const toolNeedle = typeof args.tool === "string" ? args.tool.trim().toLowerCase() : "";
-        const candidates = cwdNeedle === "" ? all : all.filter((record) => String(record.cwd || "").toLowerCase().includes(cwdNeedle));
+  const FILTER_KEYS = {
+    events: ["types", "from", "to", "timeFrom", "timeTo", "sessionCount", "normalize", "excludeInjected", "excludeSelf"],
+    catalog: ["cwd", "timeFrom", "timeTo", "type", "tool"],
+    cost: ["from", "to", "groupBy"],
+    sessions: ["liveOnly"],
+  };
 
-        const sessions = [];
-        let scanned = 0;
-        let failed = 0;
-        for (const record of candidates) {
-          if (sessions.length >= limit) break;
-          scanned++;
-          try {
-            const loaded = await withTimeout(loadEvents(ctx, record.id), LOAD_TIMEOUT_MS, "trajectory_index");
-            const stats = indexEvents(loaded.events, {
-              typeFilter,
-              toolNeedle,
-              timeFrom: args.timeFrom,
-              timeTo: args.timeTo,
-            });
-            sessions.push({
-              session: record.id,
-              cwd: record.cwd,
-              current: record.current === true,
-              live: record.live,
-              persisted: record.persisted,
-              log: logIdentity(record.id, loaded.events).id,
-              ...stats,
-            });
-          } catch {
-            failed++;
-          }
+  function takeFilter(raw, view) {
+    if (raw === undefined || raw === null) return { filter: {} };
+    if (typeof raw !== "object" || Array.isArray(raw)) return { error: "filter 需要是对象;view=" + view + " 可用:" + FILTER_KEYS[view].join(", ") };
+    const unknown = Object.keys(raw).filter((key) => !FILTER_KEYS[view].includes(key));
+    if (unknown.length > 0) {
+      const owners = Object.keys(FILTER_KEYS).filter((candidate) => candidate !== view && unknown.every((key) => FILTER_KEYS[candidate].includes(key)));
+      const hint = owners.length === 1 ? ";这些键属于 view=" + owners[0] : "";
+      return { error: "filter." + unknown.join(", filter.") + " 对 view=" + view + " 无效" + hint + ";view=" + view + " 可用:" + FILTER_KEYS[view].join(", ") };
+    }
+    return { filter: raw };
+  }
+
+  function rowLimit(args, fallback) {
+    return Math.min(Math.max(Number(args.limit || fallback), 1), MAX_ROWS);
+  }
+
+  /* ---------------- view=events:字面检索 ---------------- */
+  async function searchEvents(args, exec, filter) {
+    const limit = rowLimit(args, DEFAULT_ROWS);
+    const needle = typeof args.query === "string" ? args.query.trim() : "";
+    const types = Array.isArray(filter.types) ? filter.types.map((type) => String(type)) : [];
+    const hasRange = filter.from !== undefined || filter.to !== undefined || filter.timeFrom !== undefined || filter.timeTo !== undefined;
+    if (!needle && types.length === 0 && !hasRange) {
+      return { ok: false, error: "view=events 需要 query,或 filter 里的 types/from/to/timeFrom/timeTo" };
+    }
+    const excludeInjected = filter.excludeInjected !== false;
+    const excludeSelf = filter.excludeSelf !== false;
+    const normalize = filter.normalize !== false;
+    const needleKey = needle ? (normalize ? norm(needle) : fold(needle)) : "";
+
+    const scan = (events) => {
+      const selfCallIds = excludeSelf ? buildSelfCallIds(events) : null;
+      const hits = [];
+      const filtered = { injected: 0, self: 0 };
+      for (const event of events || []) {
+        if (!event || typeof event.seq !== "number") continue;
+        if (types.length > 0 && !types.includes(event.type)) continue;
+        if (filter.from !== undefined && event.seq < Number(filter.from)) continue;
+        if (filter.to !== undefined && event.seq > Number(filter.to)) continue;
+        if (filter.timeFrom !== undefined && !(Number(event.time) >= Number(filter.timeFrom))) continue;
+        if (filter.timeTo !== undefined && !(Number(event.time) <= Number(filter.timeTo))) continue;
+        const text = eventText(event);
+        if (needleKey && !(normalize ? norm(text) : fold(text)).includes(needleKey)) continue;
+        if (excludeInjected && isInjectedText(text)) {
+          filtered.injected++;
+          continue;
         }
-        return { ok: true, current: currentId || null, scanned, failed, returned: sessions.length, sessions };
-      } catch (error) {
-        return FAILED(error);
+        if (excludeSelf && isSelfEvent(event, selfCallIds)) {
+          filtered.self++;
+          continue;
+        }
+        hits.push({ event, text });
       }
-    },
-  });
+      return { hits, filtered };
+    };
 
-  register({
-    name: "trajectory_cost",
-    description:
-      "成本(确定性 fold,issue #5):按 assistant/message 携带的 usage 逐请求汇总 token —— input(未命中的新输入)、cacheRead(命中前缀)、cacheWrite、output、reasoning、total,并给出 cache 效率 = cacheRead/(cacheRead+input)。groupBy='turn' 时按轮汇总。适配器没上报 usage 的请求记 unknown(不按 0 算)。工具只给数字,不判断\"值不值\"。缺 session 时用当前会话。只读。",
-    parameters: {
-      session: { type: "string", description: "会话 id;缺省用当前会话" },
-      from: { type: "integer", description: "只看 seq >= 该值的事件(含)" },
-      to: { type: "integer", description: "只看 seq <= 该值的事件(含)" },
-      groupBy: { type: "string", enum: ["request", "turn"], description: "默认 request(每请求一行);turn=按轮汇总" },
-      limit: { type: "integer", description: "返回行数上限,默认 " + DEFAULT_COST_LIMIT + ",上限 " + MAX_COST_LIMIT },
-    },
-    output: OUTPUT,
-    async execute(args, exec) {
-      try {
-        const limit = Math.min(Math.max(Number(args.limit || DEFAULT_COST_LIMIT), 1), MAX_COST_LIMIT);
-        const groupBy = args.groupBy === "turn" ? "turn" : "request";
-        const sessionId = typeof args.session === "string" && args.session !== "" ? args.session : currentSessionId(ctx, exec);
-        if (sessionId === undefined) return { ok: false, error: "需要 session(当前会话无法确定)" };
-        const loaded = await withTimeout(loadEvents(ctx, sessionId), LOAD_TIMEOUT_MS, "trajectory_cost");
-        const scoped = args.from === undefined && args.to === undefined
-          ? loaded.events
-          : (loaded.events || []).filter((event) => {
-              if (!event || typeof event.seq !== "number") return false;
-              if (args.from !== undefined && event.seq < Number(args.from)) return false;
-              if (args.to !== undefined && event.seq > Number(args.to)) return false;
-              return true;
-            });
-        const requests = costRequests(scoped);
-        const totals = costTotals(requests);
-        const rows = groupBy === "turn" ? costByTurn(requests) : requests;
+    const toItem = (sessionId, hit, logId) => {
+      const snippet = clipAround(hit.text, needle, 400, normalize);
+      return {
+        session: sessionId,
+        seq: hit.event.seq,
+        type: hit.event.type,
+        time: hit.event.time,
+        log: logId,
+        text: snippet.text,
+        matchAt: snippet.matchAt,
+      };
+    };
+
+    try {
+      if (args.session) {
+        const sessionId = String(args.session);
+        const loaded = await withTimeout(loadEvents(ctx, sessionId), LOAD_TIMEOUT_MS, "trajectory_search");
+        const { hits, filtered } = scan(loaded.events);
+        const log = logIdentity(sessionId, loaded.events);
         return {
           ok: true,
+          view: "events",
           session: sessionId,
           source: loaded.source,
-          log: logIdentity(sessionId, loaded.events),
-          groupBy,
-          requestCount: totals.requests,
-          unknownRequests: totals.unknownRequests,
-          coverage: costCoverage(requests),
-          totals,
-          rowCount: rows.length,
-          returned: Math.min(rows.length, limit),
-          truncated: rows.length > limit,
-          rows: rows.slice(0, limit),
-        };
-      } catch (error) {
-        return FAILED(error);
-      }
-    },
-  });
-
-  register({
-    name: "trajectory_find",
-    description:
-      "在会话事件日志里按字面量子串查找(大小写不敏感、空白灵活;默认还会把连续反斜杠折叠为一个、统一中英文引号,便于查转义过的路径)。只给事实与位置:每条命中返回 (session, seq, type, time) 与逐字片段,片段以命中点为中心、保证包含命中文本,并给出 matchAt。给 session 时在该会话内查;否则默认扫描「当前会话 + 所有 live 会话 + 最近若干已持久化会话」。默认过滤注入样板(<system-reminder> 的 workspace 指令)与 trajectory_* 自身的调用/结果,可用 excludeInjected / excludeSelf 关闭。空结果 = 日志里确实没有,不要用常识补。",
-    parameters: {
-      session: { type: "string", description: "会话 id;缺省则扫描当前会话 + live 会话 + 最近若干已持久化会话" },
-      query: { type: "string", description: "查找词(按字面子串匹配)" },
-      types: { type: "array", items: { type: "string" }, description: "事件类型过滤,如 user/message、tool/call、tool/result、assistant/message" },
-      from: { type: "integer", description: "seq 下界(含)" },
-      to: { type: "integer", description: "seq 上界(含)" },
-      timeFrom: { type: "integer", description: "时间下界(毫秒时间戳,含)" },
-      timeTo: { type: "integer", description: "时间上界(毫秒时间戳,含)" },
-      sessionCount: { type: "integer", description: "缺省 session 时额外扫描的已持久化会话数,默认 3,上限 10(当前会话与所有 live 会话总是包含)" },
-      normalize: { type: "boolean", description: "默认 true:匹配时把连续反斜杠折叠为一个、中英文引号互认(引文仍是原文);查转义路径建议保持开启" },
-      excludeInjected: { type: "boolean", description: "默认 true:跳过注入样板(如 <system-reminder> 的 workspace 指令)" },
-      excludeSelf: { type: "boolean", description: "默认 true:跳过 trajectory_* 工具自身的调用与结果" },
-      limit: { type: "integer", description: "最大返回条数,默认 " + DEFAULT_FIND_LIMIT + ",上限 " + MAX_FIND_LIMIT },
-    },
-    output: OUTPUT,
-    async execute(args, exec) {
-      try {
-        const limit = Math.min(Math.max(Number(args.limit || DEFAULT_FIND_LIMIT), 1), MAX_FIND_LIMIT);
-        const needle = typeof args.query === "string" ? args.query.trim() : "";
-        const types = Array.isArray(args.types) ? args.types.map((type) => String(type)) : [];
-        const hasRange = args.from !== undefined || args.to !== undefined || args.timeFrom !== undefined || args.timeTo !== undefined;
-        if (!needle && types.length === 0 && !hasRange) {
-          return { ok: false, error: "至少需要 query、types、from/to 或 timeFrom/timeTo 之一" };
-        }
-        const excludeInjected = args.excludeInjected !== false;
-        const excludeSelf = args.excludeSelf !== false;
-        const normalize = args.normalize !== false;
-        const needleKey = needle ? (normalize ? norm(needle) : fold(needle)) : "";
-
-        const scan = (events) => {
-          const selfCallIds = excludeSelf ? buildSelfCallIds(events) : null;
-          const hits = [];
-          const filtered = { injected: 0, self: 0 };
-          for (const event of events || []) {
-            if (!event || typeof event.seq !== "number") continue;
-            if (types.length > 0 && !types.includes(event.type)) continue;
-            if (args.from !== undefined && event.seq < Number(args.from)) continue;
-            if (args.to !== undefined && event.seq > Number(args.to)) continue;
-            if (args.timeFrom !== undefined && !(Number(event.time) >= Number(args.timeFrom))) continue;
-            if (args.timeTo !== undefined && !(Number(event.time) <= Number(args.timeTo))) continue;
-            const text = eventText(event);
-            if (needleKey && !(normalize ? norm(text) : fold(text)).includes(needleKey)) continue;
-            if (excludeInjected && isInjectedText(text)) {
-              filtered.injected++;
-              continue;
-            }
-            if (excludeSelf && isSelfEvent(event, selfCallIds)) {
-              filtered.self++;
-              continue;
-            }
-            hits.push({ event, text });
-          }
-          return { hits, filtered };
-        };
-
-        const toItem = (sessionId, hit, logId) => {
-          const snippet = clipAround(hit.text, needle, 400, normalize);
-          return {
-            session: sessionId,
-            seq: hit.event.seq,
-            type: hit.event.type,
-            time: hit.event.time,
-            log: logId,
-            text: snippet.text,
-            matchAt: snippet.matchAt,
-          };
-        };
-
-        if (args.session) {
-          const sessionId = String(args.session);
-          const loaded = await withTimeout(loadEvents(ctx, sessionId), LOAD_TIMEOUT_MS, "trajectory_find");
-          const { hits, filtered } = scan(loaded.events);
-          const log = logIdentity(sessionId, loaded.events);
-          return {
-            ok: true,
-            mode: "literal-in-session",
-            session: sessionId,
-            source: loaded.source,
-            log,
-            hitCount: hits.length,
-            returned: Math.min(hits.length, limit),
-            normalized: normalize,
-            filtered,
-            items: hits.slice(0, limit).map((hit) => toItem(sessionId, hit, log.id)),
-          };
-        }
-
-        const currentId = currentSessionId(ctx, exec);
-        const sessionCount = Math.min(Math.max(Number(args.sessionCount || 3), 1), 10);
-        const all = await listSessions(ctx, currentId);
-        const always = all.filter((record) => record.current === true || record.live === true);
-        const alwaysIds = new Set(always.map((record) => record.id));
-        const extra = all.filter((record) => !alwaysIds.has(record.id)).slice(0, sessionCount);
-        const targets = [...always, ...extra];
-
-        const items = [];
-        let scanned = 0;
-        let failures = 0;
-        const filteredTotal = { injected: 0, self: 0 };
-        for (const target of targets) {
-          if (items.length >= limit) break;
-          scanned++;
-          try {
-            const loaded = await withTimeout(loadEvents(ctx, target.id), LOAD_TIMEOUT_MS, "trajectory_find");
-            const log = logIdentity(target.id, loaded.events);
-            const { hits, filtered } = scan(loaded.events);
-            filteredTotal.injected += filtered.injected;
-            filteredTotal.self += filtered.self;
-            for (const hit of hits) {
-              if (items.length >= limit) break;
-              items.push(toItem(target.id, hit, log.id));
-            }
-          } catch {
-            failures++;
-          }
-        }
-        return {
-          ok: true,
-          mode: "literal-cross-session",
-          current: currentId || null,
-          scanned,
-          failed: failures,
-          targets: targets.map((record) => record.id),
-          returned: items.length,
+          log,
+          hitCount: hits.length,
+          returned: Math.min(hits.length, limit),
           normalized: normalize,
-          filtered: filteredTotal,
-          items,
+          filtered,
+          items: hits.slice(0, limit).map((hit) => toItem(sessionId, hit, log.id)),
         };
-      } catch (error) {
-        return FAILED(error);
       }
-    },
-  });
 
-  register({
-    name: "trajectory_window",
-    description:
-      "按 (session, seq 区间) 取原文窗口,逐字返回事件文本(消息 / 工具调用 / 工具结果 / 错误)。用于核实 find 命中、看上下文。窗口上限 " + MAX_WINDOW + " 个事件;只给 seq 时取前后各 5 个。只读。",
-    parameters: {
-      session: { type: "string", required: true, description: "会话 id" },
-      from: { type: "integer", description: "起始 seq(含)" },
-      to: { type: "integer", description: "结束 seq(含)" },
-      seq: { type: "integer", description: "只给 seq 时取其前后各 5 个事件" },
-      mode: { type: "string", enum: ["surface", "raw"], description: "surface(默认)=只列有语义文本的事件;raw=区间内全部事件" },
-    },
-    output: OUTPUT,
-    async execute(args) {
-      try {
-        const sessionId = String(args.session);
-        let from;
-        let to;
-        if (args.seq !== undefined && args.seq !== null) {
-          const center = Number(args.seq);
-          from = Math.max(0, center - 5);
-          to = center + 5;
-        } else {
-          from = Number(args.from);
-          to = Number(args.to);
-          if (!Number.isInteger(from) || !Number.isInteger(to)) return { ok: false, error: "需要 from/to 或 seq" };
-        }
-        if (from > to) return { ok: false, error: "from 不能大于 to" };
-        if (to - from + 1 > MAX_WINDOW) {
-          return { ok: false, error: "窗口超过 " + MAX_WINDOW + " 事件上限,请缩小范围", window: { from, to } };
-        }
-        const window = await withTimeout(readWindow(ctx, sessionId, Math.max(from, 0), to), LOAD_TIMEOUT_MS, "trajectory_window");
-        const rows = [];
-        for (const event of window.events) {
-          const text = eventText(event);
-          if (args.mode === "raw" || text) {
-            rows.push({ seq: event.seq, type: event.type, time: event.time, text: clip(text, 4000) });
+      const currentId = currentSessionId(ctx, exec);
+      const sessionCount = Math.min(Math.max(Number(filter.sessionCount || 3), 1), 10);
+      const all = await listSessions(ctx, currentId);
+      const always = all.filter((record) => record.current === true || record.live === true);
+      const alwaysIds = new Set(always.map((record) => record.id));
+      const extra = all.filter((record) => !alwaysIds.has(record.id)).slice(0, sessionCount);
+      const targets = [...always, ...extra];
+
+      const items = [];
+      let scanned = 0;
+      let failures = 0;
+      const filteredTotal = { injected: 0, self: 0 };
+      for (const target of targets) {
+        if (items.length >= limit) break;
+        scanned++;
+        try {
+          const loaded = await withTimeout(loadEvents(ctx, target.id), LOAD_TIMEOUT_MS, "trajectory_search");
+          const log = logIdentity(target.id, loaded.events);
+          const { hits, filtered } = scan(loaded.events);
+          filteredTotal.injected += filtered.injected;
+          filteredTotal.self += filtered.self;
+          for (const hit of hits) {
+            if (items.length >= limit) break;
+            items.push(toItem(target.id, hit, log.id));
           }
+        } catch {
+          failures++;
         }
+      }
+      return {
+        ok: true,
+        view: "events",
+        current: currentId || null,
+        scanned,
+        failed: failures,
+        targets: targets.map((record) => record.id),
+        returned: items.length,
+        normalized: normalize,
+        filtered: filteredTotal,
+        items,
+      };
+    } catch (error) {
+      return FAILED(error);
+    }
+  }
+
+  /* ---------------- view=catalog:计数与范围 ---------------- */
+  async function catalogView(args, exec, filter) {
+    const limit = rowLimit(args, DEFAULT_ROWS);
+    try {
+      const currentId = currentSessionId(ctx, exec);
+      const all = typeof args.session === "string" && args.session !== "" ? null : await listSessions(ctx, currentId);
+      const typeFilter = Array.isArray(filter.type) ? filter.type.map((value) => String(value)) : [];
+      const toolNeedle = typeof filter.tool === "string" ? filter.tool.trim().toLowerCase() : "";
+      let candidates;
+      if (all === null) {
+        candidates = [{ id: String(args.session), cwd: null, current: false, live: undefined, persisted: undefined }];
+      } else {
+        const cwdNeedle = typeof filter.cwd === "string" ? filter.cwd.trim().toLowerCase() : "";
+        candidates = cwdNeedle === "" ? all : all.filter((record) => String(record.cwd || "").toLowerCase().includes(cwdNeedle));
+      }
+      const sessions = [];
+      let scanned = 0;
+      let failed = 0;
+      for (const record of candidates) {
+        if (sessions.length >= limit) break;
+        scanned++;
+        try {
+          const loaded = await withTimeout(loadEvents(ctx, record.id), LOAD_TIMEOUT_MS, "trajectory_search");
+          const stats = indexEvents(loaded.events, {
+            typeFilter,
+            toolNeedle,
+            timeFrom: filter.timeFrom,
+            timeTo: filter.timeTo,
+          });
+          sessions.push({
+            session: record.id,
+            cwd: record.cwd,
+            current: record.current === true,
+            live: record.live,
+            persisted: record.persisted,
+            log: logIdentity(record.id, loaded.events).id,
+            ...stats,
+          });
+        } catch {
+          failed++;
+        }
+      }
+      return { ok: true, view: "catalog", current: currentId || null, scanned, failed, returned: sessions.length, sessions };
+    } catch (error) {
+      return FAILED(error);
+    }
+  }
+
+  /* ---------------- view=sessions:可查会话 ---------------- */
+  async function sessionsView(args, exec, filter) {
+    try {
+      const limit = rowLimit(args, DEFAULT_ROWS);
+      const currentId = currentSessionId(ctx, exec);
+      const all = await listSessions(ctx, currentId);
+      const filtered = filter.liveOnly === true ? all.filter((item) => item.live) : all;
+      return {
+        ok: true,
+        view: "sessions",
+        current: currentId || null,
+        total: all.length,
+        returned: Math.min(filtered.length, limit),
+        items: filtered.slice(0, limit),
+      };
+    } catch (error) {
+      return FAILED(error);
+    }
+  }
+
+  /* ---------------- view=cost:token 成本 ---------------- */
+  async function costView(args, exec, filter) {
+    const limit = rowLimit(args, DEFAULT_ROWS);
+    try {
+      const groupBy = filter.groupBy === "turn" ? "turn" : "request";
+      const sessionId = typeof args.session === "string" && args.session !== "" ? args.session : currentSessionId(ctx, exec);
+      if (sessionId === undefined) return { ok: false, error: "需要 session(当前会话无法确定)" };
+      const loaded = await withTimeout(loadEvents(ctx, sessionId), LOAD_TIMEOUT_MS, "trajectory_search");
+      const scoped = filter.from === undefined && filter.to === undefined
+        ? loaded.events
+        : (loaded.events || []).filter((event) => {
+            if (!event || typeof event.seq !== "number") return false;
+            if (filter.from !== undefined && event.seq < Number(filter.from)) return false;
+            if (filter.to !== undefined && event.seq > Number(filter.to)) return false;
+            return true;
+          });
+      const requests = costRequests(scoped);
+      const totals = costTotals(requests);
+      const rows = groupBy === "turn" ? costByTurn(requests) : requests;
+      return {
+        ok: true,
+        view: "cost",
+        session: sessionId,
+        log: logIdentity(sessionId, loaded.events),
+        groupBy,
+        requestCount: totals.requests,
+        unknownRequests: totals.unknownRequests,
+        coverage: costCoverage(requests),
+        totals,
+        rowCount: rows.length,
+        returned: Math.min(rows.length, limit),
+        truncated: rows.length > limit,
+        rows: rows.slice(0, limit),
+      };
+    } catch (error) {
+      return FAILED(error);
+    }
+  }
+
+  async function runSearch(args, exec) {
+    const view = args.view;
+    const taken = takeFilter(args.filter, view);
+    if (taken.error !== undefined) return { ok: false, error: taken.error };
+    if (view === "events") return searchEvents(args, exec, taken.filter);
+    if (view === "cost") return costView(args, exec, taken.filter);
+    if (view === "sessions") return sessionsView(args, exec, taken.filter);
+    return catalogView(args, exec, taken.filter);
+  }
+
+  /* ---------------- read:逐字取原文 ---------------- */
+  async function runRead(args) {
+    try {
+      const sessionId = String(args.session);
+      let from;
+      let to;
+      if (args.seq !== undefined && args.seq !== null) {
+        const center = Number(args.seq);
+        from = Math.max(0, center - 5);
+        to = center + 5;
+      } else {
+        from = Number(args.from);
+        to = Number(args.to);
+        if (!Number.isInteger(from) || !Number.isInteger(to)) return { ok: false, error: "需要 from/to 或 seq" };
+      }
+      if (from > to) return { ok: false, error: "from 不能大于 to" };
+      if (to - from + 1 > MAX_WINDOW) {
+        return { ok: false, error: "窗口超过 " + MAX_WINDOW + " 事件上限,请缩小范围", window: { from, to } };
+      }
+      const window = await withTimeout(readWindow(ctx, sessionId, Math.max(from, 0), to), LOAD_TIMEOUT_MS, "trajectory_read");
+      const rows = [];
+      for (const event of window.events) {
+        const text = eventText(event);
+        if (args.raw === true || text) {
+          rows.push({ seq: event.seq, type: event.type, time: event.time, text: clip(text, 4000) });
+        }
+      }
+      return {
+        ok: true,
+        session: sessionId,
+        source: window.source,
+        log: { id: logIdOf(sessionId, window.first), eventCount: window.total === undefined ? null : window.total },
+        requested: { from, to },
+        returned: rows.length,
+        events: rows,
+      };
+    } catch (error) {
+      return FAILED(error);
+    }
+  }
+
+  /* ---------------- graph:关系链 ---------------- */
+  async function runGraph(args) {
+    try {
+      const query = ctx.get("sessionQuery");
+      if (query === undefined) return { ok: false, error: "sessionQuery 服务不可用" };
+      const sessionId = String(args.session);
+      const full = args.full === true;
+      if (args.seq !== undefined && args.seq !== null) {
+        const traced = await query.traceEvent({ sessionId, seq: Number(args.seq) });
+        const target = traced.target || {};
         return {
           ok: true,
           session: sessionId,
-          source: window.source,
-          log: { id: logIdOf(sessionId, window.first), eventCount: window.total === undefined ? null : window.total },
-          requested: { from, to },
-          returned: rows.length,
-          events: rows,
+          target: { seq: target.seq, type: target.type, time: target.time, surface: target.surface },
+          replacedBy: traced.replacedBy === undefined ? null : traced.replacedBy,
+          replacementChain: boundSeqs(traced.replacementChain, full),
+          replacedEventSeqs: boundSeqs(traced.replacedEventSeqs, full),
+          sourceEventSeqs: boundSeqs(traced.sourceEventSeqs, full),
+          derivedEventSeqs: boundSeqs(traced.derivedEventSeqs, full),
+          full,
         };
-      } catch (error) {
-        return FAILED(error);
       }
+      const traced = await query.traceSession(sessionId);
+      const node = (item) => ({
+        id: item.session.header.id,
+        live: item.session.live,
+        persisted: item.session.persisted,
+        descendants: (item.descendants || []).map(node),
+      });
+      return {
+        ok: true,
+        target: sessionId,
+        complete: traced.complete,
+        ancestors: (traced.ancestors || []).map((record) => record.header.id),
+        descendants: (traced.descendants || []).map(node),
+      };
+    } catch (error) {
+      return FAILED(error);
+    }
+  }
+
+  register({
+    name: "trajectory_search",
+    description:
+      "查会话日志里的事实与数字,不取完整原文。返回位置 (session, seq@logId) 与逐字片段;空结果=日志里没有,不要用常识补。",
+    parameters: {
+      view: { type: "string", required: true, enum: ["events", "catalog", "sessions", "cost"], description: "events=搜事件;catalog=计数与范围;cost=token 成本;sessions=会话列表" },
+      session: { type: "string", description: "会话 id;省略时 events 覆盖当前会话+live+最近若干" },
+      query: { type: "string", description: "字面词(view=events)" },
+      filter: { type: "object", additionalProperties: true, description: "按 view 生效。events: types,from,to,timeFrom,timeTo,sessionCount,normalize,excludeInjected,excludeSelf;catalog: cwd,timeFrom,timeTo,type,tool;cost: from,to,groupBy;sessions: liveOnly" },
+      limit: { type: "integer", description: "行数上限,默认 " + DEFAULT_ROWS },
     },
+    output: OUTPUT,
+    execute: (args, exec) => runSearch(args, exec),
   });
 
   register({
-    name: "trajectory_trace",
+    name: "trajectory_read",
     description:
-      "关系链:给 (session, seq) 返回该事件的替换/引用/派生链;只给 session 返回谱系(祖先 / 子会话 / 子代理)。链默认只给计数与首尾(实测 sourceEventSeqs 可达上千项,避免烧 token);需要完整集合用 full=true,或改用 trajectory_window 分段读取。需要 sessionQuery 服务。只读。",
+      "按 (session, seq 区间) 逐字取原文(消息/工具调用/结果),用于核实 search 命中或看上下文。默认只给有正文的事件;窗口上限 " + MAX_WINDOW + " 个事件。",
     parameters: {
       session: { type: "string", required: true, description: "会话 id" },
-      seq: { type: "integer", description: "事件 seq;给定时返回事件关系,缺省返回会话谱系" },
-      full: { type: "boolean", description: "默认 false:关系链只给 count + 首/尾;true 返回完整数组(可能上千项)" },
+      seq: { type: "integer", description: "中心 seq,取前后各 5 个" },
+      from: { type: "integer", description: "起始 seq(含)" },
+      to: { type: "integer", description: "结束 seq(含)" },
+      raw: { type: "boolean", description: "true=区间内全部事件" },
     },
     output: OUTPUT,
-    async execute(args) {
-      try {
-        const query = ctx.get("sessionQuery");
-        if (query === undefined) return { ok: false, error: "sessionQuery 服务不可用" };
-        const sessionId = String(args.session);
-        const full = args.full === true;
-        if (args.seq !== undefined && args.seq !== null) {
-          const traced = await query.traceEvent({ sessionId, seq: Number(args.seq) });
-          const target = traced.target || {};
-          return {
-            ok: true,
-            session: sessionId,
-            target: { seq: target.seq, type: target.type, time: target.time, surface: target.surface },
-            replacedBy: traced.replacedBy === undefined ? null : traced.replacedBy,
-            replacementChain: boundSeqs(traced.replacementChain, full),
-            replacedEventSeqs: boundSeqs(traced.replacedEventSeqs, full),
-            sourceEventSeqs: boundSeqs(traced.sourceEventSeqs, full),
-            derivedEventSeqs: boundSeqs(traced.derivedEventSeqs, full),
-            full,
-          };
-        }
-        const traced = await query.traceSession(sessionId);
-        const node = (item) => ({
-          id: item.session.header.id,
-          live: item.session.live,
-          persisted: item.session.persisted,
-          descendants: (item.descendants || []).map(node),
-        });
-        return {
-          ok: true,
-          target: sessionId,
-          complete: traced.complete,
-          ancestors: (traced.ancestors || []).map((record) => record.header.id),
-          descendants: (traced.descendants || []).map(node),
-        };
-      } catch (error) {
-        return FAILED(error);
-      }
+    execute: (args) => runRead(args),
+  });
+
+  register({
+    name: "trajectory_graph",
+    description:
+      "事件或会话之间的关系:给 seq 看该事件的替换/引用/派生链,只给 session 看谱系(祖先/子会话/子代理)。链默认只给计数与首尾,full=true 给完整数组。",
+    parameters: {
+      session: { type: "string", required: true, description: "会话 id" },
+      seq: { type: "integer", description: "事件 seq;缺省返回会话谱系" },
+      full: { type: "boolean", description: "true=完整链" },
     },
+    output: OUTPUT,
+    execute: (args) => runGraph(args),
   });
 
   if (conflicts.length > 0) {

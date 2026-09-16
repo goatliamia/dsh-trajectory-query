@@ -11,55 +11,27 @@ English | [中文](#中文)
 
 ### Why
 
-DSH stores every session as an append-only event log, but a model normally only sees the
-projected message history. Once content is compacted, or the thing you need happened long ago /
-in another session / in a subagent, you are left guessing or asking the user to repeat themselves.
-These tools read the log directly and answer with **verbatim text plus a pointer**, so the model
-interprets facts instead of reconstructing them.
+DSH stores every session as an append-only event log, but a model normally only sees the projected
+message history. Once content is compacted, or the thing you need happened long ago / in another
+session / in a subagent, you are left guessing or asking the user to repeat themselves. These tools
+read the log directly and answer with **verbatim text plus a pointer**, so the model interprets
+facts instead of reconstructing them.
 
 ### Tools
 
-| Tool | What it returns |
+Three entries, split by the question rather than by data source. `view` is required on
+`trajectory_search` so a call never has to guess what you meant.
+
+| Tool | Question it answers |
 |---|---|
-| `trajectory_sessions` | queryable sessions, ordered current → live → persisted: id, createdAt, cwd, parent, preset, `current` |
-| `trajectory_index` | **catalog, not search**: per-session counts (`events`, `semanticEvents`, `byType`, `byTool`) plus `seqRange` / `timeRange` — no content |
-| `trajectory_find` | literal substring search → `(session, seq, type, time)` + a snippet centred on the match (`matchAt`), always containing the matched text; normalization on by default |
-| `trajectory_window` | verbatim window by `(session, seq range)`, max 60 events |
-| `trajectory_trace` | event replacement / source / derived chain, or session lineage; chains are bounded by default (`full: true` returns the complete array) |
-| `trajectory_cost` | token cost per request (or per turn): `input` / `cacheRead` / `cacheWrite` / `output` / `reasoning` / `total` plus cache efficiency `cacheRead/(cacheRead+input)` |
+| `trajectory_search` | what is there / where was it said / how much did it cost. `view`: `events` literal hits with a snippet centred on the match · `catalog` per-session counts and seq/time ranges, no content · `cost` per-request tokens and cache efficiency · `sessions` which sessions are queryable |
+| `trajectory_read` | give me the verbatim text of this `(session, seq range)` |
+| `trajectory_graph` | how are these related: event replacement / source / derived chain, or session lineage |
 
-### Cost
-
-`trajectory_cost` folds `assistant/message.usage` — no new instrumentation. The numbers only; whether
-the spend was worth it stays the model's interpretation.
-
-- `input` is the part of the context that missed the cache this request (the genuinely new tokens);
-  `cacheRead` is the reused prefix. `cacheEfficiency` dropping below ~1.0 means the prefix was
-  rewritten or the sequence changed.
-- A request whose adapter reported no usage is `unknown`, never zero; a single missing field is
-  `null` and stays out of the sums. `coverage` says how many requests reported each field — on the
-  DeepSeek adapter `cacheWriteTokens` is usually absent, which means "not reported", not "no cache".
-- `cost` deliberately ignores `excludeInjected` / `excludeSelf`: accounting counts everything.
-
-### Default scope, filtering, normalization
-
-Without `session`, `trajectory_find` / `trajectory_index` scan **the current session + every live
-session + a few persisted sessions** (persisted sessions are ranked by `createdAt` — there is no
-cheap "last activity" signal for them). The current session is resolved from the tool execution
-context, so a long session whose `createdAt` is ancient is still searched.
-
-Two filters are on by default, because the naive result set is mostly noise:
-
-- `excludeInjected` — drops injected boilerplate (the `<system-reminder>` workspace instructions).
-- `excludeSelf` — drops `trajectory_*`'s own calls and results, so searching for a word does not
-  return the search itself.
-
-Both can be turned off; the response reports `filtered: { injected, self }` either way.
-
-Matching is also normalized by default (`normalize: true`): runs of backslashes collapse and
-ASCII/typographic quotes are interchangeable, so a query written the human way
-(`C:\Users\14100\.dsh`) finds the escaped form in the log (`C:\\Users\\14100\\.dsh`). Only matching
-is normalized — quoted evidence stays verbatim — and the response reports `normalized`.
+Optional narrowing sits in one `filter` object whose keys depend on the view
+(`events`: types, from, to, timeFrom, timeTo, sessionCount, normalize, excludeInjected, excludeSelf;
+`catalog`: cwd, timeFrom, timeTo, type, tool; `cost`: from, to, groupBy; `sessions`: liveOnly). Pass a
+key the view does not accept and the error names the keys that view does accept.
 
 ### Principles
 
@@ -69,11 +41,38 @@ is normalized — quoted evidence stays verbatim — and the response reports `n
 4. **Citations carry a log identity.** `seq` is only stable inside one log revision, so results
    include `log.id` (append-stable hash of the first event); cite `(session, seq@logId)`.
 
-### Bundled skill
+### Default scope and filtering
 
-The plugin also registers one thin runtime skill, `trajectory-query` (`lib/skill.js`), so the
-discipline travels with the tools and no agent preset has to be edited: query instead of guessing,
-quote verbatim, cite `(session, seq@logId)`, and treat an empty result as verifiable absence.
+Without `session`, `view="events"` scans **the current session + every live session + a few
+persisted sessions** (persisted sessions are ranked by `createdAt` — there is no cheap "last
+activity" signal for them). The current session is resolved from the tool execution context, so a
+long session whose `createdAt` is ancient is still searched.
+
+Two filters are on by default, because the naive result set is mostly noise:
+
+- `filter.excludeInjected` — drops injected boilerplate (the `<system-reminder>` workspace instructions).
+- `filter.excludeSelf` — drops `trajectory_*`'s own calls and results, so searching for a word does not
+  return the search itself.
+
+Both can be turned off; the response reports `filtered: { injected, self }` either way. `cost` ignores
+both on purpose: accounting counts everything.
+
+Matching is also normalized by default (`filter.normalize: false` turns it off): runs of backslashes
+collapse and ASCII/typographic quotes are interchangeable, so a query written the human way
+(`C:\Users\14100\.dsh`) finds the escaped form in the log (`C:\\Users\\14100\\.dsh`). Only matching
+is normalized — quoted evidence stays verbatim — and the response reports `normalized`.
+
+### Cost
+
+`view="cost"` folds `assistant/message.usage` — no new instrumentation. The numbers only; whether
+the spend was worth it stays the model's interpretation.
+
+- `input` is the part of the context that missed the cache this request (the genuinely new tokens);
+  `cacheRead` is the reused prefix. `cacheEfficiency` dropping below ~1.0 means the prefix was
+  rewritten or the sequence changed.
+- A request whose adapter reported no usage is `unknown`, never zero; a single missing field is
+  `null` and stays out of the sums. `coverage` says how many requests reported each field — on the
+  DeepSeek adapter `cacheWriteTokens` is usually absent, which means "not reported", not "no cache".
 
 ### Data source
 
@@ -88,39 +87,47 @@ fallback  → ctx.sessionPersistence.open(id,"read") → handle.read() → close
 fallback  → ctx.sessionPersistence.inspect(id)      legacy backends
 ```
 
-`trajectory_trace` is the one tool that uses `sessionQuery` (`traceEvent` / `traceSession`).
-A window on a non-live session reads a seq slice through the persistence handle instead of
+`trajectory_graph` is the one tool that uses `sessionQuery` (`traceEvent` / `traceSession`).
+A read of a non-live session uses a seq slice through the persistence handle instead of
 materializing the whole log.
+
+### Bundled skill
+
+The plugin also registers one thin runtime skill, `trajectory-query` (`lib/skill.js`), so the
+discipline travels with the tools and no agent preset has to be edited: query instead of guessing,
+quote verbatim, cite `(session, seq@logId)`, treat an empty result as verifiable absence.
 
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.1.8.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.2.0.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.1.8.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.2.0.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
-4. reload/restart `dsh web`       # host plugins do not hot-reload reliably
+4. restart `dsh web`              # host plugins do not hot-reload reliably
 ```
 
 ### Files
 
 | File | Role |
 |---|---|
-| `lib/index.js` | host half: reads the log and registers every tool |
+| `lib/index.js` | host half: reads the log and registers the three tools |
 | `lib/skill.js` | the `trajectory-query` runtime skill body |
-| `self-test.mjs` | 107 contract checks against a fake ctx + synthetic log (no real session) |
+| `self-test.mjs` | 123 contract checks against a fake ctx + synthetic log (no real session) |
 | `cordis.patch.yml` | bundle layer that inserts the plugin row |
 | `package.json` | `dsh.bundle.patch` (host-only; no client half) |
 
 ### Verify
 
 ```text
-node self-test.mjs                                 # from the installed package dir -> ALL PASS
-trajectory_index(limit=5)                          # catalog: counts + ranges, no content
-trajectory_find(query="C:\Users\14100\.dsh")       # normalized match; hits carry matchAt + logId
-trajectory_window(session=<id>, seq=<hit seq>)     # verbatim context
-trajectory_trace(session=<id>, seq=<hit seq>)      # bounded chain (full: true for the whole array)
+node self-test.mjs                                       # from the installed package dir -> ALL PASS
+trajectory_search(view="sessions")                       # which sessions are queryable
+trajectory_search(view="catalog", session=<id>)          # counts + ranges, no content
+trajectory_search(view="events", query="<literal>")      # hits with matchAt + logId
+trajectory_read(session=<id>, seq=<hit seq>)             # verbatim context
+trajectory_graph(session=<id>, seq=<hit seq>)            # bounded chain
+trajectory_search(view="cost", session=<id>)             # tokens + cache efficiency
 ```
 
 ---
@@ -132,43 +139,22 @@ trajectory_trace(session=<id>, seq=<hit seq>)      # bounded chain (full: true f
 
 DSH 把每个会话都存成 append-only 事件日志,但模型平时只看到投影后的消息历史。一旦内容被
 compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理里,就只能靠记忆或让用户复述。
-这些工具直接读日志,返回**逐字文本 + 指针**:模型解释事实,而不是凭印象重建事实。
+这三个入口直接读日志,返回**逐字文本 + 指针**:模型解释事实,而不是凭印象重建事实。
 
 ### 工具
 
-| 工具 | 返回 |
+按**问题**分三个入口,不按数据源分。`trajectory_search` 的 `view` 必填,免得一次调用去猜你想干什么。
+
+| 工具 | 回答什么 |
 |---|---|
-| `trajectory_sessions` | 可查询的会话,排序:当前 → live → 已持久化:id、创建时间、cwd、父会话、preset、`current` |
-| `trajectory_index` | **目录,不是搜索**:每个会话的计数(`events`、`semanticEvents`、`byType`、`byTool`)与 `seqRange` / `timeRange`,不含内容 |
-| `trajectory_find` | 事件字面量子串检索 → `(session, seq, type, time)` + 以命中点为中心的片段(`matchAt`),必定包含命中文本;默认归一化 |
-| `trajectory_window` | 按 `(session, seq 区间)` 取原文窗口,上限 60 个事件 |
-| `trajectory_trace` | 事件替换 / 引用 / 派生链,或会话谱系;关系链默认有界(`full: true` 才给完整数组) |
-| `trajectory_cost` | 逐请求(或按轮)的 token 成本:`input` / `cacheRead` / `cacheWrite` / `output` / `reasoning` / `total`,以及 cache 效率 `cacheRead/(cacheRead+input)` |
+| `trajectory_search` | 有什么 / 在哪说过 / 花了多少。`view`:`events` 字面命中 + 以命中点为中心的片段 · `catalog` 会话级计数与 seq/时间范围(不含正文) · `cost` 逐请求 token 与 cache 效率 · `sessions` 哪些会话可查 |
+| `trajectory_read` | 把 `(session, seq 区间)` 的原文逐字给我 |
+| `trajectory_graph` | 这些东西什么关系:事件替换 / 引用 / 派生链,或会话谱系 |
 
-### 成本
-
-`trajectory_cost` 只 fold `assistant/message.usage`,不新增埋点;只给数字,"这次花得值不值"仍是模型的解释。
-
-- `input` 是本次**没命中缓存**的那部分上下文(真正新增的 token),`cacheRead` 是复用的前缀;`cacheEfficiency` 掉到 1.0 以下就说明前缀被改写或换了序列。
-- usage 整个缺失的请求记 `unknown`,不按 0;单字段缺失记 `null`,不进求和。`coverage` 说明每个字段有多少请求报了 —— DeepSeek 适配器基本不报 `cacheWriteTokens`,那是"没上报",不是"没写缓存"。
-- `cost` 刻意不套 `excludeInjected` / `excludeSelf`:记账要记全量。
-
-### 默认范围、过滤与归一化
-
-不给 `session` 时,`trajectory_find` / `trajectory_index` 扫描 **当前会话 + 所有 live 会话 + 最近若干已持久化会话**
-(已持久化会话按 `createdAt` 排序——它们没有便宜的"最近活动"信号)。当前会话取自工具执行上下文,
-所以一个 `createdAt` 很老的长会话依然会被搜到。
-
-两个过滤器默认开启,因为不过滤的结果集大半是噪声:
-
-- `excludeInjected` — 丢掉注入样板(`<system-reminder>` 的 workspace 指令)。
-- `excludeSelf` — 丢掉 `trajectory_*` 自己的调用与结果,避免"查什么就命中这次查询本身"。
-
-两者都可关闭;无论开关,返回里都带 `filtered: { injected, self }`。
-
-匹配默认归一化(`normalize: true`):连续反斜杠折叠为一个、中英文引号互认 —— 用人类习惯写的
-`C:\Users\14100\.dsh` 能查到日志里转义过的 `C:\\Users\\14100\\.dsh`。归一化只作用于匹配,
-引文仍是原文 verbatim,返回里带 `normalized`。
+可选维度收在一个 `filter` 对象里,键按 view 不同
+(`events`:types, from, to, timeFrom, timeTo, sessionCount, normalize, excludeInjected, excludeSelf;
+`catalog`:cwd, timeFrom, timeTo, type, tool;`cost`:from, to, groupBy;`sessions`:liveOnly)。
+传了这个 view 不认的键,错误会告诉你它认哪些。
 
 ### 原则
 
@@ -178,10 +164,29 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 4. **引用带日志身份。** `seq` 只在同一份日志修订内稳定,所以结果里带 `log.id`(首事件的
    append-stable 哈希);引用写成 `(session, seq@logId)`。
 
-### 自带 skill
+### 默认范围与过滤
 
-插件同时注册一个薄的 runtime skill `trajectory-query`(`lib/skill.js`),让纪律跟着工具走、
-不用改任何 agent preset:先查再答、逐字引用、引用写 `(session, seq@logId)`、空结果就是可验证的"没有"。
+不给 `session` 时,`view="events"` 扫描 **当前会话 + 所有 live 会话 + 最近若干已持久化会话**
+(已持久化会话按 `createdAt` 排序——它们没有便宜的"最近活动"信号)。当前会话取自工具执行上下文,
+所以一个 `createdAt` 很老的长会话依然会被搜到。
+
+两个过滤器默认开启,因为不过滤的结果集大半是噪声:
+
+- `filter.excludeInjected` — 丢掉注入样板(`<system-reminder>` 的 workspace 指令)。
+- `filter.excludeSelf` — 丢掉 `trajectory_*` 自己的调用与结果,避免"查什么就命中这次查询本身"。
+
+两者都可关闭;无论开关,返回里都带 `filtered: { injected, self }`。`cost` 刻意两个都不用:记账要记全量。
+
+匹配默认归一化(`filter.normalize: false` 可关):连续反斜杠折叠为一个、中英文引号互认 —— 用人类习惯写的
+`C:\Users\14100\.dsh` 能查到日志里转义过的 `C:\\Users\\14100\\.dsh`。归一化只作用于匹配,
+引文仍是原文 verbatim,返回里带 `normalized`。
+
+### 成本
+
+`view="cost"` 只 fold `assistant/message.usage`,不新增埋点;只给数字,"这次花得值不值"仍是模型的解释。
+
+- `input` 是本次**没命中缓存**的那部分上下文(真正新增的 token),`cacheRead` 是复用的前缀;`cacheEfficiency` 掉到 1.0 以下就说明前缀被改写或换了序列。
+- usage 整个缺失的请求记 `unknown`,不按 0;单字段缺失记 `null`,不进求和。`coverage` 说明每个字段有多少请求报了 —— DeepSeek 适配器基本不报 `cacheWriteTokens`,那是"没上报",不是"没写缓存"。
 
 ### 数据来源
 
@@ -196,15 +201,20 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 退路   → ctx.sessionPersistence.inspect(id)      旧版后端
 ```
 
-`trajectory_trace` 是唯一用到 `sessionQuery`(`traceEvent` / `traceSession`)的工具。
-非存活会话的窗口走 persistence 句柄的切片读,不整份物化。
+`trajectory_graph` 是唯一用到 `sessionQuery`(`traceEvent` / `traceSession`)的工具。
+非存活会话的读取走 persistence 句柄的切片,不整份物化。
+
+### 自带 skill
+
+插件同时注册一个薄的 runtime skill `trajectory-query`(`lib/skill.js`),让纪律跟着工具走、
+不用改任何 agent preset:先查再答、逐字引用、引用写 `(session, seq@logId)`、空结果就是可验证的"没有"。
 
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.1.8.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.2.0.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.1.8.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.2.0.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新
@@ -214,18 +224,20 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 
 | 文件 | 作用 |
 |---|---|
-| `lib/index.js` | host 半边:读日志并注册全部工具 |
+| `lib/index.js` | host 半边:读日志并注册三个入口 |
 | `lib/skill.js` | `trajectory-query` runtime skill 正文 |
-| `self-test.mjs` | 128 项契约检查(假 ctx + 合成日志,不连真实会话) |
+| `self-test.mjs` | 123 项契约检查(假 ctx + 合成日志,不连真实会话) |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch`(纯 host,无客户端半边) |
 
 ### 验证
 
 ```text
-node self-test.mjs                                 # 在安装后的包目录里运行 → ALL PASS
-trajectory_index(limit=5)                          # 目录:计数 + 范围,不含内容
-trajectory_find(query="C:\Users\14100\.dsh")       # 归一化命中;带 matchAt 与 logId
-trajectory_window(session=<id>, seq=<命中 seq>)    # 逐字上下文
-trajectory_trace(session=<id>, seq=<命中 seq>)     # 有界关系链(full: true 才给完整数组)
+node self-test.mjs                                       # 在安装后的包目录里运行 → ALL PASS
+trajectory_search(view="sessions")                       # 哪些会话可查
+trajectory_search(view="catalog", session=<id>)          # 计数与范围,不含正文
+trajectory_search(view="events", query="<字面词>")       # 命中带 matchAt 与 logId
+trajectory_read(session=<id>, seq=<命中 seq>)            # 逐字上下文
+trajectory_graph(session=<id>, seq=<命中 seq>)           # 有界关系链
+trajectory_search(view="cost", session=<id>)             # token 与 cache 效率
 ```
