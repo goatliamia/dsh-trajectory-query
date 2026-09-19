@@ -763,7 +763,7 @@ const RECONCILE_SUMMARY = "上下文被压缩过,已请模型对账一次理解"
 
 /** 默认那句话。config.reconcile.sentence 可换。 */
 export const DEFAULT_RECONCILE_SENTENCE =
-  "上下文被压缩过一次,压掉的那段只剩日志里有。用不超过两行跟我说一句:你保留的理解是什么(目标/进度/下一步);不确定的先用 trajectory_search 回查,查不回来的直接问我。";
+  "上下文被压缩过一次,压掉的那段只剩日志里有。用不超过两行跟我说一句:你理解这件事要做什么、现在到哪了、下一步做什么;不确定的先用 trajectory_search 回查,查不回来的直接问我。";
 
 /** 读 config.reconcile:false 关掉,true/对象开启;对象可给 sentence 与 enabled。缺省开启。 */
 export function reconcileConfig(raw) {

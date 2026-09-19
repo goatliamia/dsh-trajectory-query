@@ -78,16 +78,19 @@ matching is normalized (`filter.normalize`), so a single-backslash path finds th
 log. Optional narrowing lives in one `filter` object whose keys depend on the view; `view="catalog"`
 is the "see what is queryable before guessing a word" entry.
 
-**Optional: reconcile after a compaction (on by default)** — compaction does not rewrite facts; it
-moves a span of history out of the model's view (shadowed, not deleted), leaving the model with a
-summary it did not write. So after a **successful** `compaction/end` the plugin marks that session,
-and at the turn's stop boundary (`agent/turn-stopping`) injects one sentence: tell me in two lines
-what understanding you kept (goal / progress / next step), re-query the log with `trajectory_search`
-where you are unsure, ask the human where the log cannot answer. It arrives as a `plugin` notice
-(`form: "notice"` plus a human-facing `summary`), so who is talking is declared rather than inferred
-from the text, and it registers no tool schema — zero bytes added to the tool table. One compaction
-earns one reconcile, subagent children are skipped, and it can be disabled (`config.reconcile: false`)
-or reworded (`config.reconcile.sentence`) on the loader row.
+**Optional: reconcile after a compaction (on by default)** — built for one symptom: once the context
+is compacted, the model tends to put its head down and keep working, without asking and without ever
+saying what it now thinks the job is. The compacted part really is gone from its view, yet its tone is
+indistinguishable from a model that lost nothing — and by the time you notice the direction is wrong,
+it may have spent many steps on it. So after a **successful** `compaction/end` the plugin marks that
+session, and at the turn's stop boundary (`agent/turn-stopping`) injects one sentence: in two lines,
+say what you understand the job to be, where you are, and what comes next — re-query the log with
+`trajectory_search` where you are unsure, ask the human where the log cannot answer. It arrives as a
+`plugin` notice (`form: "notice"` plus a human-facing `summary`), so who is talking is declared rather
+than inferred from the text, and it registers no tool schema — zero bytes added to the tool table. One
+compaction earns one reconcile, subagent children are skipped; it is on by default, `config.reconcile: false`
+turns it off, `config.reconcile.sentence` replaces the wording (see the
+[plugin README](plugin/trajectory-tools/README.md#optional-reconcile-after-a-compaction-on-by-default)).
 
 **2. Resident Analysis tab (Web GUI)** — a third tab beside *Conversation | Trajectory* that renders
 a **runtime incident view**:
@@ -172,7 +175,8 @@ After restarting `dsh web`, confirm that the model's tool list contains the thre
 contains `trajectory-query`, that `search(view="events")` results carry `matchAt` / `filtered` /
 `normalized`, that `graph` chains come back as `{count, head, tail}`, and that
 `/analysis-view/digest` returns 200 for a settled session. The compaction reconcile only shows up once
-a compaction actually happens: that turn ends with one extra model message, and the host log gains a
+a compaction actually happens (to see it right away, run `/compact` in a session and then send any
+short message): that turn ends with one extra model message, and the host log gains a
 `compaction reconcile` line at the same time.
 
 ## Known gaps

@@ -54,7 +54,7 @@ read(session="session-e0636aa9-…", seq=1248)
 
 **1. 历史查询工具(给 Agent)** —— 常驻 host 插件 `dsh-trajectory-tools`:三个只读入口按**问题**分,不按数据源分 —— `trajectory_search`(`view` 必填:`events` 字面命中 / `catalog` 计数与范围 / `cost` token 成本 / `sessions` 会话列表)、`trajectory_read`(按 seq 区间逐字取原文)、`trajectory_graph`(替换/引用/派生链与会话谱系)。它们直接读 DSH 已有的事件日志(首选 `sessionQuery.observeSession`,兼容退路是内存快照与 `sessionPersistence` 句柄)。证据优先:每个答案带 `(session, seq@logId)`、原样引用原文,片段以命中点为中心;查询返回空 = 可核验的"没有这样的事实"。可选维度收在一个 `filter` 对象里(键按 view 不同,传错会告诉你这个 view 认哪些);`events` 默认搜「当前会话 + 所有 live 会话」、默认丢掉注入样板与工具自己的调用、匹配默认归一化,单反斜杠也能查到日志里转义过的路径。
 
-**可选:压缩后对账(默认开)** —— 压缩不改写事实,它只把一段历史从模型眼前移走(shadow,不是删除),模型手上只剩一份不是自己写的摘要。所以插件在一次**成功**的 `compaction/end` 之后给这个会话留一个记号,等这一轮走到收尾点(`agent/turn-stopping`)注入一句话:让模型用不超过两行交代它保留的理解(目标/进度/下一步),不确定的先 `trajectory_search` 回查、查不回来的直接问人。形态是 `plugin` notice(`form: "notice"` + 一句给人看的 `summary`)——"这句话是谁说的"是声明出来的,不靠正文猜;它不注册工具,工具表一个字节都不涨。一次压缩只对一次账,子会话跳过,`config.reconcile: false` 可关、`config.reconcile.sentence` 可换句子。
+**可选:压缩后对账(默认开)** —— 冲着这个现象:上下文一压缩,模型常常把头埋下去接着干,不问你、也不说自己现在以为这件事是要做什么;被压掉的那段它确实看不见了,可语气跟什么都没丢过一样,等你发现方向不对,它可能已经白干了很多步。做法是在一次**成功**的 `compaction/end` 之后给这个会话留一个记号,等这一轮走到收尾点(`agent/turn-stopping`)注入一句话:用不超过两行说明"你理解这件事要做什么、现在到哪了、下一步做什么",不确定的先 `trajectory_search` 回查、查不回来的直接问人。形态是 `plugin` notice(`form: "notice"` + 一句给人看的 `summary`)——"这句话是谁说的"是声明出来的,不靠正文猜;它不注册工具,工具表一个字节都不涨。一次压缩只对一次账,子会话跳过;默认开,`config.reconcile: false` 关、`config.reconcile.sentence` 换句子(写法见 [插件 README](plugin/trajectory-tools/README.md))。
 
 **2. 常驻「分析」标签(Web GUI)** —— 在「对话 | 轨迹」旁边的第三个标签,渲染 **runtime incident view**:
 
@@ -122,7 +122,7 @@ node analyzers/self-test.mjs        # 分析器语义
 node analyzers/host-self-test.mjs   # host 侧 incident 判定
 ```
 
-装好后重启 `dsh web`,确认:模型工具表里出现 `trajectory_search` / `trajectory_read` / `trajectory_graph` 三个入口(不再是六个)、skill 目录里出现 `trajectory-query`、`search(view="events")` 的返回里带 `matchAt` / `filtered` / `normalized`、`graph` 的关系链是 `{count, head, tail}` 形态、`/analysis-view/digest` 对已结算会话返回 200。压缩后对账要等**真的发生一次压缩**才能看到:那一轮收尾时多一句模型回复,host 日志里同时多一行 `compaction reconcile`。
+装好后重启 `dsh web`,确认:模型工具表里出现 `trajectory_search` / `trajectory_read` / `trajectory_graph` 三个入口(不再是六个)、skill 目录里出现 `trajectory-query`、`search(view="events")` 的返回里带 `matchAt` / `filtered` / `normalized`、`graph` 的关系链是 `{count, head, tail}` 形态、`/analysis-view/digest` 对已结算会话返回 200。压缩后对账要等**真的发生一次压缩**才能看到(想马上看就在会话里 `/compact`,再随便回一句话):那一轮收尾时多一句模型回复,host 日志里同时多一行 `compaction reconcile`。
 
 ## 已知缺口
 
