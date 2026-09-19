@@ -847,7 +847,7 @@ export function registerReconcile(ctx, options = {}) {
   return disposers;
 }
 
-export function apply(ctx) {
+export function apply(ctx, config = {}) {
   // 工具要么全注册、要么一个都不注册。重名会抛错(例如上一个进程里被 stop/undefine 的
   // 动态插件留下了同名注册),此时静默少注册会让模型拿到半个工具集,不如显式失败并给出重启提示。
   const disposers = [];
@@ -1287,8 +1287,10 @@ export function apply(ctx) {
   }
 
   // 可选功能:压缩后对账(默认开;config.reconcile: false 关)。
+  // ★ 取 apply 的第二参 config,不要用 ctx.config:0.1.6-alpha.2 起 cordis 禁止
+  //   未在 inject 中声明的属性访问(报 `cannot get property "config" without inject`)。
   // 它不注册工具、不占工具表字节,只在压缩过的那一轮收尾时注入一句。
-  const reconcile = reconcileConfig(ctx.config);
+  const reconcile = reconcileConfig(config);
   if (reconcile.enabled && typeof ctx.on === "function") {
     for (const dispose of registerReconcile(ctx, reconcile)) ctx.effect(() => dispose, "trajectory-tools:reconcile");
   }

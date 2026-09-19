@@ -137,6 +137,26 @@ that is a thing only the model can produce, and a paragraph of it would be more 
 - **It cannot break a turn.** Injection is wrapped in try/catch, and a throw at the stop boundary would
   end the turn with `reason=error`. This is a nicety, not a requirement.
 
+#### Runtime contract: config comes from the second parameter
+
+Since DSH 0.1.6-alpha.2 the Cordis context is a **Proxy**: reading a property that is neither declared
+in `inject` nor an own property of the context throws `cannot get property "X" without inject`.
+`config` is one of those — the runtime calls `apply(ctx, config)` and keeps the config on the fiber,
+not on the context. So reading `ctx.config` in `apply` breaks the plugin at load time: the host comes
+up, then goes away.
+
+```js
+export function apply(ctx, config = {}) {      // not apply(ctx)
+  const reconcile = reconcileConfig(config);   // not reconcileConfig(ctx.config)
+}
+```
+
+Two guards keep it from coming back. The self-test's fake context is a **strict Proxy** that throws
+exactly like Cordis (`ctx.config` in the source makes the self-test fail with the same error the
+runtime gives), and a source check rejects any literal `ctx.config`. Context methods and `logger`
+are fine; only services (such as `ctx.tools`) and `config` are guarded — optional services are read
+with `ctx.get("name")`, which returns `undefined` instead of throwing.
+
 #### Turning it on and off
 
 It is **on by default** — installing the plugin is the whole setup; with no config row at all the
@@ -180,9 +200,9 @@ reply should end with the two lines, and the host log gains one `compaction reco
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.3.0.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.3.1.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.0.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.1.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. restart `dsh web`              # host plugins do not hot-reload reliably
@@ -209,7 +229,7 @@ override by id** in `~/.dsh/profiles/web/cordis.patch.yml` — never a second `i
 |---|---|
 | `lib/index.js` | host half: reads the log, registers the three tools, and wires the optional reconcile |
 | `lib/skill.js` | the `trajectory-query` runtime skill body |
-| `self-test.mjs` | 172 contract checks against a fake ctx + synthetic log (no real session) |
+| `self-test.mjs` | 175 contract checks against a fake ctx + synthetic log (no real session) |
 | `cordis.patch.yml` | bundle layer that inserts the plugin row |
 | `package.json` | `dsh.bundle.patch` (host-only; no client half) |
 
@@ -328,6 +348,24 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 - **它不可能弄坏一轮对话。** 注入整体包在 try/catch 里:收尾点抛错会让这一轮以 `reason=error` 收场,
   而这是锦上添花,不是必需品。
 
+#### 运行时契约:配置从 apply 的第二参拿
+
+DSH 0.1.6-alpha.2 起,Cordis 的上下文是一个 **Proxy**:既没在 `inject` 里声明、也不是上下文自有属性的键,
+读取即抛 `cannot get property "X" without inject`。`config` 就是其中之一 —— 运行期按
+`apply(ctx, config)` 调用,配置存在 fiber 上,不在上下文上。所以 `apply` 里读 `ctx.config` 会让插件在
+**加载时**就失败:host 起来了,然后又没了。
+
+```js
+export function apply(ctx, config = {}) {      // 不是 apply(ctx)
+  const reconcile = reconcileConfig(config);   // 不是 reconcileConfig(ctx.config)
+}
+```
+
+防它再回来有两道:自检的假 ctx 现在是**严格 Proxy**,抛的错和 Cordis 一模一样(源码里一旦出现
+`ctx.config`,自检就以运行时同一句报错失败),另有一条源码扫描禁止字面量 `ctx.config`。
+上下文方法和 `logger` 不受限;被守着的只有服务(如 `ctx.tools`)与 `config` —— 可选服务用
+`ctx.get("name")` 读,拿不到就返回 `undefined`,不抛。
+
 #### 怎么开、怎么关
 
 **默认就是开的** —— 装上插件本身就算配置完了,一行 config 都不写也用的是上面那句内置的话。
@@ -365,9 +403,9 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.3.0.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.3.1.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.0.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.1.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新
@@ -383,7 +421,7 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 |---|---|
 | `lib/index.js` | host 半边:读日志、注册三个入口,并挂上可选的对账 |
 | `lib/skill.js` | `trajectory-query` runtime skill 正文 |
-| `self-test.mjs` | 172 项契约检查(假 ctx + 合成日志,不连真实会话) |
+| `self-test.mjs` | 175 项契约检查(假 ctx + 合成日志,不连真实会话) |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch`(纯 host,无客户端半边) |
 

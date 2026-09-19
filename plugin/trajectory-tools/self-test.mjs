@@ -15,6 +15,8 @@
 //   4) issue #1:转义路径(双反斜杠)能被单反斜杠查询命中;issue #2:trace 关系链有界
 //   5) issue #3:trajectory_index 只给计数与范围;issue #5:trajectory_cost 的 usage 缺失记 unknown
 
+import { readFileSync } from "node:fs";
+
 import {
   DEFAULT_RECONCILE_SENTENCE,
   apply,
@@ -249,10 +251,31 @@ const services = {
 };
 
 /* ---------------- 假 ctx + apply ---------------- */
+
+/**
+ * 假 ctx 必须和真实 cordis 一样严格(0.1.6-alpha.2 起上下文是 Proxy):
+ * 没在 inject 里声明、也不是自有属性的键,**读取即抛**
+ * `cannot get property "X" without inject`。
+ * 宽松的假 ctx 会让人以为代码是对的 —— 这个坑真踩过:配置读了 ctx.config,
+ * 自检全绿,真实启动时插件树加载失败(正确写法是 apply 的第二参 config)。
+ */
+function strictCtx(target) {
+  return new Proxy(target, {
+    get(t, prop, receiver) {
+      if (typeof prop === "symbol" || String(prop).startsWith("_") || prop === "then") return Reflect.get(t, prop, receiver);
+      if (Reflect.has(t, prop)) return Reflect.get(t, prop, receiver);
+      throw new Error('cannot get property "' + String(prop) + '" without inject');
+    },
+  });
+}
+
+/** 只用来满足契约的空监听器:真实运行时 ctx.on 总是存在。 */
+const noopOn = () => () => {};
+
 const registered = new Map();
 const disposed = [];
 const listeners = new Map();
-const ctx = {
+const rawCtx = {
   tools: {
     register(tool) {
       registered.set(tool.name, tool);
@@ -279,10 +302,32 @@ const ctx = {
   },
 };
 
-apply(ctx);
+const ctx = strictCtx(rawCtx);
+
+apply(ctx, {});
 
 /* ---------------- 注册 ---------------- */
 eq("registers 3 tools", [...registered.keys()].sort(), ["trajectory_graph", "trajectory_read", "trajectory_search"]);
+
+/* 运行时契约(0.1.6-alpha.2 起 cordis 强制):配置只能从 apply 第二参拿。
+   ctx.config 会抛 `cannot get property "config" without inject` —— 插件树加载失败,
+   而且自检全绿(假 ctx 当时太宽松)。这两条检查就是为了不再发生。 */
+check("apply 签名收第二参 config(运行时约定)", /export function apply\(ctx,\s*config/.test(readFileSync(new URL("./lib/index.js", import.meta.url), "utf8")), "配置入口必须是 apply 的第二参");
+check("假 ctx 与真实 cordis 一样严格", (() => {
+  try {
+    void ctx.config;
+    return false;
+  } catch (error) {
+    return /without inject/.test(error.message);
+  }
+})(), "假 ctx 必须对未声明属性抛错");
+const pluginSource = readFileSync(new URL("./lib/index.js", import.meta.url), "utf8");
+const ctxConfigLines = pluginSource
+  .split("\n")
+  .map((line, index) => [index + 1, line])
+  .filter(([, line]) => /ctx\.config/.test(line) && !/^\s*(\/\/|\*)/.test(line));
+check("源码里不得出现 ctx.config(配置走第二参)", ctxConfigLines.length === 0, JSON.stringify(ctxConfigLines.slice(0, 3)));
+
 eq("registers one disposer per tool + one for the skill", disposed.filter((label) => label === "trajectory-tools:tool" || label === "trajectory-tools:skill").length, 4);
 eq("reconcile 默认挂 3 个监听", [...listeners.keys()].sort(), ["agent/turn-stopping", "session/disposed", "session/event"]);
 eq("reconcile 的监听各自登记 disposer", disposed.filter((label) => label === "trajectory-tools:reconcile").length, 3);
@@ -297,38 +342,40 @@ check("skill body pins the citation convention", skill.content.includes("(sessio
 
 // skills 服务缺失时,工具仍必须注册(硬依赖只有 tools)。
 const toolOnly = new Map();
-apply({
+apply(strictCtx({
   tools: {
     register(tool) {
       toolOnly.set(tool.name, tool);
       return () => {};
     },
   },
+  on: noopOn,
   effect(callback) {
     return callback();
   },
   get(name) {
     return name === "skills" ? undefined : services[name];
   },
-});
+}), {});
 eq("tools register without the skills service", toolOnly.size, 3);
 
 // 重名(常见于上一个进程遗留的动态插件注册)必须显式失败,而不是静默注册一半。
 let conflictError = null;
 try {
-  apply({
+  apply(strictCtx({
     tools: {
       register() {
         throw new Error('tool "trajectory_find" is already registered');
       },
     },
+    on: noopOn,
     effect(callback) {
       return callback();
     },
     get(name) {
       return name === "skills" ? undefined : services[name];
     },
-  });
+  }), {});
 } catch (error) {
   conflictError = String((error && error.message) || error);
 }
@@ -562,13 +609,14 @@ eq("every observation is disposed", observations.disposed, observations.opened);
 
 // 没有 sessionQuery.observeSession 的老部署:退回内存快照 / persistence 句柄
 const fallbackRegistered = new Map();
-apply({
+apply(strictCtx({
   tools: {
     register(tool) {
       fallbackRegistered.set(tool.name, tool);
       return () => {};
     },
   },
+  on: noopOn,
   effect(callback) {
     return callback();
   },
@@ -576,7 +624,7 @@ apply({
     if (name === "sessionQuery") return { async listSessions() { return fakeQuery.listSessions(); } };
     return services[name];
   },
-});
+}), {});
 const fallbackFind = await fallbackRegistered.get("trajectory_search").execute({ view: "events", session: LIVE_ID, query: "fs_not_observed" }, EXEC);
 eq("events: 没有 observeSession 时退回内存快照", fallbackFind.hitCount, 2);
 eq("events: 报出读取来源", fallbackFind.source, "live");
@@ -589,7 +637,6 @@ function reconcileHarness(config) {
   const steers = [];
   const logs = [];
   const harnessCtx = {
-    config,
     tools: {
       register() {
         return () => {};
@@ -611,7 +658,7 @@ function reconcileHarness(config) {
       warn: (message) => logs.push(["warn", message]),
     },
   };
-  apply(harnessCtx);
+  apply(strictCtx(harnessCtx), config);
   return {
     seen,
     steers,

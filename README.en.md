@@ -165,7 +165,7 @@ node analyzers/self-test.mjs
 pnpm pack                                  # in each plugin directory
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: add
-#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.0.tgz"
+#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.1.tgz"
 #     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.1.3.tgz"
 #   dsh.profile.bundles: append "dsh-trajectory-tools" and "dsh-analysis-view"
 pnpm install            # in ~/.dsh/profiles/web
@@ -175,7 +175,7 @@ pnpm install            # in ~/.dsh/profiles/web
 ## Verify
 
 ```text
-cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (172 checks)
+cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (175 checks)
 node analyzers/self-test.mjs        # analyzer semantics
 node analyzers/host-self-test.mjs   # host-side incident detection
 node analyzers/shape-law.mjs        # incident shape: claim / drift / differential / witness
@@ -198,12 +198,12 @@ short message): that turn ends with one extra model message, and the host log ga
 - Host analysis and `analyzers/incidents.mjs` are two implementations (runtime cannot import repo scripts); each is pinned by its own self-test.
 - Sessions are read via `sessionQuery.observeSession(id)` (DSH 0.1.6 deprecated the synchronous readers such as `snapshotEvents`; fallbacks: in-memory snapshot → `sessionPersistence.open(id, 'read')` → legacy `inspect()`).
 - `seq` is only stable inside one log revision, so citations must carry `logId`; after a version rewrite an old `seq` may point at a different event.
-- The query tools are a host plugin: `dsh web` must be restarted before they appear in the model's tool list; if a tool name is already taken the plugin fails loudly instead of half-registering. Its contract is pinned by `plugin/trajectory-tools/self-test.mjs` (172 checks).
+- The query tools are a host plugin: `dsh web` must be restarted before they appear in the model's tool list; if a tool name is already taken the plugin fails loudly instead of half-registering. Its contract is pinned by `plugin/trajectory-tools/self-test.mjs` (175 checks).
 - The compaction reconcile speaks only when a `compaction/end` succeeded *and* that turn reaches its stop boundary: failed compactions (no new projection) and subagent sessions are skipped, and a failed injection does not break the turn — it leaves one `warn` line in the host log. Whether to reconcile is decided by a session-scoped mark (one per compaction), not by the model's guess.
 - Without `session`, `view="events"` scans the current session + every live session + a few persisted ones; persisted sessions are ranked by `createdAt` (there is no cheap last-activity signal), so pass `session` explicitly for a long-settled session.
 - `trajectory_graph` is the only one of the three that depends on `ctx.sessionQuery`; search and read need only `sessions` / `sessionPersistence`.
 - Every host/client API these plugins use was checked against DSH 0.1.6-alpha.2: the `defineTool` parameter DSL, the `sessionQuery` method set, `SessionHandle`, `skills.register`, `webServer.register`, `llm.stream`, `agent/turn-stopping` + `agent.steer`, the `conversation.view` slot and `uiConversation.views/binding` are unchanged; the only migration needed is the deprecated synchronous read above.
-- Runtime: DSH 0.1.6-alpha.2, plugins 0.3.0 / 0.1.3. The three entries cost about 1.8 KB of tool table (down from 5.7 KB with six); the contract is covered by the 154-check self-test and an offline check on real data — the live check is the **Verify** section above.
+- Runtime: DSH 0.1.6-alpha.2, plugins 0.3.1 / 0.1.3. The three entries cost about 1.8 KB of tool table (down from 5.7 KB with six); the contract is covered by the 154-check self-test and an offline check on real data — the live check is the **Verify** section above.
 - `trajectory_search(view="cost")` reads `assistant/message.usage` only — no new instrumentation. A request whose adapter reported no usage is `unknown` (never zero), and a single missing field is `null` and stays out of the sums. The DeepSeek adapter usually does not report `cacheWriteTokens`: that means "not reported", not "no cache write".
 - Trap: after the format migration a session directory keeps **both `session.v3.jsonl.zstd` (current) and `session.v2.jsonl.zstd` (pre-migration copy)**. Pass the v3 file to the analyzers by hand, or you will read the stale copy as if it were the newest session. `experiments/corpus/scan-sessions.mjs` now picks the highest version per directory.
 
