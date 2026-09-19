@@ -5,7 +5,9 @@
 //
 // 覆盖:注册 3 个入口(search/read/graph)、参数校验、字面量检索(大小写/空白/转义归一)、
 // seq 区间与类型过滤、filter 契约(未知键给出可用键)、
-// 存活/已持久化两条读取路径、窗口上限、trace 有界渲染、目录统计、成本 fold、logId append-stable,
+// 存活/已持久化两条读取路径、窗口上限、trace 有界渲染、目录统计、成本 fold、logId append-stable、
+// 可选功能「压缩后对账」(压缩才说话 / 一次压缩只对一次账 / 子会话跳过 / 自定义句子 / 可关闭 /
+// 注入抛错不冒泡 / notice 默认不算人的事实),
 // 以及曾经的缺陷回归:
 //   1) 不给 session 时默认扫描集必须包含「当前会话 + 所有 live 会话」(哪怕它 createdAt 最老)
 //   2) 命中片段以命中点为中心,必须包含查询词(1000 字符长事件用例)
@@ -14,6 +16,7 @@
 //   5) issue #3:trajectory_index 只给计数与范围;issue #5:trajectory_cost 的 usage 缺失记 unknown
 
 import {
+  DEFAULT_RECONCILE_SENTENCE,
   apply,
   boundSeqs,
   buildSelfCallIds,
@@ -27,10 +30,12 @@ import {
   fold,
   indexEvents,
   isInjectedText,
+  isPluginContext,
   isSelfEvent,
   logIdOf,
   logIdentity,
   norm,
+  reconcileMessage,
 } from "./lib/index.js";
 
 let passed = 0;
@@ -218,12 +223,22 @@ const services = {
 /* ---------------- 假 ctx + apply ---------------- */
 const registered = new Map();
 const disposed = [];
+const listeners = new Map();
 const ctx = {
   tools: {
     register(tool) {
       registered.set(tool.name, tool);
       return () => registered.delete(tool.name);
     },
+  },
+  on(type, handler) {
+    if (!listeners.has(type)) listeners.set(type, []);
+    listeners.get(type).push(handler);
+    return () => {
+      const list = listeners.get(type) || [];
+      const index = list.indexOf(handler);
+      if (index >= 0) list.splice(index, 1);
+    };
   },
   effect(callback, label) {
     const dispose = callback();
@@ -240,7 +255,9 @@ apply(ctx);
 
 /* ---------------- 注册 ---------------- */
 eq("registers 3 tools", [...registered.keys()].sort(), ["trajectory_graph", "trajectory_read", "trajectory_search"]);
-eq("registers one disposer per tool + one for the skill", disposed.filter((label) => label.startsWith("trajectory-tools:")).length, 4);
+eq("registers one disposer per tool + one for the skill", disposed.filter((label) => label === "trajectory-tools:tool" || label === "trajectory-tools:skill").length, 4);
+eq("reconcile 默认挂 3 个监听", [...listeners.keys()].sort(), ["agent/turn-stopping", "session/disposed", "session/event"]);
+eq("reconcile 的监听各自登记 disposer", disposed.filter((label) => label === "trajectory-tools:reconcile").length, 3);
 eq("registers the runtime skill", [...skillsRegistered.keys()], ["trajectory-query"]);
 const skill = skillsRegistered.get("trajectory-query");
 check("skill carries a description", typeof skill.description === "string" && skill.description.length > 0);
@@ -524,6 +541,152 @@ apply({
 const fallbackFind = await fallbackRegistered.get("trajectory_search").execute({ view: "events", session: LIVE_ID, query: "fs_not_observed" }, EXEC);
 eq("events: 没有 observeSession 时退回内存快照", fallbackFind.hitCount, 2);
 eq("events: 报出读取来源", fallbackFind.source, "live");
+
+/* ---------------- 可选功能:压缩后对账 ---------------- */
+
+// 每个用例起一份干净的 ctx:只关心「压缩 → 收尾点 → 注入」这条线。
+function reconcileHarness(config) {
+  const seen = new Map();
+  const steers = [];
+  const logs = [];
+  const harnessCtx = {
+    config,
+    tools: {
+      register() {
+        return () => {};
+      },
+    },
+    on(type, handler) {
+      if (!seen.has(type)) seen.set(type, []);
+      seen.get(type).push(handler);
+      return () => {};
+    },
+    effect(callback) {
+      return callback();
+    },
+    get(name) {
+      return name === "skills" ? undefined : services[name];
+    },
+    logger: {
+      info: (message) => logs.push(["info", message]),
+      warn: (message) => logs.push(["warn", message]),
+    },
+  };
+  apply(harnessCtx);
+  return {
+    seen,
+    steers,
+    logs,
+    fire(type, ...args) {
+      for (const handler of (seen.get(type) || []).slice()) handler(...args);
+    },
+  };
+}
+
+const RECONCILE_SESSION = { id: "session-reconcile-1", header: { id: "session-reconcile-1" } };
+const CHILD_SESSION = { id: "session-reconcile-child", header: { id: "session-reconcile-child", origin: "subagent" } };
+const forkSession = { id: "session-reconcile-fork", header: { id: "session-reconcile-fork", parentSession: "session-reconcile-1" } };
+const agentFor = (session, sink) => ({ session, steer: (message) => sink.push(message) });
+const compactionEnd = (data) => ({ seq: 9, type: "compaction/end", time: 9000, data: data || {} });
+
+// 没压缩过就不说话:收尾点每轮都会触发,沉默是常态。
+const quiet = reconcileHarness(undefined);
+quiet.fire("agent/turn-stopping", { agent: agentFor(RECONCILE_SESSION, quiet.steers) });
+eq("reconcile: 没压缩过不注入", quiet.steers.length, 0);
+
+// 压缩成功后,这一轮收尾时注入一句,形态是 plugin notice。
+const base = reconcileHarness(undefined);
+base.fire("session/event", RECONCILE_SESSION, compactionEnd());
+base.fire("agent/turn-stopping", { agent: agentFor(RECONCILE_SESSION, base.steers) });
+eq("reconcile: 压缩后收尾点注入一句", base.steers.length, 1);
+const notice = base.steers[0] || {};
+eq("reconcile: 是 user 角色", notice.role, "user");
+eq("reconcile: 正文是默认那句话", notice.content && notice.content[0] && notice.content[0].text, DEFAULT_RECONCILE_SENTENCE);
+eq("reconcile: 声明来源是插件", notice.source && notice.source.plugin, "dsh-trajectory-tools");
+eq("reconcile: 形态是 notice(人读 summary)", notice.source && notice.source.form, "notice");
+check("reconcile: 带一句给人看的 summary", typeof (notice.source || {}).summary === "string" && notice.source.summary.length > 0);
+check("reconcile: 消息 id 非空", typeof notice.id === "string" && notice.id.length > 0);
+check("reconcile: 消息冻结(与 DSH createUserMessage 同形)", Object.isFrozen(notice) && Object.isFrozen(notice.content));
+check("reconcile: 正文提到回查工具", DEFAULT_RECONCILE_SENTENCE.includes("trajectory_search"));
+eq("reconcile: 注入时留一行 info", base.logs.length, 1);
+
+// 一次压缩只对一次账:收尾点此后每轮都触发,记号已清。
+base.fire("agent/turn-stopping", { agent: agentFor(RECONCILE_SESSION, base.steers) });
+eq("reconcile: 同一次压缩不重复注入", base.steers.length, 1);
+
+// 再压缩一次 = 再对一次账,且 id 不与上一条相同。
+base.fire("session/event", RECONCILE_SESSION, compactionEnd());
+base.fire("agent/turn-stopping", { agent: agentFor(RECONCILE_SESSION, base.steers) });
+eq("reconcile: 新一次压缩再注入", base.steers.length, 2);
+check("reconcile: 两次注入 id 不同", base.steers[0].id !== base.steers[1].id);
+
+// 失败的压缩(带 error)没有换掉投影,不对账。
+base.fire("session/event", RECONCILE_SESSION, compactionEnd({ error: { message: "no route" } }));
+base.fire("agent/turn-stopping", { agent: agentFor(RECONCILE_SESSION, base.steers) });
+eq("reconcile: 压缩失败不注入", base.steers.length, 2);
+
+// 子代理会话:没有"跟我说一句"的对象。
+const child = reconcileHarness(undefined);
+child.fire("session/event", CHILD_SESSION, compactionEnd());
+child.fire("session/event", forkSession, compactionEnd());
+child.fire("agent/turn-stopping", { agent: agentFor(CHILD_SESSION, child.steers) });
+child.fire("agent/turn-stopping", { agent: agentFor(forkSession, child.steers) });
+eq("reconcile: 子会话不注入", child.steers.length, 0);
+
+// 换一句话 / 关掉整个功能。
+const custom = reconcileHarness({ reconcile: { sentence: "自定义一句" } });
+custom.fire("session/event", RECONCILE_SESSION, compactionEnd());
+custom.fire("agent/turn-stopping", { agent: agentFor(RECONCILE_SESSION, custom.steers) });
+eq("reconcile: config.sentence 可换", custom.steers[0] && custom.steers[0].content[0].text, "自定义一句");
+const off = reconcileHarness({ reconcile: false });
+eq("reconcile: false 时不挂监听", off.seen.size, 0);
+const offByObject = reconcileHarness({ reconcile: { enabled: false } });
+eq("reconcile: enabled:false 时不挂监听", offByObject.seen.size, 0);
+
+// 注入抛错不能冒泡:收尾点抛错会让这一轮以 error 收场。
+const brittle = reconcileHarness(undefined);
+brittle.fire("session/event", RECONCILE_SESSION, compactionEnd());
+let escapedError = null;
+try {
+  brittle.fire("agent/turn-stopping", {
+    agent: {
+      session: RECONCILE_SESSION,
+      steer() {
+        throw new Error("inbox unavailable");
+      },
+    },
+  });
+} catch (error) {
+  escapedError = error;
+}
+check("reconcile: steer 抛错被吞掉", escapedError === null);
+check("reconcile: 抛错时留下 warn", brittle.logs.some(([level]) => level === "warn"));
+
+// 缺 agent / 缺 steer 的旧内核:不抛,也不注入。
+const bare = reconcileHarness(undefined);
+bare.fire("session/event", RECONCILE_SESSION, compactionEnd());
+bare.fire("agent/turn-stopping", {});
+bare.fire("agent/turn-stopping", { agent: { session: RECONCILE_SESSION } });
+eq("reconcile: 没有 steer 的内核不注入", bare.steers.length, 0);
+
+// plugin notice 是"机器说的话",默认检索与目录统计都不该把它当人的事实。
+check("isPluginContext: 认 plugin 来源", isPluginContext({ data: { source: { kind: "plugin", plugin: "x" } } }) === true);
+check("isPluginContext: 不认人的消息", isPluginContext({ data: { source: { kind: "user" } } }) === false);
+check("isPluginContext: 认 tool/result 里的 message.source", isPluginContext({ data: { message: { source: { kind: "plugin" } } } }) === true);
+const noticeEvents = [
+  { seq: 0, type: "user/message", time: 1, data: reconcileMessage("reconcile-marker", "notice-1") },
+  { seq: 1, type: "user/message", time: 2, data: { id: "human-1", role: "user", content: [{ type: "text", text: "reconcile-marker 是人说的" }], source: { kind: "user" } } },
+];
+eq("对账通知不计入目录统计,人说的同一句话计入", indexEvents(noticeEvents).semanticEvents, 1);
+const NOTICE_ID = "session-notice-0005";
+HEADERS.set(NOTICE_ID, { id: NOTICE_ID, createdAt: 9000, cwd: "C:/notice" });
+LOGS.set(NOTICE_ID, noticeEvents);
+LIVE_IDS.add(NOTICE_ID);
+const noticeSearch = await registered.get("trajectory_search").execute({ view: "events", session: NOTICE_ID, query: "reconcile-marker" });
+eq("对账通知默认检索不到,只命中人说的那条", noticeSearch.hitCount, 1);
+eq("对账通知默认不计入注入过滤之外", noticeSearch.filtered.injected, 1);
+const noticeAll = await registered.get("trajectory_search").execute({ view: "events", session: NOTICE_ID, query: "reconcile-marker", filter: { excludeInjected: false } });
+eq("excludeInjected:false 时通知查得到(可核实是哪一轮)", noticeAll.hitCount, 2);
 
 /* ---------------- 结果 ---------------- */
 if (failures.length === 0) {

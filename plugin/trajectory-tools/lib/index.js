@@ -21,12 +21,13 @@
 //   再退 → sessionPersistence.inspect()(旧版后端)
 //   末选 → ctx.sessions.get(id).snapshotEvents()(仅当部署里没有 sessionQuery 时的兼容退路)
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { SKILL_BODY, SKILL_DESCRIPTION, SKILL_NAME, SKILL_WHEN_TO_USE } from "./skill.js";
 
 export const inject = ["tools"];
 
+const PLUGIN_NAME = "dsh-trajectory-tools";
 const MAX_WINDOW = 60;
 const DEFAULT_ROWS = 10;
 const MAX_ROWS = 100;
@@ -185,6 +186,17 @@ const INJECTED_PREFIX = "<system-reminder>";
 
 export function isInjectedText(text) {
   return String(text === undefined || text === null ? "" : text).trimStart().startsWith(INJECTED_PREFIX);
+}
+
+/**
+ * 机器注入的上下文(source.kind === "plugin"),不是人说的话。
+ * 与 isInjectedText 互补:后者认的是文本前缀(workspace 指令那一类),
+ * 前者认的是消息来源(模型切换提示、压缩后对账这类 plugin notice —— 它们的正文没有固定前缀)。
+ */
+export function isPluginContext(event) {
+  const data = (event && event.data) || {};
+  const source = data.source || (data.message && data.message.source);
+  return source !== undefined && source !== null && source.kind === "plugin";
 }
 
 export function isTrajectoryTool(name) {
@@ -574,7 +586,7 @@ export function indexEvents(events, options = {}) {
     if (timeTo !== null && !(Number(event.time) <= timeTo)) continue;
     if (isSelfEvent(event, selfCallIds)) continue;
     const text = eventText(event);
-    if (isInjectedText(text)) continue;
+    if (isInjectedText(text) || isPluginContext(event)) continue;
 
     let toolName = null;
     if (event.type === "tool/call") {
@@ -732,6 +744,109 @@ const OUTPUT = {
 
 const FAILED = (error) => ({ ok: false, error: String((error && error.message) || error) });
 
+/* ------------------------------------------------------------------ *
+ * 可选:压缩后对账(reconcile)
+ *
+ * 压缩不改写事实:它只把一段历史从模型眼前移走(shadow),事实仍在日志里。
+ * 所以这里补的不是"一段摘要",而是一次提醒 —— 压缩结束后留一个记号,等这一轮
+ * 走到收尾点(agent/turn-stopping)注入一句话:让模型交代它保留的理解,
+ * 不确定的先自己 trajectory_search 回查,查不回来的问人。
+ *
+ * 为什么挂在收尾点而不是压缩点:压缩发生在 step 之间,那一刻注入等于插进正在进行的
+ * 推理;收尾点注入则多走一步 —— 模型先把手上的话说完,再单独回一句。
+ * 代价:每次压缩多一个 step(一句回答);不压缩就没有任何常驻内容。
+ *
+ * 形态是 plugin notice:模型读正文,人读 summary —— "这句话是谁说的"不靠正文猜。
+ * ------------------------------------------------------------------ */
+
+const RECONCILE_SUMMARY = "上下文被压缩过,已请模型对账一次理解";
+
+/** 默认那句话。config.reconcile.sentence 可换。 */
+export const DEFAULT_RECONCILE_SENTENCE =
+  "上下文被压缩过一次,压掉的那段只剩日志里有。用不超过两行跟我说一句:你保留的理解是什么(目标/进度/下一步);不确定的先用 trajectory_search 回查,查不回来的直接问我。";
+
+/** 读 config.reconcile:false 关掉,true/对象开启;对象可给 sentence 与 enabled。缺省开启。 */
+export function reconcileConfig(raw) {
+  const value = (raw || {}).reconcile;
+  const options = value !== null && typeof value === "object" ? value : {};
+  const sentence =
+    typeof options.sentence === "string" && options.sentence.trim() !== "" ? options.sentence.trim() : DEFAULT_RECONCILE_SENTENCE;
+  return { enabled: value !== false && options.enabled !== false, sentence };
+}
+
+/** 冻结后再发布:与 DSH 自己的 createUserMessage 同形,避免下游就地改写。 */
+function deepFreeze(value) {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const key of Object.keys(value)) deepFreeze(value[key]);
+  }
+  return value;
+}
+
+/** 一条 plugin notice:模型读 text,人读 summary。id 每次新生成(收件箱按 id 去重)。 */
+export function reconcileMessage(sentence, id = randomUUID()) {
+  return deepFreeze({
+    id,
+    role: "user",
+    content: [{ type: "text", text: sentence }],
+    source: { kind: "plugin", plugin: PLUGIN_NAME, form: "notice", summary: RECONCILE_SUMMARY },
+  });
+}
+
+/** 子代理会话没有"跟我说一句"的对象,跳过。 */
+function isChildSession(session) {
+  const header = (session && session.header) || {};
+  return header.origin === "subagent" || header.parentSession !== undefined;
+}
+
+/**
+ * 挂监听:压缩成功 → 记一个记号;收尾点 → 有记号就注入一句并清掉记号。
+ * 一次压缩只对一次账(收尾点每轮都会触发,记号清掉后不再打扰);同轮第二次压缩会再对一次。
+ * 返回 disposer 列表(给测试用;运行时 ctx.on 已随插件 fiber 释放)。
+ */
+export function registerReconcile(ctx, options = {}) {
+  const sentence = typeof options.sentence === "string" && options.sentence !== "" ? options.sentence : DEFAULT_RECONCILE_SENTENCE;
+  const compacted = new Set(); // 已压缩、还没对过账的会话 id
+  const disposers = [];
+  const listen = (type, handler) => {
+    const dispose = ctx.on(type, handler);
+    if (typeof dispose === "function") disposers.push(dispose);
+  };
+
+  listen("session/event", (session, event) => {
+    if (!event || event.type !== "compaction/end") return;
+    // 失败的压缩带 error 字段:投影没换,模型眼前的上下文没变,不必对账。
+    if (event.data && event.data.error !== undefined) return;
+    const id = session && session.id;
+    if (typeof id !== "string" || id === "" || isChildSession(session)) return;
+    compacted.add(id);
+  });
+
+  listen("session/disposed", (session) => {
+    const id = session && session.id;
+    if (typeof id === "string") compacted.delete(id);
+  });
+
+  listen("agent/turn-stopping", (payload) => {
+    const agent = payload && payload.agent;
+    const id = agent && agent.session && agent.session.id;
+    if (typeof id !== "string" || !compacted.has(id)) return;
+    compacted.delete(id); // 先清记号:注入失败也不在下一轮重复打扰
+    if (typeof agent.steer !== "function") return;
+    try {
+      agent.steer(reconcileMessage(sentence));
+      if (ctx.logger && typeof ctx.logger.info === "function") ctx.logger.info("compaction reconcile: 已注入一句对账请求");
+    } catch (error) {
+      // 收尾点抛错会让这一轮以 error 收场;注入是锦上添花,失败只能沉默。
+      if (ctx.logger && typeof ctx.logger.warn === "function") {
+        ctx.logger.warn("compaction reconcile injection failed: " + String((error && error.message) || error));
+      }
+    }
+  });
+
+  return disposers;
+}
+
 export function apply(ctx) {
   // 工具要么全注册、要么一个都不注册。重名会抛错(例如上一个进程里被 stop/undefine 的
   // 动态插件留下了同名注册),此时静默少注册会让模型拿到半个工具集,不如显式失败并给出重启提示。
@@ -803,7 +918,7 @@ export function apply(ctx) {
         if (filter.timeTo !== undefined && !(Number(event.time) <= Number(filter.timeTo))) continue;
         const text = eventText(event);
         if (needleKey && !(normalize ? norm(text) : fold(text)).includes(needleKey)) continue;
-        if (excludeInjected && isInjectedText(text)) {
+        if (excludeInjected && (isInjectedText(text) || isPluginContext(event))) {
           filtered.injected++;
           continue;
         }
@@ -1164,5 +1279,12 @@ export function apply(ctx) {
       content: SKILL_BODY,
     });
     if (typeof disposeSkill === "function") ctx.effect(() => disposeSkill, "trajectory-tools:skill");
+  }
+
+  // 可选功能:压缩后对账(默认开;config.reconcile: false 关)。
+  // 它不注册工具、不占工具表字节,只在压缩过的那一轮收尾时注入一句。
+  const reconcile = reconcileConfig(ctx.config);
+  if (reconcile.enabled && typeof ctx.on === "function") {
+    for (const dispose of registerReconcile(ctx, reconcile)) ctx.effect(() => dispose, "trajectory-tools:reconcile");
   }
 }

@@ -50,7 +50,9 @@ long session whose `createdAt` is ancient is still searched.
 
 Two filters are on by default, because the naive result set is mostly noise:
 
-- `filter.excludeInjected` — drops injected boilerplate (the `<system-reminder>` workspace instructions).
+- `filter.excludeInjected` — drops injected boilerplate (the `<system-reminder>` workspace instructions)
+  and machine-injected plugin notices (`source.kind === "plugin"`: the model-switch notice, this
+  plugin's own reconcile request). A plugin notice is not something the human said.
 - `filter.excludeSelf` — drops `trajectory_*`'s own calls and results, so searching for a word does not
   return the search itself.
 
@@ -97,24 +99,63 @@ The plugin also registers one thin runtime skill, `trajectory-query` (`lib/skill
 discipline travels with the tools and no agent preset has to be edited: query instead of guessing,
 quote verbatim, cite `(session, seq@logId)`, treat an empty result as verifiable absence.
 
+### Optional: reconcile after a compaction (on by default)
+
+Compaction does not rewrite facts — it moves a span of history out of the model's view (it is
+shadowed, not deleted), and the model is left with a summary it did not write. So after a **successful**
+`compaction/end` this plugin leaves a per-session mark, and at the turn's stop boundary
+(`agent/turn-stopping`) it injects one sentence:
+
+> 上下文被压缩过一次,压掉的那段只剩日志里有。用不超过两行跟我说一句:你保留的理解是什么(目标/进度/下一步);不确定的先用 trajectory_search 回查,查不回来的直接问我。
+
+The turn then runs exactly one more step: the model finishes what it was saying, and adds two lines
+about what it kept — re-querying the log where it is unsure, asking the human where the log cannot
+answer.
+
+- **Why the stop boundary, not the compaction itself.** Compaction happens between steps; injecting
+  there interrupts reasoning in flight. At the stop boundary the injection is data the loop re-reads,
+  so it lands as its own step.
+- **Once per compaction.** The mark is cleared before injecting, so the extra message is not repeated
+  at every turn boundary, and a second compaction in the same turn earns a second reconcile.
+- **Subagent children are skipped** (`origin: "subagent"` / `parentSession`): a child has nobody to
+  report to. Failed compactions (those carrying `error`) are skipped too — the projection did not change.
+- **Shape.** A `user`-role message whose source is `{ kind: "plugin", plugin: "dsh-trajectory-tools",
+  form: "notice", summary: "…" }`: the model reads the body, the human reads the summary — who is
+  talking is declared, not inferred from the text. It carries no tool schema, so it adds zero bytes
+  to the tool table.
+- **Off switch / own sentence.** `config.reconcile: false` disables it; `config.reconcile.sentence`
+  replaces the sentence. Injection is wrapped in try/catch: throwing at the stop boundary would end
+  the turn with `reason=error`, and this is a nicety, not a requirement.
+
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.2.0.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.3.0.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.2.0.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.0.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. restart `dsh web`              # host plugins do not hot-reload reliably
+```
+
+Options are set on the loader row (the plugin's own `cordis.patch.yml` inserts it, so add a **config
+override by id** in `~/.dsh/profiles/web/cordis.patch.yml` — never a second `insert:`):
+
+```yaml
+- id: dsh-trajectory-tools
+  name: dsh-trajectory-tools
+  config:
+    reconcile:
+      sentence: 上下文被压缩过,先说一句你保留的理解,不确定的用 trajectory_search 回查。
 ```
 
 ### Files
 
 | File | Role |
 |---|---|
-| `lib/index.js` | host half: reads the log and registers the three tools |
+| `lib/index.js` | host half: reads the log, registers the three tools, and wires the optional reconcile |
 | `lib/skill.js` | the `trajectory-query` runtime skill body |
-| `self-test.mjs` | 123 contract checks against a fake ctx + synthetic log (no real session) |
+| `self-test.mjs` | 153 contract checks against a fake ctx + synthetic log (no real session) |
 | `cordis.patch.yml` | bundle layer that inserts the plugin row |
 | `package.json` | `dsh.bundle.patch` (host-only; no client half) |
 
@@ -172,7 +213,8 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 
 两个过滤器默认开启,因为不过滤的结果集大半是噪声:
 
-- `filter.excludeInjected` — 丢掉注入样板(`<system-reminder>` 的 workspace 指令)。
+- `filter.excludeInjected` — 丢掉注入样板(`<system-reminder>` 的 workspace 指令)与机器注入的
+  plugin notice(`source.kind === "plugin"`:模型切换提示、本插件自己的对账请求)。plugin notice 不是人说的话。
 - `filter.excludeSelf` — 丢掉 `trajectory_*` 自己的调用与结果,避免"查什么就命中这次查询本身"。
 
 两者都可关闭;无论开关,返回里都带 `filtered: { injected, self }`。`cost` 刻意两个都不用:记账要记全量。
@@ -209,24 +251,57 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 插件同时注册一个薄的 runtime skill `trajectory-query`(`lib/skill.js`),让纪律跟着工具走、
 不用改任何 agent preset:先查再答、逐字引用、引用写 `(session, seq@logId)`、空结果就是可验证的"没有"。
 
+### 可选功能:压缩后对账(默认开)
+
+压缩不改写事实 —— 它只是把一段历史从模型眼前移走(shadow,不是删除),模型手上只剩一份**不是自己写的**摘要。
+所以在一次**成功**的 `compaction/end` 之后,插件给这个会话留一个记号,等这一轮走到收尾点
+(`agent/turn-stopping`)注入一句话:
+
+> 上下文被压缩过一次,压掉的那段只剩日志里有。用不超过两行跟我说一句:你保留的理解是什么(目标/进度/下一步);不确定的先用 trajectory_search 回查,查不回来的直接问我。
+
+这一轮于是多走一步:模型先把手上那句话说完,再补两行"我保留的理解是什么" —— 不确定的自己回查日志,
+日志回答不了的来问人。
+
+- **为什么挂收尾点而不是压缩点。** 压缩发生在 step 之间,那一刻注入等于插进正在进行的推理;
+  收尾点的注入是 loop 会重新读的数据,自然落成单独的一步。
+- **一次压缩只对一次账。** 注入前先清记号,所以不会每轮收尾都重复打扰;同一轮里第二次压缩会再对一次。
+- **子会话跳过**(`origin: "subagent"` / `parentSession`):子代理没有"跟我说一句"的对象。
+  失败的压缩(带 `error` 字段)也跳过 —— 投影没换,模型眼前的上下文没变。
+- **形态。** 一条 `user` 角色消息,来源是 `{ kind: "plugin", plugin: "dsh-trajectory-tools",
+  form: "notice", summary: "…" }`:模型读正文,人读 summary —— "这句话是谁说的"是声明出来的,不靠正文猜。
+  它不带任何工具 schema,所以工具表一个字节都不涨。
+- **关掉 / 换句子。** `config.reconcile: false` 关掉;`config.reconcile.sentence` 换掉那句话。
+  注入整体包在 try/catch 里:收尾点抛错会让这一轮以 `reason=error` 收场,而这是锦上添花,不是必需品。
+
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.2.0.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.3.0.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.2.0.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.0.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新
+```
+
+配置写在 loader 行上(插件自带的 `cordis.patch.yml` 已经插入这一行,所以要在
+`~/.dsh/profiles/web/cordis.patch.yml` 里写一条**按 id 的 config 覆盖行**,不能再写一次 `insert:`):
+
+```yaml
+- id: dsh-trajectory-tools
+  name: dsh-trajectory-tools
+  config:
+    reconcile:
+      sentence: 上下文被压缩过,先说一句你保留的理解,不确定的用 trajectory_search 回查。
 ```
 
 ### 文件
 
 | 文件 | 作用 |
 |---|---|
-| `lib/index.js` | host 半边:读日志并注册三个入口 |
+| `lib/index.js` | host 半边:读日志、注册三个入口,并挂上可选的对账 |
 | `lib/skill.js` | `trajectory-query` runtime skill 正文 |
-| `self-test.mjs` | 123 项契约检查(假 ctx + 合成日志,不连真实会话) |
+| `self-test.mjs` | 153 项契约检查(假 ctx + 合成日志,不连真实会话) |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch`(纯 host,无客户端半边) |
 

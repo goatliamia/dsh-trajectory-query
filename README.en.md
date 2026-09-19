@@ -78,6 +78,17 @@ matching is normalized (`filter.normalize`), so a single-backslash path finds th
 log. Optional narrowing lives in one `filter` object whose keys depend on the view; `view="catalog"`
 is the "see what is queryable before guessing a word" entry.
 
+**Optional: reconcile after a compaction (on by default)** — compaction does not rewrite facts; it
+moves a span of history out of the model's view (shadowed, not deleted), leaving the model with a
+summary it did not write. So after a **successful** `compaction/end` the plugin marks that session,
+and at the turn's stop boundary (`agent/turn-stopping`) injects one sentence: tell me in two lines
+what understanding you kept (goal / progress / next step), re-query the log with `trajectory_search`
+where you are unsure, ask the human where the log cannot answer. It arrives as a `plugin` notice
+(`form: "notice"` plus a human-facing `summary`), so who is talking is declared rather than inferred
+from the text, and it registers no tool schema — zero bytes added to the tool table. One compaction
+earns one reconcile, subagent children are skipped, and it can be disabled (`config.reconcile: false`)
+or reworded (`config.reconcile.sentence`) on the loader row.
+
 **2. Resident Analysis tab (Web GUI)** — a third tab beside *Conversation | Trajectory* that renders
 a **runtime incident view**:
 
@@ -90,9 +101,10 @@ a **runtime incident view**:
 
 **Host routes** — `GET /analysis-view/digest?session=<id>` returns deterministic incidents (same-args repeat / failures / no-op turns); `GET /analysis-view/interpret?session=<id>` calls the model once, only when *Open interpretation* is expanded, and returns a cited interpretation. Both carry a **`log` identity** (`id` / `events` / `seq` range); citations read `(session, seq@logId)`, so a seq cannot be misread across log revisions.
 
-**Mechanical analyzers** — five deterministic folds: `turns / tools / errors / retry / incidents`.
-Same-argument repeats, failed calls and no-op turns are decided by code, not by a model. Each
-analyzer owns a `summary(facts)`, so the runner renders the table directly (a missing summary shows
+**Mechanical analyzers** — six deterministic folds: `turns / tools / errors / retry / incidents / cost`.
+Same-argument repeats, failed calls and no-op turns are decided by code, not by a model; tokens and
+cache efficiency are folded straight out of `assistant/message.usage` with no new instrumentation.
+Each analyzer owns a `summary(facts)`, so the runner renders the table directly (a missing summary shows
 `(no summary)` instead of a silent blank cell); `analyzers/self-test.mjs` pins the semantics and
 that contract.
 
@@ -140,7 +152,7 @@ node analyzers/self-test.mjs
 pnpm pack                                  # in each plugin directory
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: add
-#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.2.0.tgz"
+#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.0.tgz"
 #     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.1.2.tgz"
 #   dsh.profile.bundles: append "dsh-trajectory-tools" and "dsh-analysis-view"
 pnpm install            # in ~/.dsh/profiles/web
@@ -150,7 +162,7 @@ pnpm install            # in ~/.dsh/profiles/web
 ## Verify
 
 ```text
-cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (123 checks)
+cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (153 checks)
 node analyzers/self-test.mjs        # analyzer semantics
 node analyzers/host-self-test.mjs   # host-side incident detection
 ```
@@ -159,7 +171,9 @@ After restarting `dsh web`, confirm that the model's tool list contains the thre
 `trajectory_search` / `trajectory_read` / `trajectory_graph` (no longer six), that the skill catalog
 contains `trajectory-query`, that `search(view="events")` results carry `matchAt` / `filtered` /
 `normalized`, that `graph` chains come back as `{count, head, tail}`, and that
-`/analysis-view/digest` returns 200 for a settled session.
+`/analysis-view/digest` returns 200 for a settled session. The compaction reconcile only shows up once
+a compaction actually happens: that turn ends with one extra model message, and the host log gains a
+`compaction reconcile` line at the same time.
 
 ## Known gaps
 
@@ -168,11 +182,12 @@ contains `trajectory-query`, that `search(view="events")` results carry `matchAt
 - Host analysis and `analyzers/incidents.mjs` are two implementations (runtime cannot import repo scripts); each is pinned by its own self-test.
 - Sessions are read via `sessionQuery.observeSession(id)` (DSH 0.1.6 deprecated the synchronous readers such as `snapshotEvents`; fallbacks: in-memory snapshot → `sessionPersistence.open(id, 'read')` → legacy `inspect()`).
 - `seq` is only stable inside one log revision, so citations must carry `logId`; after a version rewrite an old `seq` may point at a different event.
-- The query tools are a host plugin: `dsh web` must be restarted before they appear in the model's tool list; if a tool name is already taken the plugin fails loudly instead of half-registering. Its contract is pinned by `plugin/trajectory-tools/self-test.mjs` (123 checks).
+- The query tools are a host plugin: `dsh web` must be restarted before they appear in the model's tool list; if a tool name is already taken the plugin fails loudly instead of half-registering. Its contract is pinned by `plugin/trajectory-tools/self-test.mjs` (153 checks).
+- The compaction reconcile speaks only when a `compaction/end` succeeded *and* that turn reaches its stop boundary: failed compactions (no new projection) and subagent sessions are skipped, and a failed injection does not break the turn — it leaves one `warn` line in the host log. Whether to reconcile is decided by a session-scoped mark (one per compaction), not by the model's guess.
 - Without `session`, `view="events"` scans the current session + every live session + a few persisted ones; persisted sessions are ranked by `createdAt` (there is no cheap last-activity signal), so pass `session` explicitly for a long-settled session.
 - `trajectory_graph` is the only one of the three that depends on `ctx.sessionQuery`; search and read need only `sessions` / `sessionPersistence`.
-- Every host/client API these plugins use was checked against DSH 0.1.6-alpha.1: the `defineTool` parameter DSL, the `sessionQuery` method set, `SessionHandle`, `skills.register`, `webServer.register`, `llm.stream`, the `conversation.view` slot and `uiConversation.views/binding` are unchanged; the only migration needed is the deprecated synchronous read above.
-- Runtime: DSH 0.1.6-alpha.1, plugins 0.2.0 / 0.1.2. The previous 6-tool surface was verified live (all `ok: true`, both routes 200, analyzers parse v3). This revision merges those six into three entries and cuts the tool-table footprint by ~68%; the contract is covered by the 123-check self-test and an offline check on real data, with a live check pending the next restart.
+- Every host/client API these plugins use was checked against DSH 0.1.6-alpha.2: the `defineTool` parameter DSL, the `sessionQuery` method set, `SessionHandle`, `skills.register`, `webServer.register`, `llm.stream`, `agent/turn-stopping` + `agent.steer`, the `conversation.view` slot and `uiConversation.views/binding` are unchanged; the only migration needed is the deprecated synchronous read above.
+- Runtime: DSH 0.1.6-alpha.2, plugins 0.3.0 / 0.1.2. The three entries cost about 1.8 KB of tool table (down from 5.7 KB with six); the contract is covered by the 153-check self-test and an offline check on real data — the live check is the **Verify** section above.
 - `trajectory_search(view="cost")` reads `assistant/message.usage` only — no new instrumentation. A request whose adapter reported no usage is `unknown` (never zero), and a single missing field is `null` and stays out of the sums. The DeepSeek adapter usually does not report `cacheWriteTokens`: that means "not reported", not "no cache write".
 - Trap: after the format migration a session directory keeps **both `session.v3.jsonl.zstd` (current) and `session.v2.jsonl.zstd` (pre-migration copy)**. Pass the v3 file to the analyzers by hand, or you will read the stale copy as if it were the newest session. `experiments/corpus/scan-sessions.mjs` now picks the highest version per directory.
 

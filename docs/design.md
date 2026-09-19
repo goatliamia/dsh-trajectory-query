@@ -69,3 +69,28 @@ trajectory 插件
 - 触发规则:agent 想查才调查询工具;你要研究才跑管线;面板挂上且打开才渲染。
 - 分析器是纯 fold、带 version、可丢弃重算——分析产物永不当记忆持久化。
 - UI(可选面板)是最后一个 facet:先定槽位契约与"常驻 or 打开才渲染"再实现(见 goal 的 UI 探讨点)。
+
+## 第四个 facet:压缩后对账(2026-09 定稿,可选、默认开)
+
+压缩(shadow)不是删除:事实仍在日志里,变的是**模型眼前**。所以这里不补摘要(补摘要就是让模型
+替事实做减法),只加一次提醒——让模型自己说清"我保留的理解是什么",不确定的自己回查。
+
+机制(全在 `dsh-trajectory-tools` 里,不新增插件):
+
+```text
+compaction/end(成功)  →  这个会话留一个记号(会话级,一次压缩一个)
+agent/turn-stopping   →  有记号 → agent.steer(一条 plugin notice)→ 同轮多走一步
+                       →  先清记号,所以一次压缩只对一次账
+```
+
+- **为什么是收尾点,不是压缩点**:压缩发生在 step 之间。那一刻注入是插进正在进行的推理;
+  收尾点的注入是 loop 会重新读的数据(`turnEnds && this.inbox.nextStep.length === 0` 那两行),
+  自然落成单独一步。代价:每次压缩多一个 step。
+- **为什么是 notice 形态**:`{ kind: "plugin", plugin, form: "notice", summary }` 是 DSH 自己的
+  写法(`model-selection` 的模型切换提示同款)。"这句话是谁说的"由 source 声明,不靠正文猜;
+  人读 summary,模型读正文。
+- **它是事实的一部分,不是事实**:注入的 notice 默认被 `filter.excludeInjected` 排除
+  (`isPluginContext` 认 `source.kind === "plugin"`)—— 机器说的话不进"人说过什么"的检索结果,
+  要核实是哪一轮用 `filter.excludeInjected: false`。
+- **判据是机械的**:有没有记号由事件决定,不由模型判断该不该对账;`agent.steer` 抛错只吞掉并
+  `warn`,不在收尾点中断这一轮。

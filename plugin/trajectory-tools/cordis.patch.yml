@@ -1,8 +1,12 @@
 # dsh-trajectory-tools bundle layer.
 #
 # Inserts the host row that registers the model-facing trajectory_* tools
-# (trajectory_sessions / trajectory_find / trajectory_window / trajectory_trace).
+# (trajectory_search / trajectory_read / trajectory_graph) and the optional
+# compaction-reconcile listener.
 # Host-only and read-only: no client half, no HTTP route, no writes to the log.
+#
+# Options go on this row as `config:` — and that override belongs in the profile's
+# own cordis.patch.yml (by id), never as a second `insert:` here.
 - insert:
     - id: dsh-trajectory-tools
       name: dsh-trajectory-tools
