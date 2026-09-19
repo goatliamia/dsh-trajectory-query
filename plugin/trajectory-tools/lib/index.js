@@ -1020,7 +1020,10 @@ export function apply(ctx) {
       const toolNeedle = typeof filter.tool === "string" ? filter.tool.trim().toLowerCase() : "";
       let candidates;
       if (all === null) {
-        candidates = [{ id: String(args.session), cwd: null, current: false, live: undefined, persisted: undefined }];
+        // 显式给了 session:会话清单里不一定有它(很老的已持久化会话)。
+        // 这里不能预填 live/persisted —— 未知就留空,由下面的读取结果决定(undefined 会让整个
+        // 工具输出被运行时判为非法 JSON,所以宁可给 null)。
+        candidates = [{ id: String(args.session), cwd: undefined, current: false }];
       } else {
         const cwdNeedle = typeof filter.cwd === "string" ? filter.cwd.trim().toLowerCase() : "";
         candidates = cwdNeedle === "" ? all : all.filter((record) => String(record.cwd || "").toLowerCase().includes(cwdNeedle));
@@ -1039,12 +1042,14 @@ export function apply(ctx) {
             timeFrom: filter.timeFrom,
             timeTo: filter.timeTo,
           });
+          const header = loaded.header || null;
           sessions.push({
             session: record.id,
-            cwd: record.cwd,
+            cwd: record.cwd === undefined ? ((header && header.cwd) || null) : record.cwd,
             current: record.current === true,
-            live: record.live,
-            persisted: record.persisted,
+            live: typeof record.live === "boolean" ? record.live : loaded.source === "live",
+            // null = 这次没查证"是不是也落盘了",不代表没有。
+            persisted: typeof record.persisted === "boolean" ? record.persisted : null,
             log: logIdentity(record.id, loaded.events).id,
             ...stats,
           });

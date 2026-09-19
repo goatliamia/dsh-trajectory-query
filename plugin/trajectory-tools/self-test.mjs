@@ -51,6 +51,34 @@ function eq(name, actual, expected) {
   check(name, Object.is(actual, expected) || JSON.stringify(actual) === JSON.stringify(expected), "expected " + JSON.stringify(expected) + ", got " + JSON.stringify(actual));
 }
 
+/**
+ * 工具输出里第一个会被 JSON 丢掉/改写的值(undefined / 非有限数 / 函数 / BigInt / Symbol)。
+ * 运行时会拒绝"非 lossless JSON"的输出,而且是整个调用失败 —— 所以这是硬契约,不是风格问题。
+ * 返回 null 表示干净;否则返回出问题的路径。
+ */
+function lossless(value, path = "(root)") {
+  if (value === undefined) return path;
+  if (value === null) return null;
+  const kind = typeof value;
+  if (kind === "function" || kind === "symbol" || kind === "bigint") return path;
+  if (kind === "number") return Number.isFinite(value) ? null : path;
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index++) {
+      const hit = lossless(value[index], path + "[" + index + "]");
+      if (hit !== null) return hit;
+    }
+    return null;
+  }
+  if (kind === "object") {
+    for (const key of Object.keys(value)) {
+      const hit = lossless(value[key], path + "." + key);
+      if (hit !== null) return hit;
+    }
+    return null;
+  }
+  return null;
+}
+
 /* ---------------- 合成会话 ---------------- */
 const LIVE_ID = "session-live-0001"; // live,不是当前会话
 const PERSISTED_ID = "session-settled-0002"; // 已持久化
@@ -441,6 +469,17 @@ check("catalog: filter.cwd 会丢掉不匹配的会话", (await search({ view: "
 const direct = indexEvents(EVENTS, { toolNeedle: "trajectory_search" });
 eq("indexEvents: 过滤掉工具自己的调用", direct.events, 0);
 
+// 显式给 session 的目录(曾经的缺陷:合成记录里 live/persisted 是 undefined,
+// 运行时判整个工具输出为非法 JSON —— 按 skill 说的用法查目录就是硬报错)。
+const scopedCatalog = await search({ view: "catalog", session: LIVE_ID });
+eq("catalog: 显式 session 不再报错", scopedCatalog.ok, true);
+eq("catalog: 显式 session 只给这一个会话", scopedCatalog.sessions.map((row) => row.session), [LIVE_ID]);
+eq("catalog: 显式 session 的 live 由读取来源决定", scopedCatalog.sessions[0].live, true);
+eq("catalog: 显式 session 的 persisted 是 null(这次没查证)", scopedCatalog.sessions[0].persisted, null);
+eq("catalog: 显式 session 从 header 补 cwd", scopedCatalog.sessions[0].cwd, HEADERS.get(LIVE_ID).cwd);
+const settledCatalog = await search({ view: "catalog", session: PERSISTED_ID });
+eq("catalog: 已持久化会话的 live 是 false", settledCatalog.sessions[0].live, false);
+
 const costRows = costRequests(COST_EVENTS);
 eq("cost(fold): 每个 assistant/message 一行", costRows.length, 3);
 eq("cost(fold): totals 只加已上报的值", costTotals(costRows), {
@@ -687,6 +726,28 @@ eq("对账通知默认检索不到,只命中人说的那条", noticeSearch.hitCo
 eq("对账通知默认不计入注入过滤之外", noticeSearch.filtered.injected, 1);
 const noticeAll = await registered.get("trajectory_search").execute({ view: "events", session: NOTICE_ID, query: "reconcile-marker", filter: { excludeInjected: false } });
 eq("excludeInjected:false 时通知查得到(可核实是哪一轮)", noticeAll.hitCount, 2);
+
+/* ---------------- 输出契约:必须是 lossless JSON ---------------- */
+
+// 每个入口的返回值都过一遍;一旦哪个字段是 undefined,运行时会拒收整个输出。
+const outputs = {
+  "events(带 query)": await search({ view: "events", query: "facade" }),
+  "events(带 session)": await search({ view: "events", session: LIVE_ID, query: "fs_not_observed" }),
+  "events(空结果)": await search({ view: "events", query: "nothing-matches-this" }),
+  "events(报错路径)": await search({ view: "events", filter: { nope: 1 } }),
+  catalog: await search({ view: "catalog" }),
+  "catalog(显式 session)": scopedCatalog,
+  sessions: sessions,
+  "sessions(liveOnly)": await search({ view: "sessions", filter: { liveOnly: true } }),
+  cost: await search({ view: "cost", session: COST_ID }),
+  read: await read({ session: LIVE_ID, seq: 4 }),
+  graph: await graph({ session: LIVE_ID, seq: 4 }),
+  "graph(会话谱系)": await graph({ session: LIVE_ID }),
+};
+for (const [name, value] of Object.entries(outputs)) {
+  const hit = lossless(value);
+  check("lossless JSON: " + name, hit === null, hit === null ? "" : "undefined/非有限数在 " + hit);
+}
 
 /* ---------------- 结果 ---------------- */
 if (failures.length === 0) {
