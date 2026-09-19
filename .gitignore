@@ -27,3 +27,6 @@ Thumbs.db
 experiments/**/raw-*.json
 experiments/**/*.tmp.json
 plugin/**/*.tgz
+
+# 差分基准里的真实会话缩减流:含真实工具参数与路径,只留本地
+analyzers/fixtures/*.real.json

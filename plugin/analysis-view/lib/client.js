@@ -85,11 +85,14 @@ window.__ModuleLoader__.load({
       const errForTurn = new Map();
       for (const e of errFirst) if (e.turn !== undefined && !errForTurn.has(e.turn)) errForTurn.set(e.turn, e);
 
-      const incidents = [];
+      // 兜底生产者:产出**事实形态**(seqs: number[]),与 host 那一份同一个形状。
+      // 视图形态({seq, callId})只在 toChips() 里出现一次 —— 形状的唯一声明见
+      // lib/incident-shape.js(浏览器半边 import 不到它,所以这里由法则盯着键与顺序)。
+      const wireIncidents = [];
       if (errors > 0) {
         const kinds = {};
         for (const e of errFirst) kinds[e.kind] = (kinds[e.kind] || 0) + 1;
-        incidents.push({
+        wireIncidents.push({
           type: "error", severity: errors, title: "调用失败",
           detail: errors + " 个工具调用返回错误(" + Object.keys(kinds).join(", ") + ")",
           cause: "工具调用返回了错误结果",
@@ -97,15 +100,14 @@ window.__ModuleLoader__.load({
           modelKnew: "收到 tool result(可能已含错误)",
           harness: "未检测到针对性处理(需 host 判定)",
           impact: "该部分目标未达成",
-          seqs: errFirst.map((e) => ({ seq: e.seq, callId: e.callId }))
+          seqs: errFirst.map((e) => e.seq)
         });
       }
 
-      const clientIncidents = incidents.slice();
-      const hostIncidents = host && Array.isArray(host.incidents)
-        ? host.incidents.map((inc) => ({ ...inc, seqs: (inc.seqs || []).map((s) => (typeof s === "number" ? { seq: s, callId: callIdBySeq.get(s) } : s)) }))
-        : null;
-      const shown = hostIncidents || clientIncidents;
+      /** 唯一一次 事实形态 → 视图形态(chip):host 与兜底两条来源都走这里。 */
+      const toChips = (inc) => ({ ...inc, seqs: inc.seqs.map((s) => (typeof s === "number" ? { seq: s, callId: callIdBySeq.get(s) } : s)) });
+      const hostIncidents = host && Array.isArray(host.incidents) ? host.incidents.map(toChips) : null;
+      const shown = (hostIncidents || wireIncidents).map(toChips);
       const hostState = host ? ("已加载 · " + ((host.incidents && host.incidents.length) || 0) + " incidents · log " + (host.log ? host.log.id : "?") + " · seq " + (host.log ? host.log.minSeq + "–" + host.log.maxSeq : "?")) : hostErr ? ("不可用: " + hostErr) : sessionId ? "加载中…" : "无 sessionId(未发起请求)";
       const go = (callId) => () => { if (openView && callId) openView("trajectory", callId); };
       const chipBtn = (seq, callId) => React.createElement("button", { key: String(seq) + "-" + String(callId), onClick: go(callId), style: chip, title: openView ? "切到轨迹" : "" }, String(seq));

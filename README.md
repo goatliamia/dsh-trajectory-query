@@ -71,6 +71,8 @@ read(session="session-e0636aa9-…", seq=1248)
 
 **报告** —— `analyzers/run-digest.mjs` 把一次会话变成可复现的 `*.facts.json` + `*.digest.md`(表格每行由对应分析器自己的 `summary` 产出,加分析器不必再改 runner)。
 
+**形状只有一份声明** —— `incidents` 这条事实的十个字段声明在 `plugin/analysis-view/lib/incident-shape.js`(住在包里,由 `analyzers/` 反过来 import;运行期 import 不到仓库脚本),记录只能经 `incident()` 造出来:缺字段、多字段、类型不符、`seqs` 写成 chip 形态都当场抛。`analyzers/shape-law.mjs` 把这条性质钉成法则:认领(探测器找到的每个载体都要在声明里挂角色与形态,漏一个就是错)、漂移(自己写字面量的客户端半边按键按序比对)、差分(与冻结基准逐字节相同)、证人(历史产物只读校验)。`--mutate` 用 13 种合理错法证明法则会咬。
+
 **3. 两份 Skill** —— `trajectory-query`(随查询插件注册为 runtime skill):先查再答、逐字引用、引用写 `(session, seq@logId)`、空结果就是可验证的"没有";`analysis.md`:把研究问题变成可核验分析(证据纪律、维度发现、分析器契约),规定入口,不规定结论。
 
 ## 怎么用
@@ -108,7 +110,7 @@ pnpm pack                                  # 在各自的 plugin 目录里执行
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: 增加
 #     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.0.tgz"
-#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.1.2.tgz"
+#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.1.3.tgz"
 #   dsh.profile.bundles: 追加 "dsh-trajectory-tools"、"dsh-analysis-view"
 pnpm install            # 在 ~/.dsh/profiles/web
 # 重启 dsh web(host 插件不会可靠热更新)
@@ -117,9 +119,11 @@ pnpm install            # 在 ~/.dsh/profiles/web
 ## 验证
 
 ```text
-cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (153 checks)
+cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (172 checks)
 node analyzers/self-test.mjs        # 分析器语义
 node analyzers/host-self-test.mjs   # host 侧 incident 判定
+node analyzers/shape-law.mjs        # incident 形状:认领 / 漂移 / 差分 / 证人
+node analyzers/shape-law.mjs --mutate   # 13 种合理错法,逃走必须为 0
 ```
 
 装好后重启 `dsh web`,确认:模型工具表里出现 `trajectory_search` / `trajectory_read` / `trajectory_graph` 三个入口(不再是六个)、skill 目录里出现 `trajectory-query`、`search(view="events")` 的返回里带 `matchAt` / `filtered` / `normalized`、`graph` 的关系链是 `{count, head, tail}` 形态、`/analysis-view/digest` 对已结算会话返回 200。压缩后对账要等**真的发生一次压缩**才能看到(想马上看就在会话里 `/compact`,再随便回一句话):那一轮收尾时多一句模型回复,host 日志里同时多一行 `compaction reconcile`。
@@ -131,12 +135,12 @@ node analyzers/host-self-test.mjs   # host 侧 incident 判定
 - host 分析与 `analyzers/incidents.mjs` 是两份实现(运行时无法 import 仓库脚本),语义分别由 `analyzers/host-self-test.mjs`、`analyzers/self-test.mjs` 钉住。
 - 会话经 `sessionQuery.observeSession(id)` 读取(DSH 0.1.6 起 `snapshotEvents` 等同步读取已弃用;兼容退路依次是内存快照 → `sessionPersistence.open(id, 'read')` → 旧版 `inspect()`)。
 - `seq` 只在同一份日志修订内稳定,所以引用必须带 `logId`;跨版本重写过的日志,旧 `seq` 可能指向别的事件。
-- 查询工具是 host 插件:装好后必须重启 `dsh web` 才会出现在模型工具表里;若同名工具已被别的插件注册,插件会显式报错而不是静默注册一半。契约由 `plugin/trajectory-tools/self-test.mjs`(153 项)钉住。
+- 查询工具是 host 插件:装好后必须重启 `dsh web` 才会出现在模型工具表里;若同名工具已被别的插件注册,插件会显式报错而不是静默注册一半。契约由 `plugin/trajectory-tools/self-test.mjs`(172 项)钉住。
 - 压缩后对账只在 `compaction/end` 成功、且这一轮走到收尾点时说话:失败的压缩(投影没换)与子代理会话都跳过;注入本身失败不打断这一轮,只在 host 日志里留一行 `warn`。「是否该对账」由记号(会话级、一次压缩一个)判定,不由模型猜。
 - 不给 `session` 时,`view="events"` 的默认扫描集是「当前会话 + 所有 live 会话 + 最近若干已持久化会话」;已持久化会话按 `createdAt` 排序(没有便宜的"最近活动"信号),很久以前的会话请显式传 session。
 - `trajectory_graph` 是三个入口里唯一依赖 `ctx.sessionQuery` 的;search / read 只依赖 `sessions` / `sessionPersistence`。
 - 面向 DSH 0.1.6-alpha.1 核对过全部用到的 host/客户端 API:`defineTool` 参数 DSL、`sessionQuery` 方法表、`SessionHandle`、`skills.register`、`webServer.register`、`llm.stream`、`conversation.view` slot 与 `uiConversation.views/binding` 均未变;唯一需要迁移的就是上面那条同步读取弃用。
-- 运行环境:DSH 0.1.6-alpha.2,插件 0.3.0 / 0.1.2。三个入口的工具表占用约 1.8 KB(合并成三个之前是 5.7 KB);契约由自检(153 项)与真实语料离线核对覆盖,实机对照见上面「验证」。
+- 运行环境:DSH 0.1.6-alpha.2,插件 0.3.0 / 0.1.3。三个入口的工具表占用约 1.8 KB(合并成三个之前是 5.7 KB);契约由自检(172 项)与真实语料离线核对覆盖,实机对照见上面「验证」。
 - `trajectory_search(view="cost")` 只读 `assistant/message.usage`,不新增埋点:适配器没上报 usage 的请求记 `unknown`(不是 0),单字段缺失记 `null` 且不进求和。DeepSeek 适配器基本不报 `cacheWriteTokens`,那是"没上报",不是"没写缓存";
 - 陷阱:会话格式迁移后,同一个会话目录里**同时留着 `session.v3.jsonl.zstd`(当前)与 `session.v2.jsonl.zstd`(迁移前旧副本)**。手动跑分析器要取 v3,否则会把旧副本当成"最近的会话"。`experiments/corpus/scan-sessions.mjs` 已按目录取版本号最高的一份。
 

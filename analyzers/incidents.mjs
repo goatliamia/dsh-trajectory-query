@@ -1,6 +1,11 @@
 // Analyzer: incidents (v1) — deterministic runtime-incident detection.
 // Detects retry-loop (same tool + same args, consecutive, optionally after failure),
 // 调用失败 errors, and 空转 turns (no tool call). 每条 incident 带证据 seq(机械层,非模型)。
+//
+// 形状来自唯一一份声明(issue #6):plugin/analysis-view/lib/incident-shape.js。
+// 位置是反的(仓库脚本 import 包里的文件),因为运行期 import 不到仓库脚本 —— 声明必须跟着包走。
+import { incident } from '../plugin/analysis-view/lib/incident-shape.js';
+
 export const incidents = {
   id: 'incidents',
   version: 1,
@@ -48,7 +53,7 @@ export const incidents = {
       if (j - i >= 2) {
         const run = nameSeq.slice(i, j);
         const hasErr = run.some((x) => { for (const s of errorSeqs) if (s >= x.seq && s <= x.seq + 3) return true; return false; });
-        list.push({
+        list.push(incident({
           type: 'retry-loop', severity: (j - i) + (hasErr ? 2 : 0),
           title: '重复调用循环', detail: '连续 ' + (j - i) + ' 次对 "' + run[0].name + '" 的重复调用(同参)',
           cause: run[0].name + ' 同签名工具连续重复调用' + (hasErr ? '; 且 seq 区间含失败结果' : ''),
@@ -56,19 +61,19 @@ export const incidents = {
           modelKnew: '仅收到各次 tool result,无重复/失败聚合状态',
           harness: '未检测到主动打断', impact: (j - i) + ' 次冗余调用',
           seqs: run.map((x) => x.seq)
-        });
+        }));
       }
       i = j;
     }
-    if (errors > 0) list.push({
+    if (errors > 0) list.push(incident({
       type: 'error', severity: 1, title: '调用失败', detail: errors + ' 个调用返回错误',
       cause: '工具调用返回错误', runtimeKnew: '错误码见证据', modelKnew: '收到 tool result(可能已含错误)', harness: '未检测到针对性处理', impact: '该部分目标未达成',
       seqs: errFirst.map((x) => x.seq)
-    });
-    if (emptyTurns > 0) list.push({
+    }));
+    if (emptyTurns > 0) list.push(incident({
       type: 'noop', severity: 1, title: '空转 turn', detail: emptyTurns + ' 个 turn 无任何工具调用',
       cause: '该 turn 未产生工具动作', runtimeKnew: '-', modelKnew: '无工具上下文', harness: '-', impact: '该 turn 未推进', seqs: []
-    });
+    }));
     list.sort((a, b) => b.severity - a.severity);
     return { turns, toolCalls, errors, emptyTurns, incidentCount: list.length, incidents: list };
   },

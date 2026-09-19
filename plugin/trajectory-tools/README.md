@@ -209,7 +209,7 @@ override by id** in `~/.dsh/profiles/web/cordis.patch.yml` — never a second `i
 |---|---|
 | `lib/index.js` | host half: reads the log, registers the three tools, and wires the optional reconcile |
 | `lib/skill.js` | the `trajectory-query` runtime skill body |
-| `self-test.mjs` | 154 contract checks against a fake ctx + synthetic log (no real session) |
+| `self-test.mjs` | 172 contract checks against a fake ctx + synthetic log (no real session) |
 | `cordis.patch.yml` | bundle layer that inserts the plugin row |
 | `package.json` | `dsh.bundle.patch` (host-only; no client half) |
 
@@ -383,7 +383,7 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 |---|---|
 | `lib/index.js` | host 半边:读日志、注册三个入口,并挂上可选的对账 |
 | `lib/skill.js` | `trajectory-query` runtime skill 正文 |
-| `self-test.mjs` | 154 项契约检查(假 ctx + 合成日志,不连真实会话) |
+| `self-test.mjs` | 172 项契约检查(假 ctx + 合成日志,不连真实会话) |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch`(纯 host,无客户端半边) |
 

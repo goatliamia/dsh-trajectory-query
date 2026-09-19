@@ -6,6 +6,7 @@
 // those incident types as "needs host". This half provides them.
 
 import { createHash } from "node:crypto";
+import { incident } from "./incident-shape.js";
 
 const ROUTE_PATH = "/analysis-view";
 
@@ -56,7 +57,7 @@ export function computeIncidents(events) {
     if (j - i >= 2) {
       const run = nameSeq.slice(i, j);
       const hasErr = run.some((x) => errFirst.some((f) => f.seq >= x.seq && f.seq <= x.seq + 3));
-      incidents.push({
+      incidents.push(incident({
         type: "retry-loop",
         severity: (j - i) + (hasErr ? 2 : 0),
         title: "重复调用循环",
@@ -67,7 +68,7 @@ export function computeIncidents(events) {
         harness: "未检测到主动打断",
         impact: (j - i) + " 次冗余调用",
         seqs: run.map((x) => x.seq)
-      });
+      }));
     }
     i = j;
   }
@@ -75,7 +76,7 @@ export function computeIncidents(events) {
   if (errors > 0) {
     const kinds = {};
     for (const f of errFirst) kinds[f.kind] = (kinds[f.kind] || 0) + 1;
-    incidents.push({
+    incidents.push(incident({
       type: "error",
       severity: errors,
       title: "调用失败",
@@ -86,11 +87,11 @@ export function computeIncidents(events) {
       harness: deriveHarnessResponse(kinds),
       impact: "该部分目标未达成",
       seqs: errFirst.map((f) => f.seq)
-    });
+    }));
   }
 
   if (emptyTurns > 0) {
-    incidents.push({
+    incidents.push(incident({
       type: "noop",
       severity: 1,
       title: "空转 turn",
@@ -101,7 +102,7 @@ export function computeIncidents(events) {
       harness: "-",
       impact: "该 turn 未推进",
       seqs: []
-    });
+    }));
   }
 
   incidents.sort((a, b) => b.severity - a.severity);

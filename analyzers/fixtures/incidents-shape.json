@@ -1,0 +1,31 @@
+{
+  "note": "差分基准:冻结的是「改成一份声明之前」的行为。逐字节比较(键顺序也在字节里)。合成流可复算;真实会话另外存在 *.real.json(不进仓库)。",
+  "frozenAt": "2026-09-19T17:35:44.664Z",
+  "synthetic": {
+    "empty": {
+      "offline": "{\"turns\":0,\"toolCalls\":0,\"errors\":0,\"emptyTurns\":0,\"incidentCount\":0,\"incidents\":[]}",
+      "host": "{\"turns\":0,\"toolCalls\":0,\"errors\":0,\"emptyTurns\":0,\"incidentCount\":0,\"incidents\":[]}"
+    },
+    "error-only": {
+      "offline": "{\"turns\":1,\"toolCalls\":1,\"errors\":1,\"emptyTurns\":0,\"incidentCount\":1,\"incidents\":[{\"type\":\"error\",\"severity\":1,\"title\":\"调用失败\",\"detail\":\"1 个调用返回错误\",\"cause\":\"工具调用返回错误\",\"runtimeKnew\":\"错误码见证据\",\"modelKnew\":\"收到 tool result(可能已含错误)\",\"harness\":\"未检测到针对性处理\",\"impact\":\"该部分目标未达成\",\"seqs\":[2]}]}",
+      "host": "{\"turns\":1,\"toolCalls\":1,\"errors\":1,\"emptyTurns\":0,\"incidentCount\":1,\"incidents\":[{\"type\":\"error\",\"severity\":1,\"title\":\"调用失败\",\"detail\":\"1 个工具调用返回错误(FsError:FS_NOT_OBSERVED)\",\"cause\":\"工具调用返回了错误结果\",\"runtimeKnew\":\"错误码/失败状态已在事件中\",\"modelKnew\":\"收到 tool result(可能已含错误)\",\"harness\":\"guard 已拦截(FsError:FS_NOT_OBSERVED)\",\"impact\":\"该部分目标未达成\",\"seqs\":[2]}]}"
+    },
+    "retry-loop": {
+      "offline": "{\"turns\":1,\"toolCalls\":3,\"errors\":0,\"emptyTurns\":0,\"incidentCount\":1,\"incidents\":[{\"type\":\"retry-loop\",\"severity\":3,\"title\":\"重复调用循环\",\"detail\":\"连续 3 次对 \\\"pwsh\\\" 的重复调用(同参)\",\"cause\":\"pwsh 同签名工具连续重复调用\",\"runtimeKnew\":\"重复调用状态已累积\",\"modelKnew\":\"仅收到各次 tool result,无重复/失败聚合状态\",\"harness\":\"未检测到主动打断\",\"impact\":\"3 次冗余调用\",\"seqs\":[1,2,3]}]}",
+      "host": "{\"turns\":1,\"toolCalls\":3,\"errors\":0,\"emptyTurns\":0,\"incidentCount\":1,\"incidents\":[{\"type\":\"retry-loop\",\"severity\":3,\"title\":\"重复调用循环\",\"detail\":\"连续 3 次对 \\\"pwsh\\\" 的重复调用(同参)\",\"cause\":\"pwsh 同签名工具连续重复调用\",\"runtimeKnew\":\"重复调用状态已累积\",\"modelKnew\":\"仅收到各次 tool result,无重复/失败聚合状态\",\"harness\":\"未检测到主动打断\",\"impact\":\"3 次冗余调用\",\"seqs\":[1,2,3]}]}"
+    },
+    "retry-loop-after-error": {
+      "offline": "{\"turns\":1,\"toolCalls\":3,\"errors\":1,\"emptyTurns\":0,\"incidentCount\":2,\"incidents\":[{\"type\":\"retry-loop\",\"severity\":5,\"title\":\"重复调用循环\",\"detail\":\"连续 3 次对 \\\"read\\\" 的重复调用(同参)\",\"cause\":\"read 同签名工具连续重复调用; 且 seq 区间含失败结果\",\"runtimeKnew\":\"上一次调用失败,重复状态已累积\",\"modelKnew\":\"仅收到各次 tool result,无重复/失败聚合状态\",\"harness\":\"未检测到主动打断\",\"impact\":\"3 次冗余调用\",\"seqs\":[1,3,4]},{\"type\":\"error\",\"severity\":1,\"title\":\"调用失败\",\"detail\":\"1 个调用返回错误\",\"cause\":\"工具调用返回错误\",\"runtimeKnew\":\"错误码见证据\",\"modelKnew\":\"收到 tool result(可能已含错误)\",\"harness\":\"未检测到针对性处理\",\"impact\":\"该部分目标未达成\",\"seqs\":[2]}]}",
+      "host": "{\"turns\":1,\"toolCalls\":3,\"errors\":1,\"emptyTurns\":0,\"incidentCount\":2,\"incidents\":[{\"type\":\"retry-loop\",\"severity\":5,\"title\":\"重复调用循环\",\"detail\":\"连续 3 次对 \\\"read\\\" 的重复调用(同参)\",\"cause\":\"read 同签名工具连续重复调用; 且 seq 区间含失败结果\",\"runtimeKnew\":\"上一次调用失败,重复状态已累积\",\"modelKnew\":\"仅收到各次 tool result,无重复/失败聚合状态\",\"harness\":\"未检测到主动打断\",\"impact\":\"3 次冗余调用\",\"seqs\":[1,3,4]},{\"type\":\"error\",\"severity\":1,\"title\":\"调用失败\",\"detail\":\"1 个工具调用返回错误(FsError:FS_NOT_OBSERVED)\",\"cause\":\"工具调用返回了错误结果\",\"runtimeKnew\":\"错误码/失败状态已在事件中\",\"modelKnew\":\"收到 tool result(可能已含错误)\",\"harness\":\"guard 已拦截(FsError:FS_NOT_OBSERVED)\",\"impact\":\"该部分目标未达成\",\"seqs\":[2]}]}"
+    },
+    "noop": {
+      "offline": "{\"turns\":2,\"toolCalls\":0,\"errors\":0,\"emptyTurns\":1,\"incidentCount\":1,\"incidents\":[{\"type\":\"noop\",\"severity\":1,\"title\":\"空转 turn\",\"detail\":\"1 个 turn 无任何工具调用\",\"cause\":\"该 turn 未产生工具动作\",\"runtimeKnew\":\"-\",\"modelKnew\":\"无工具上下文\",\"harness\":\"-\",\"impact\":\"该 turn 未推进\",\"seqs\":[]}]}",
+      "host": "{\"turns\":2,\"toolCalls\":0,\"errors\":0,\"emptyTurns\":1,\"incidentCount\":1,\"incidents\":[{\"type\":\"noop\",\"severity\":1,\"title\":\"空转 turn\",\"detail\":\"1 个 turn 既无工具调用、也无助手产出\",\"cause\":\"该 turn 未产生任何动作或产出\",\"runtimeKnew\":\"-\",\"modelKnew\":\"-\",\"harness\":\"-\",\"impact\":\"该 turn 未推进\",\"seqs\":[]}]}"
+    },
+    "mixed": {
+      "offline": "{\"turns\":4,\"toolCalls\":3,\"errors\":2,\"emptyTurns\":1,\"incidentCount\":3,\"incidents\":[{\"type\":\"retry-loop\",\"severity\":4,\"title\":\"重复调用循环\",\"detail\":\"连续 2 次对 \\\"pwsh\\\" 的重复调用(同参)\",\"cause\":\"pwsh 同签名工具连续重复调用; 且 seq 区间含失败结果\",\"runtimeKnew\":\"上一次调用失败,重复状态已累积\",\"modelKnew\":\"仅收到各次 tool result,无重复/失败聚合状态\",\"harness\":\"未检测到主动打断\",\"impact\":\"2 次冗余调用\",\"seqs\":[1,2]},{\"type\":\"error\",\"severity\":1,\"title\":\"调用失败\",\"detail\":\"2 个调用返回错误\",\"cause\":\"工具调用返回错误\",\"runtimeKnew\":\"错误码见证据\",\"modelKnew\":\"收到 tool result(可能已含错误)\",\"harness\":\"未检测到针对性处理\",\"impact\":\"该部分目标未达成\",\"seqs\":[3,6]},{\"type\":\"noop\",\"severity\":1,\"title\":\"空转 turn\",\"detail\":\"1 个 turn 无任何工具调用\",\"cause\":\"该 turn 未产生工具动作\",\"runtimeKnew\":\"-\",\"modelKnew\":\"无工具上下文\",\"harness\":\"-\",\"impact\":\"该 turn 未推进\",\"seqs\":[]}]}",
+      "host": "{\"turns\":4,\"toolCalls\":3,\"errors\":2,\"emptyTurns\":1,\"incidentCount\":3,\"incidents\":[{\"type\":\"retry-loop\",\"severity\":4,\"title\":\"重复调用循环\",\"detail\":\"连续 2 次对 \\\"pwsh\\\" 的重复调用(同参)\",\"cause\":\"pwsh 同签名工具连续重复调用; 且 seq 区间含失败结果\",\"runtimeKnew\":\"上一次调用失败,重复状态已累积\",\"modelKnew\":\"仅收到各次 tool result,无重复/失败聚合状态\",\"harness\":\"未检测到主动打断\",\"impact\":\"2 次冗余调用\",\"seqs\":[1,2]},{\"type\":\"error\",\"severity\":2,\"title\":\"调用失败\",\"detail\":\"2 个工具调用返回错误(error, FsError:FS_NOT_DECLARED)\",\"cause\":\"工具调用返回了错误结果\",\"runtimeKnew\":\"错误码/失败状态已在事件中\",\"modelKnew\":\"收到 tool result(可能已含错误)\",\"harness\":\"未检测到针对性处理\",\"impact\":\"该部分目标未达成\",\"seqs\":[3,6]},{\"type\":\"noop\",\"severity\":1,\"title\":\"空转 turn\",\"detail\":\"1 个 turn 既无工具调用、也无助手产出\",\"cause\":\"该 turn 未产生任何动作或产出\",\"runtimeKnew\":\"-\",\"modelKnew\":\"-\",\"harness\":\"-\",\"impact\":\"该 turn 未推进\",\"seqs\":[]}]}"
+    }
+  },
+  "real": []
+}

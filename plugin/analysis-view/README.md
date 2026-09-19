@@ -46,14 +46,41 @@ no separate data source — and renders a **deterministic, evidence-cited** view
 4. **Honest gaps are labeled.** Same-args repeat and no-op turns need arguments/state that the
    client projection does not carry, so they are marked `needs host` instead of guessed.
 
+### The incident shape has exactly one home
+
+`incidents` is a ten-field fact (`type severity title detail cause runtimeKnew modelKnew harness impact seqs`).
+It is written by three carriers — the repo analyzer, this plugin's host half, and this plugin's client
+half (which cannot import anything) — so "who owns the shape" used to be a habit, not a fact.
+
+It is now declared once, in **`lib/incident-shape.js`**, and that file lives **in the package**: the
+runtime cannot import repo scripts, so the declaration travels with the plugin and `analyzers/`
+imports it *back*. Records can only be built through `incident(...)`, which throws on a missing field,
+an undeclared field, a wrong type, or a chip-shaped `seqs` — so "each branch writes the same ten names
+again" is no longer writable.
+
+`analyzers/shape-law.mjs` keeps it that way:
+
+```text
+node analyzers/shape-law.mjs            # shape / claim / drift / differential / witness
+node analyzers/shape-law.mjs --mutate   # prove the laws bite: reasonable mistakes must be caught
+```
+
+- **claim** — a detector finds every file that knows this shape; each one must be listed in the
+  declaration with a role (source / consumer / witness) and a form (what `seqs` is there). Forgetting
+  a participant *is* an error.
+- **drift** — carriers that build their own literal (the client half) are compared key-by-key, in order.
+- **differential** — byte-identical JSON against a frozen baseline (synthetic streams + reduced real
+  sessions), key order included.
+- **witness** — the historical `experiments/reports/*.facts.json` is read and validated, never rewritten.
+
 ### Install (permanent, not a dynamic plugin)
 
 Dynamic plugins are session-scoped and vanish on reload; this one is installed into the web profile.
 
 ```text
-1. pnpm pack                      # -> dsh-analysis-view-0.1.2.tgz
+1. pnpm pack                      # -> dsh-analysis-view-0.1.3.tgz
 2. add to ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.1.2.tgz"
+     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.1.3.tgz"
      dsh.profile.bundles: append "dsh-analysis-view"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. rebuild / restart `dsh web`    # so the new client module enters the bundle
@@ -65,6 +92,7 @@ Dynamic plugins are session-scoped and vanish on reload; this one is installed i
 |---|---|
 | `lib/client.js` | the client plugin; must self-register via `window.__ModuleLoader__.load({ id, factory })`; `require("react")` instead of a global |
 | `lib/index.js` | host half: computes incidents and serves `GET /analysis-view/digest?session=<id>` (facts + `log` identity) and `GET /analysis-view/interpret?session=<id>` (model interpretation, called only when expanded) |
+| `lib/incident-shape.js` | the single declaration of the incident fact: ordered fields, types, `incident()` constructor, and the participant registry |
 | `cordis.patch.yml` | bundle layer that inserts the plugin row |
 | `package.json` | `dsh.bundle.patch` + `dsh.client` (platform web + client injects) |
 
@@ -73,12 +101,15 @@ Dynamic plugins are session-scoped and vanish on reload; this one is installed i
 - Refresh the GUI → the **分析** tab renders the incident view for the current session.
 - If it is blank, check the browser console for the first error.
 - Analyzer semantics: `node analyzers/self-test.mjs` (must print `ALL PASS`).
+- Shape contract: `node analyzers/shape-law.mjs` and `node analyzers/shape-law.mjs --mutate`
+  (both must print `ALL PASS`; the second one prints `CAUGHT` per mutation).
 
 ### Limitations
 
 - The host half serves incidents at `GET /analysis-view/digest?session=<id>` (same-args repeat, no-op turn, harness response); the client fetches it and renders evidence only.
 - `Harness response` is derived from error codes, not a template.
-- Host analysis and the repo analyzers are two implementations; each is pinned by its own self-test.
+- Host analysis and the repo analyzers are still two implementations — they now share one declaration, but their *values* differ on purpose (e.g. severity), so each keeps its own self-test and the differential baseline is frozen per implementation.
+- The client half cannot import the declaration (it is a `window.__ModuleLoader__` factory with no relative imports), so its literal is held in place by the drift law instead of by the constructor.
 - Sessions are read through `sessionQuery.observeSession(id)` (the sanctioned path since DSH 0.1.6 deprecated `snapshotEvents`); the observation is disposed right after use. Fallbacks keep older deployments working: in-memory snapshot → `sessionPersistence.open(id, 'read')` → `SessionHandle.read()` → legacy `inspect()`.
 
 ---
@@ -117,14 +148,38 @@ conversation.view  →  [对话] [轨迹] [分析]
    *提及 ≠ 发生*(日志里出现字符串不等于事件发生)、*同名 ≠ 重复*(重复必须同工具**且**同参)。
 4. **诚实标注缺口。** 同参重复、空转 turn 需要参数/状态,而客户端投影不携带,因此标 `需 host`,不猜。
 
+### incident 的形状只有一份家
+
+`incidents` 是十个字段的事实(`type severity title detail cause runtimeKnew modelKnew harness impact seqs`)。
+写它的地方有三个 —— 仓库分析器、本插件的 host 半边、本插件的客户端半边(它 import 不到任何东西)——
+所以"形状归谁管"以前是习惯,不是事实。
+
+现在它是**一处声明**:`lib/incident-shape.js`,而且这个文件**住在包里** —— 运行期 import 不到仓库脚本,
+所以声明跟着包走,由 `analyzers/` **反过来** import 它。记录只能经 `incident(...)` 造出来:
+缺字段、多字段、类型不符、`seqs` 写成 chip 形态,都当场抛。于是"每个分支再写一遍那十个名字"这件事
+**写不出来了**。
+
+`analyzers/shape-law.mjs` 负责让它一直这样:
+
+```text
+node analyzers/shape-law.mjs            # 形状 / 认领 / 漂移 / 差分 / 证人
+node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必须被抓
+```
+
+- **认领** —— 探测器找出所有"知道这份形状"的文件,每一个都要在声明里挂上角色(源 / 像 / 证人)与形态
+  (在它手里 `seqs` 是什么)。**漏一个参与者本身就是错。**
+- **漂移** —— 自己写字面量的载体(客户端半边)按键、按顺序逐个比对。
+- **差分** —— 与冻结基准逐字节相同(合成流 + 缩减后的真实会话),键顺序也在字节里。
+- **证人** —— 历史 `experiments/reports/*.facts.json` 只读校验,绝不回写。
+
 ### 安装(常驻,非动态插件)
 
 动态插件是会话级、刷新即失;这个是装进 web profile 的常驻插件。
 
 ```text
-1. pnpm pack                      # 生成 dsh-analysis-view-0.1.2.tgz
+1. pnpm pack                      # 生成 dsh-analysis-view-0.1.3.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.1.2.tgz"
+     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.1.3.tgz"
      dsh.profile.bundles 追加 "dsh-analysis-view"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重建/重启 `dsh web`,让新的 client 模块进入前端包
@@ -136,6 +191,7 @@ conversation.view  →  [对话] [轨迹] [分析]
 |---|---|
 | `lib/client.js` | 客户端插件本体;必须以 `window.__ModuleLoader__.load({ id, factory })` 自注册,`require("react")` 而非全局 |
 | `lib/index.js` | host 半边:计算 incidents,提供 `GET /analysis-view/digest?session=<id>`(事实 + `log` 身份)与 `GET /analysis-view/interpret?session=<id>`(AI 解读,仅展开时才调用) |
+| `lib/incident-shape.js` | incident 事实的唯一声明:有序字段、类型、`incident()` 构造器、参与者认领表 |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch` + `dsh.client`(platform web + client injects) |
 
@@ -144,10 +200,14 @@ conversation.view  →  [对话] [轨迹] [分析]
 - 刷新 GUI → 「分析」标签按当前会话渲染 incident view。
 - 若空白:看浏览器控制台第一条报错。
 - 分析器语义:`node analyzers/self-test.mjs`(必须输出 `ALL PASS`)。
+- 形状契约:`node analyzers/shape-law.mjs` 与 `node analyzers/shape-law.mjs --mutate`
+  (都要 `ALL PASS`;后者对每种变异打印 `CAUGHT`)。
 
 ### 局限
 
 - host 半边在 `GET /analysis-view/digest?session=<id>` 提供 incidents(同参重复、空转 turn、Harness 反应);客户端 fetch 后只负责渲染证据。
 - `Harness 反应` 由错误码推导,不是模板文案。
-- host 分析与仓库 `analyzers/` 是两份实现,各自由自检钉住。
+- host 分析与仓库 `analyzers/` 仍是两份实现 —— 现在共用一份声明,但**取值**是刻意不同的(例如 severity),
+  所以各自保留自检,差分基准也按实现分别冻结。
+- 客户端半边 import 不到声明(它是 `window.__ModuleLoader__` 工厂,没有相对导入),所以它那份字面量靠**漂移法则**钉住,而不是靠构造器。
 - 会话经 `sessionQuery.observeSession(id)` 读取(DSH 0.1.6 起 `snapshotEvents` 已弃用,这是官方路径),读完立即释放观察;兼容退路依次是内存快照 → `sessionPersistence.open(id, 'read')` → `SessionHandle.read()` → 旧版 `inspect()`。
