@@ -398,20 +398,18 @@ window.__ModuleLoader__.load({
       ]);
     }
 
-    // 工具按"在干什么"归类:读 / 写 / 执行 / 查询 / 协作,其余归其他。
-    const ACTION_GROUPS = [
-      { id: "read", label: "读", pattern: /^(read|glob|grep|read_image)$/, color: "var(--dsw-alias-brand-primary)" },
-      { id: "write", label: "写", pattern: /^(edit|write)$/, color: "color-mix(in srgb, var(--dsw-alias-brand-primary) 50%, var(--dsw-alias-bg-layer-2))" },
-      { id: "run", label: "执行", pattern: /^(pwsh|bash|terminal_.*)$/, color: "var(--dsw-alias-state-warn-primary)" },
-      { id: "query", label: "查询", pattern: /^(web_search|web_fetch|trajectory_.*|session_.*|cordis_.*)$/, color: "var(--dsw-alias-state-success-primary)" },
-      { id: "coop", label: "协作", pattern: /^(subagent.*|send_message|wait_agent|list_agents|interrupt_agent|todo_write|create_goal|update_goal|get_goal|schedule_.*|skill|present|workflow|ralph|ask_user_question)$/, color: "var(--dsw-alias-state-idle-primary)" },
-    ];
-    const OTHER_GROUP = { id: "other", label: "其他", color: "var(--dsw-alias-border-l2)" };
-
-    function actionGroup(name) {
-      for (const group of ACTION_GROUPS) if (group.pattern.test(name)) return group;
-      return OTHER_GROUP;
-    }
+    // 类别由 host 按工具自己的声明判定(digest 里每个工具带 category),客户端只负责画。
+    const CATEGORY_LABELS = { file: "文件", run: "执行", web: "网络", context: "上下文", coop: "协作", plugin: "插件", other: "其他" };
+    const CATEGORY_COLORS = {
+      file: "var(--dsw-alias-brand-primary)",
+      run: "var(--dsw-alias-state-warn-primary)",
+      web: "var(--dsw-alias-state-success-primary)",
+      context: "color-mix(in srgb, var(--dsw-alias-brand-primary) 50%, var(--dsw-alias-bg-layer-2))",
+      coop: "var(--dsw-alias-state-idle-primary)",
+      plugin: "var(--dsw-alias-border-l2)",
+      other: "color-mix(in srgb, var(--dsw-alias-state-idle-primary) 55%, var(--dsw-alias-bg-layer-2))",
+    };
+    const categoryOf = (tool) => (tool.category !== undefined && CATEGORY_LABELS[tool.category] !== undefined ? tool.category : "other");
 
     function Tools(props) {
       const tools = (props.tools || []).filter((tool) => tool.calls > 0);
@@ -421,9 +419,9 @@ window.__ModuleLoader__.load({
       let totalCalls = 0;
       let totalErrors = 0;
       for (const tool of tools) {
-        const group = actionGroup(tool.name);
-        if (!buckets.has(group.id)) buckets.set(group.id, { ...group, calls: 0, errors: 0, tools: [] });
-        const bucket = buckets.get(group.id);
+        const id = categoryOf(tool);
+        if (!buckets.has(id)) buckets.set(id, { id, label: CATEGORY_LABELS[id], color: CATEGORY_COLORS[id], calls: 0, errors: 0, tools: [] });
+        const bucket = buckets.get(id);
         bucket.calls += tool.calls;
         bucket.errors += tool.errors;
         bucket.tools.push(tool);

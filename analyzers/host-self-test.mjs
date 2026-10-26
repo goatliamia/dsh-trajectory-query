@@ -1,6 +1,6 @@
 // Host-half mechanical self-test: the host incident computation must obey the same pinned semantics.
 // Usage: node analyzers/host-self-test.mjs   (failure exits 1)
-import { computeIncidents, computeWorkPath, deriveHarnessResponse } from '../plugin/analysis-view/lib/index.js';
+import { classifyTool, computeIncidents, computeWorkPath, deriveHarnessResponse } from '../plugin/analysis-view/lib/index.js';
 
 let failed = 0;
 const check = (name, cond, extra) => {
@@ -81,6 +81,39 @@ const messageIsError = [
 check('incidents: message.isError 也算失败', computeIncidents(messageIsError).errors === 1, computeIncidents(messageIsError));
 check('work: message.isError 记为失败', computeWorkPath(messageIsError).turns[0].errors === 1, computeWorkPath(messageIsError));
 check('work: 失败归属到工具', (computeWorkPath(messageIsError).tools[0] || {}).errors === 1, computeWorkPath(messageIsError).tools);
+
+/* 8) 工具归类:规则读声明(参数优先,名字/描述兜底),官方那批落在预期类别上 */
+const declared = (name, properties, description = '') => ({
+  name,
+  description,
+  parameters: { type: 'object', properties: Object.fromEntries(properties.map((key) => [key, { type: 'string' }])) },
+});
+const categoryCases = [
+  ['read', ['file_path'], 'Read a UTF-8 text file.', 'file'],
+  ['edit', ['file_path', 'old_string', 'new_string'], 'Edit an existing file.', 'file'],
+  ['glob', ['pattern', 'path'], 'Find files.', 'file'],
+  ['pwsh', ['command'], 'Run a PowerShell command.', 'run'],
+  ['web_search', ['queries'], 'Search the web.', 'web'],
+  ['web_fetch', ['url'], 'Fetch a URL.', 'web'],
+  ['trajectory_search', ['view', 'session', 'query'], 'Query the session log.', 'context'],
+  ['session_event_search', ['session_id', 'query'], 'Search session events.', 'context'],
+  ['session_trace', ['session_id'], 'Read session lineage.', 'context'],
+  ['skill', ['name'], 'Load the full instructions for a skill.', 'context'],
+  ['subagent', ['prompt', 'description'], 'Delegate a task to a subagent.', 'coop'],
+  ['todo_write', ['todos'], 'Record the task list.', 'coop'],
+  ['schedule_create', ['prompt', 'title', 'after_seconds'], 'Create a reminder.', 'coop'],
+  ['ask_user_question', ['questions'], 'Ask the user.', 'coop'],
+  ['cordis_inspect_query', ['platform', 'provider', 'method'], 'Run a read-only Inspect query.', 'plugin'],
+  ['plugin_manager', ['action', 'target'], 'Manage plugins in this profile.', 'plugin'],
+  ['get_goal', [], 'Read the current session goal.', 'coop'],
+  ['mystery_tool', [], '', 'other'],
+];
+for (const [name, properties, description, expected] of categoryCases) {
+  const actual = classifyTool(declared(name, properties, description), name);
+  check('classify: ' + name + ' → ' + expected, actual === expected, actual);
+}
+const noDefinition = classifyTool(undefined, 'some_user_tool');
+check('classify: 拿不到声明时落到其他', noDefinition === 'other', noDefinition);
 
 console.log(failed === 0 ? '\nALL PASS' : '\n' + failed + ' FAILED');
 process.exit(failed === 0 ? 0 : 1);

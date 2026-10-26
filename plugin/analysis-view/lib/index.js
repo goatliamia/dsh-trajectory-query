@@ -183,12 +183,42 @@ export function computeCost(events) {
   };
 }
 
+export const TOOL_CATEGORY_LABELS = Object.freeze({ file: "文件", run: "执行", web: "网络", context: "上下文", coop: "协作", plugin: "插件", other: "其他" });
+
+/**
+ * 工具类别:先看声明里的参数(工具自己说它操作什么),再看名字与描述,最后落到"其他"。
+ * 规则按"碰到哪个系统表面"排,不依赖具体工具名——用户自己的工具也走同一套。
+ * @param definition - ctx.tools.get(name) 返回的定义(含 JSON Schema 参数与描述)。
+ * @param name - 工具名,用作关键词兜底。
+ */
+export function classifyTool(definition, name = "") {
+  const properties = (definition && definition.parameters && definition.parameters.properties) || {};
+  const has = (key) => Object.prototype.hasOwnProperty.call(properties, key);
+  if (has("file_path") || has("path")) return "file";
+  if (has("command")) return "run";
+  if (has("url") || has("queries")) return "web";
+  if (has("session") || has("session_id") || has("session_ids") || has("seq")) return "context";
+  if (has("todos") || has("objective") || has("max_rounds") || has("after_seconds") || has("every_seconds") || has("cron") || has("daily") || has("weekly")) return "coop";
+  if (has("questions") || has("prompt") || has("script") || has("agent") || has("agent_id") || has("message")) return "coop";
+  if (has("provider") || has("service") || has("entry") || has("event")) return "plugin";
+  const text = (String(name) + " " + String((definition && definition.description) || "")).toLowerCase();
+  if (/skill|instruction/.test(text)) return "context";
+  if (/plugin|provider|inspect|cordis|mcp/.test(text)) return "plugin";
+  if (/goal|schedule|reminder|todo|subagent|agent|workflow|ralph|message|question|plan/.test(text)) return "coop";
+  if (/session|trajectory|history|transcript/.test(text)) return "context";
+  if (/file|read|write|edit|glob|grep|patch/.test(text)) return "file";
+  if (/command|shell|terminal|bash|pwsh|process/.test(text)) return "run";
+  if (/web|http|fetch|search/.test(text)) return "web";
+  return "other";
+}
+
 /**
  * 一次遍历算出每个 turn 的起止/耗时/调用/token,以及按工具名汇总的调用、失败与耗时。
  * @param events - SessionEvent[]
  * @returns {{turns: object[], tools: object[], eventCount: number}}
  */
-export function computeWorkPath(events) {
+export function computeWorkPath(events, options = {}) {
+  const classify = typeof options.classify === "function" ? options.classify : () => "other";
   const turns = [];
   const tools = new Map();
   const calls = new Map();
@@ -305,6 +335,7 @@ export function computeWorkPath(events) {
   const toolStats = [...tools.values()]
     .map((tool) => ({
       name: tool.name,
+      category: classify(tool.name),
       calls: tool.calls,
       errors: tool.errors,
       avgMs: tool.timed === 0 ? null : Math.round(tool.totalMs / tool.timed),
@@ -494,12 +525,26 @@ async function interpret(ctx, sessionId, events, facts, log, cost) {
 export const inject = ["webServer"];
 
 /** 面板要的全部事实,一次算齐(同一份 events 上三次线性遍历)。 */
-export function buildDigest(sessionId, events) {
+export function buildDigest(sessionId, events, options = {}) {
   const facts = computeIncidents(events);
   const cost = computeCost(events);
-  const work = computeWorkPath(events);
+  const work = computeWorkPath(events, options);
   const log = logIdentity(sessionId, events);
   return { sessionId, log, ...facts, cost, turnStats: work.turns, toolStats: work.tools, eventCount: work.eventCount };
+}
+
+/** 把工具名解析成类别:读它自己声明里的参数与描述;拿不到定义就当"其他"。 */
+function classifyByName(ctx) {
+  return (name) => {
+    let definition;
+    try {
+      const tools = ctx.get("tools");
+      definition = tools && typeof tools.get === "function" ? tools.get(name) : undefined;
+    } catch {
+      definition = undefined;
+    }
+    return classifyTool(definition, name);
+  };
 }
 
 export function apply(ctx) {
@@ -527,7 +572,7 @@ export function apply(ctx) {
           const hit = digestCache.get(sessionId);
           if (!fresh && hit !== undefined && Date.now() - hit.at < DIGEST_TTL_MS) return send(200, hit.payload);
           const events = await withTimeout(loadEvents(ctx, sessionId), 5000);
-          const payload = buildDigest(sessionId, events);
+          const payload = buildDigest(sessionId, events, { classify: classifyByName(ctx) });
           digestCache.delete(sessionId);
           digestCache.set(sessionId, { at: Date.now(), payload });
           if (digestCache.size > CACHE_MAX) digestCache.delete(digestCache.keys().next().value);
