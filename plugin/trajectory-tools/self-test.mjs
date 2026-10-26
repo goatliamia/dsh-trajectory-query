@@ -309,6 +309,12 @@ apply(ctx, {});
 /* ---------------- 注册 ---------------- */
 eq("registers 3 tools", [...registered.keys()].sort(), ["trajectory_graph", "trajectory_read", "trajectory_search"]);
 
+/* 并发:只读定点的 read / graph 可以进并行组;search 会读多份会话,保持独占。 */
+check("并发: read 可加入并行组", registered.get("trajectory_read").isConcurrencySafe({ session: "s" }) === true);
+check("并发: graph 可加入并行组", registered.get("trajectory_graph").isConcurrencySafe({ session: "s" }) === true);
+check("并发: search 保持独占", registered.get("trajectory_search").isConcurrencySafe === undefined);
+check("并发: 参数不合法时判 false", registered.get("trajectory_read").isConcurrencySafe({}) === false);
+
 /* 运行时契约(0.1.6-alpha.2 起 cordis 强制):配置只能从 apply 第二参拿。
    ctx.config 会抛 `cannot get property "config" without inject` —— 插件树加载失败,
    而且自检全绿(假 ctx 当时太宽松)。这两条检查就是为了不再发生。 */

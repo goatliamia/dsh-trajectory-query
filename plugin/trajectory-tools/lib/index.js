@@ -1237,6 +1237,7 @@ export function apply(ctx, config = {}) {
       limit: { type: "integer", description: "行数上限,默认 " + DEFAULT_ROWS },
     },
     output: OUTPUT,
+    // search 故意不标并发安全:默认扫描集要读多份会话,并行只会把成本乘起来。
     execute: (args, exec) => runSearch(args, exec),
   });
 
@@ -1251,6 +1252,8 @@ export function apply(ctx, config = {}) {
       raw: { type: "boolean", description: "true=连没有正文的事件也给" },
     },
     output: OUTPUT,
+    // 只读且定点:同一 step 里可以和其他调用并行。
+    isConcurrencySafe: () => true,
     execute: (args) => runRead(args),
   });
 
@@ -1263,6 +1266,8 @@ export function apply(ctx, config = {}) {
       full: { type: "boolean", description: "true=给完整数组,默认只给计数与首尾" },
     },
     output: OUTPUT,
+    // 只读且定点:同一 step 里可以和其他调用并行。
+    isConcurrencySafe: () => true,
     execute: (args) => runGraph(args),
   });
 
