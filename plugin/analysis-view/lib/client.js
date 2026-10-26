@@ -50,13 +50,15 @@ window.__ModuleLoader__.load({
 .av-cost-num{font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}
 .av-cost-label{font-size:11px;color:var(--dsw-alias-label-secondary)}
 .av-cost-rows{max-height:240px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
-.av-cost-row{display:grid;grid-template-columns:44px 1fr;align-items:center;gap:8px;margin-bottom:4px}
+.av-cost-row{display:grid;grid-template-columns:34px minmax(0,1fr) minmax(52px,.42fr) 44px;align-items:center;gap:8px;margin-bottom:4px}
 .av-cost-turn{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-track{display:flex;height:8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}
 .av-fill{height:100%}
-.av-fill.in{background:var(--dsw-alias-brand-primary);opacity:.9}
-.av-fill.cache{background:var(--dsw-alias-brand-primary);opacity:.5}
-.av-fill.out{background:var(--dsw-alias-brand-primary);opacity:.28}
+.av-fill.hit{background:var(--dsw-alias-state-success-primary);opacity:.55}
+.av-fill.miss{background:var(--dsw-alias-state-warn-primary);opacity:.85}
+.av-fill.out{background:var(--dsw-alias-brand-primary);opacity:.75}
+.av-rate{font-size:11px;text-align:right;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.av-rate.warn{color:var(--dsw-alias-state-warn-primary)}
 .av-table{width:100%;border-collapse:collapse;font-size:12px}
 .av-table th{text-align:left;font-weight:400;font-size:11px;color:var(--dsw-alias-label-secondary);padding:0 8px 6px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .av-table th.av-num{text-align:right}
@@ -315,6 +317,7 @@ window.__ModuleLoader__.load({
     }
 
     const COST_ROWS_MAX = 120;
+    const COST_RATE_WARN = 0.9;
 
     function Cost(props) {
       const cost = props.cost;
@@ -327,39 +330,58 @@ window.__ModuleLoader__.load({
       if (!cost || !cost.requestCount) {
         return h("div", { className: "av-section" }, [
           h("div", { key: "h", className: "av-section-head" }, h("h3", { className: "av-section-title" }, "花费")),
-          h("div", { key: "e", className: "av-empty" }, "适配器没有上报 usage,这段会话没有 token 数据"),
+          h("div", { key: "e", className: "av-empty" }, "这段会话没有可用的 token 数据"),
         ]);
       }
-      const max = turns.reduce((acc, turn) => Math.max(acc, (turn.input || 0) + (turn.cacheRead || 0) + (turn.output || 0)), 0);
       const shown = turns.slice(-COST_ROWS_MAX);
-      const rows = shown.map((turn) => {
-        const total = (turn.input || 0) + (turn.cacheRead || 0) + (turn.output || 0);
-        const width = (value) => (max === 0 ? 0 : Math.max(0, (value / max) * 100));
-        return h("div", { key: String(turn.turn), className: "av-cost-row", title: "turn " + turn.turn + " · 输入 " + fmt(turn.input) + " · 缓存读 " + fmt(turn.cacheRead) + " · 输出 " + fmt(turn.output) + " · 缓存 " + pct(turn.cacheEfficiency) }, [
+      const maxInput = shown.reduce((acc, turn) => Math.max(acc, (turn.input || 0) + (turn.cacheRead || 0)), 0);
+      const maxOutput = shown.reduce((acc, turn) => Math.max(acc, turn.output || 0), 0);
+      const width = (value, max) => (max === 0 ? 0 : Math.max(0, (value / max) * 100));
+      const rows = shown.map((turn, position) => {
+        const miss = turn.input || 0;
+        const hit = turn.cacheRead || 0;
+        const out = turn.output || 0;
+        const rate = turn.cacheEfficiency;
+        const first = position === 0;
+        const title = "第 " + turn.turn + " 轮 · 未命中 " + fmt(turn.input) + " · 命中 " + fmt(turn.cacheRead) + " · 输出 " + fmt(turn.output) + " · 命中率 " + pct(rate) + (first ? " · 首轮缓存是空的,命中率低属正常" : "");
+        return h("div", { key: String(turn.turn), className: "av-cost-row", title }, [
           h("span", { key: "t", className: "av-cost-turn" }, "T" + turn.turn),
-          h("div", { key: "b", className: "av-track" }, [
-            h("div", { key: "i", className: "av-fill in", style: { width: width(turn.input || 0) + "%" } }),
-            h("div", { key: "c", className: "av-fill cache", style: { width: width(turn.cacheRead || 0) + "%" } }),
-            h("div", { key: "o", className: "av-fill out", style: { width: width(turn.output || 0) + "%" } }),
+          h("div", { key: "i", className: "av-track" }, [
+            h("div", { key: "h", className: "av-fill hit", style: { width: width(hit, maxInput) + "%" } }),
+            h("div", { key: "m", className: "av-fill miss", style: { width: width(miss, maxInput) + "%" } }),
           ]),
+          h("div", { key: "o", className: "av-track" }, [
+            h("div", { key: "o", className: "av-fill out", style: { width: width(out, maxOutput) + "%" } }),
+          ]),
+          h("span", { key: "r", className: "av-rate" + (rate !== null && rate < COST_RATE_WARN ? " warn" : "") }, pct(rate)),
         ]);
       });
+      const worst = [...turns]
+        .filter((turn) => (turn.input || 0) > 0)
+        .sort((a, b) => (b.input || 0) - (a.input || 0))
+        .slice(0, 2);
       return h("div", { className: "av-section" }, [
         h("div", { key: "h", className: "av-section-head" }, [
           h("h3", { key: "t", className: "av-section-title" }, "花费"),
-          h("span", { key: "n", className: "av-hint" }, cost.requestCount + " 次请求" + (cost.unknownRequests > 0 ? " · " + cost.unknownRequests + " 次未上报" : "") + (turns.length > 12 ? " · " + turns.length + " 轮,可滚动" : "")),
+          h("span", { key: "n", className: "av-hint" }, cost.requestCount + " 次请求 · " + turns.length + " 轮" + (cost.unknownRequests > 0 ? " · " + cost.unknownRequests + " 次未上报" : "")),
         ]),
         h("div", { key: "sum", className: "av-cost-head" }, [
-          h("div", { key: "in" }, [h("div", { className: "av-cost-num" }, fmt(cost.input)), h("div", { className: "av-cost-label" }, "输入")]),
-          h("div", { key: "cr" }, [h("div", { className: "av-cost-num" }, fmt(cost.cacheRead)), h("div", { className: "av-cost-label" }, "缓存读")]),
+          h("div", { key: "in" }, [h("div", { className: "av-cost-num" }, fmt(cost.input)), h("div", { className: "av-cost-label" }, "未命中")]),
+          h("div", { key: "cr" }, [h("div", { className: "av-cost-num" }, fmt(cost.cacheRead)), h("div", { className: "av-cost-label" }, "命中")]),
           h("div", { key: "out" }, [h("div", { className: "av-cost-num" }, fmt(cost.output)), h("div", { className: "av-cost-label" }, "输出")]),
-          h("div", { key: "eff" }, [h("div", { className: "av-cost-num" }, pct(cost.cacheEfficiency)), h("div", { className: "av-cost-label" }, "缓存命中")]),
+          h("div", { key: "eff" }, [h("div", { className: "av-cost-num" }, pct(cost.cacheEfficiency)), h("div", { className: "av-cost-label" }, "命中率")]),
         ]),
+        cost.cacheEfficiency === null ? null : h("div", { key: "note", className: "av-hint", style: { marginBottom: 8 } },
+          "缓存承担了 " + pct(cost.cacheEfficiency) + " 的输入处理,实际新处理 " + fmt(cost.input)),
         rows.length > 0 ? h("div", { key: "rows", className: "av-cost-rows", ref: list }, rows) : null,
+        worst.length > 0 && turns.length > 1
+          ? h("div", { key: "worst", className: "av-hint", style: { marginTop: 6 } },
+            "未命中最多:" + worst.map((turn) => "T" + turn.turn + " " + fmt(turn.input)).join(" · "))
+          : null,
         h("div", { key: "l", className: "av-legend" }, [
-          h("span", { key: "i", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-brand-primary)", opacity: 0.9 } }), "输入"]),
-          h("span", { key: "c", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-brand-primary)", opacity: 0.5 } }), "缓存读"]),
-          h("span", { key: "o", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-brand-primary)", opacity: 0.28 } }), "输出"]),
+          h("span", { key: "h", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-state-success-primary)", opacity: 0.55 } }), "命中"]),
+          h("span", { key: "m", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-state-warn-primary)", opacity: 0.85 } }), "未命中"]),
+          h("span", { key: "o", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-brand-primary)", opacity: 0.75 } }), "输出"]),
           turns.length > COST_ROWS_MAX ? h("span", { key: "more", className: "av-legend-item" }, "只画最近 " + COST_ROWS_MAX + " 轮") : null,
         ]),
       ]);

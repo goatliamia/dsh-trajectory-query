@@ -28,8 +28,9 @@ no separate data source — and renders a **deterministic, evidence-cited** view
 - **Turn map** — one proportional band per turn (width by duration, colour by that turn's failure
   count); a turn with failures jumps to the Trajectory tab (`openView("trajectory", callId)`).
   The legend is printed; no unlabeled colours.
-- **Spend** — input / cache read / output stacked per turn, plus the overall cache hit rate. An
-  adapter that reported no usage says so; the panel never draws zeros for missing data.
+- **Spend** — per turn, two bars: the reused prefix (cache hit) beside what was actually processed
+  fresh (miss), with output on its own bar; each turn's hit rate sits on the right and turns amber
+  below 90%. The list scrolls and starts at the newest turn.
 - **Tools** — calls, failures and average duration per tool, sorted by call count.
 - **Incident cards** — only *evidence-backed* incidents. Each card is a causal chain:
   `Cause / Runtime knew / Model received / Harness response / Impact`, with evidence `seq` chips
@@ -86,9 +87,9 @@ node analyzers/shape-law.mjs --mutate   # prove the laws bite: reasonable mistak
 Dynamic plugins are session-scoped and vanish on reload; this one is installed into the web profile.
 
 ```text
-1. pnpm pack                      # -> dsh-analysis-view-0.2.6.tgz
+1. pnpm pack                      # -> dsh-analysis-view-0.2.7.tgz
 2. add to ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.2.6.tgz"
+     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.2.7.tgz"
      dsh.profile.bundles: append "dsh-analysis-view"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. rebuild / restart `dsh web`    # so the new client module enters the bundle
@@ -143,8 +144,8 @@ conversation.view  →  [对话] [轨迹] [分析]
 - **KPI 条**:轮次 · 工具调用 · 失败 · 缓存命中 · 事件,一个数字一格。
 - **轮次地图**:一条按时长分宽的比例带(颜色按该轮失败数);有失败的轮次点击切到「轨迹」
   (`openView("trajectory", callId)`);图例直接写在界面上。
-- **花费**:输入 / 缓存读 / 输出按轮堆叠,配总缓存命中率;适配器没上报 usage 时明写"没有 token 数据",
-  不拿 0 冒充。
+- **花费**:每轮两条——命中(复用的前缀)与未命中(真正新处理)并排画,输出单独一条;右侧是这一轮的
+  命中率,低于 90% 标警示色;列表可滚动,默认停在最新。
 - **工具**:按调用次数排序的调用数、失败数、平均耗时。
 - **Incident 卡片**:只列**有证据**的 incident,每张是一条因果链
   `Cause / Runtime 知道 / Model 收到 / Harness 反应 / 影响`,并带证据 `seq` 徽章。
@@ -192,9 +193,9 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 动态插件是会话级、刷新即失;这个是装进 web profile 的常驻插件。
 
 ```text
-1. pnpm pack                      # 生成 dsh-analysis-view-0.2.6.tgz
+1. pnpm pack                      # 生成 dsh-analysis-view-0.2.7.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.2.6.tgz"
+     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.2.7.tgz"
      dsh.profile.bundles 追加 "dsh-analysis-view"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重建/重启 `dsh web`,让新的 client 模块进入前端包

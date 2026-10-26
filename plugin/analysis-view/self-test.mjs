@@ -201,6 +201,9 @@ check("render: 五个 KPI", ["轮次", "工具调用", "失败", "缓存命中",
 check("render: 轮次地图两个 turn", classes.filter((name) => /^av-seg /.test(name)).length === 2, classes.filter((name) => /^av-seg /.test(name)));
 check("render: 有失败的轮次靠 firstErrorCallId 可点(不依赖投影)", classes.some((name) => /^av-seg (warn|bad) clickable/.test(name)), classes.filter((name) => /^av-seg /.test(name)));
 check("render: 花费按轮画了两条", classes.filter((name) => name === "av-cost-row").length === 2);
+check("render: 花费把命中与未命中分开画", classes.filter((name) => name === "av-fill hit").length === 2 && classes.filter((name) => name === "av-fill miss").length === 2, classes.filter((name) => name.startsWith("av-fill")));
+check("render: 低命中率那一轮标 warn", classes.filter((name) => name === "av-rate warn").length === 1, classes.filter((name) => name.startsWith("av-rate")));
+check("render: 花费总览用未命中/命中", text.includes("未命中") && text.includes("命中率") && text.includes("缓存承担了"), text.slice(0, 260));
 check("render: 工具表两行", text.includes("read") && text.includes("pwsh") && text.includes("900ms"), text.slice(0, 200));
 check("render: incident 卡片与因果链", text.includes("调用失败") && text.includes("Runtime 知道") && text.includes("影响"));
 check("render: 证据 chip 与解读入口", classes.filter((name) => name === "av-chip").length === 1 && text.includes("生成解读"));
