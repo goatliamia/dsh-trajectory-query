@@ -130,7 +130,7 @@ that is a thing only the model can produce, and a paragraph of it would be more 
   at every turn boundary, and a second compaction in the same turn earns a second reconcile.
 - **Subagent children are skipped** (`origin: "subagent"` / `parentSession`): a child has nobody to
   report to. Failed compactions (those carrying `error`) are skipped too — the projection did not change.
-- **Shape.** A `user`-role message whose source is `{ kind: "plugin", plugin: "dsh-trajectory-tools",
+- **Shape.** A `user`-role message whose source is `{ kind: "plugin:dsh-trajectory-tools",
   form: "notice", summary: "…" }`: the model reads the body, the human reads the summary — who is
   talking is declared, not inferred from the text. It carries no tool schema, so it adds zero bytes
   to the tool table.
@@ -200,9 +200,9 @@ reply should end with the two lines, and the host log gains one `compaction reco
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.3.1.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.3.2.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.1.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.2.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. restart `dsh web`              # host plugins do not hot-reload reliably
@@ -342,7 +342,7 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 - **一次压缩只对一次账。** 注入前先清记号,所以不会每轮收尾都重复打扰;同一轮里第二次压缩会再对一次。
 - **子会话跳过**(`origin: "subagent"` / `parentSession`):子代理没有"跟我说一句"的对象。
   失败的压缩(带 `error` 字段)也跳过 —— 投影没换,模型眼前的上下文没变。
-- **形态。** 一条 `user` 角色消息,来源是 `{ kind: "plugin", plugin: "dsh-trajectory-tools",
+- **形态。** 一条 `user` 角色消息,来源是 `{ kind: "plugin:dsh-trajectory-tools",
   form: "notice", summary: "…" }`:模型读正文,人读 summary —— "这句话是谁说的"是声明出来的,不靠正文猜。
   它不带任何工具 schema,所以工具表一个字节都不涨。
 - **它不可能弄坏一轮对话。** 注入整体包在 try/catch 里:收尾点抛错会让这一轮以 `reason=error` 收场,
@@ -403,9 +403,9 @@ export function apply(ctx, config = {}) {      // 不是 apply(ctx)
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.3.1.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.3.2.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.1.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.2.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新

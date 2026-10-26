@@ -54,7 +54,7 @@ read(session="session-e0636aa9-…", seq=1248)
 
 **1. 历史查询工具(给 Agent)** —— 常驻 host 插件 `dsh-trajectory-tools`:三个只读入口按**问题**分,不按数据源分 —— `trajectory_search`(`view` 必填:`events` 字面命中 / `catalog` 计数与范围 / `cost` token 成本 / `sessions` 会话列表)、`trajectory_read`(按 seq 区间逐字取原文)、`trajectory_graph`(替换/引用/派生链与会话谱系)。它们直接读 DSH 已有的事件日志(首选 `sessionQuery.observeSession`,兼容退路是内存快照与 `sessionPersistence` 句柄)。证据优先:每个答案带 `(session, seq@logId)`、原样引用原文,片段以命中点为中心;查询返回空 = 可核验的"没有这样的事实"。可选维度收在一个 `filter` 对象里(键按 view 不同,传错会告诉你这个 view 认哪些);`events` 默认搜「当前会话 + 所有 live 会话」、默认丢掉注入样板与工具自己的调用、匹配默认归一化,单反斜杠也能查到日志里转义过的路径。
 
-**可选:压缩后对账(默认开)** —— 冲着这个现象:上下文一压缩,模型常常把头埋下去接着干,不问你、也不说自己现在以为这件事是要做什么;被压掉的那段它确实看不见了,可语气跟什么都没丢过一样,等你发现方向不对,它可能已经白干了很多步。做法是在一次**成功**的 `compaction/end` 之后给这个会话留一个记号,等这一轮走到收尾点(`agent/turn-stopping`)注入一句话:用不超过两行说明"你理解这件事要做什么、现在到哪了、下一步做什么",不确定的先 `trajectory_search` 回查、查不回来的直接问人。形态是 `plugin` notice(`form: "notice"` + 一句给人看的 `summary`)——"这句话是谁说的"是声明出来的,不靠正文猜;它不注册工具,工具表一个字节都不涨。一次压缩只对一次账,子会话跳过;默认开,`config.reconcile: false` 关、`config.reconcile.sentence` 换句子(写法见 [插件 README](plugin/trajectory-tools/README.md))。
+**可选:压缩后对账(默认开)** —— 冲着这个现象:上下文一压缩,模型常常把头埋下去接着干,不问你、也不说自己现在以为这件事是要做什么;被压掉的那段它确实看不见了,可语气跟什么都没丢过一样,等你发现方向不对,它可能已经白干了很多步。做法是在一次**成功**的 `compaction/end` 之后给这个会话留一个记号,等这一轮走到收尾点(`agent/turn-stopping`)注入一句话:用不超过两行说明"你理解这件事要做什么、现在到哪了、下一步做什么",不确定的先 `trajectory_search` 回查、查不回来的直接问人。形态是 `plugin:dsh-trajectory-tools` notice(`form: "notice"` + 一句给人看的 `summary`)——"这句话是谁说的"是声明出来的,不靠正文猜;它不注册工具,工具表一个字节都不涨。一次压缩只对一次账,子会话跳过;默认开,`config.reconcile: false` 关、`config.reconcile.sentence` 换句子(写法见 [插件 README](plugin/trajectory-tools/README.md))。
 
 **2. 常驻「分析」标签(Web GUI)** —— 在「对话 | 轨迹」旁边的第三个标签,渲染 **runtime incident view**:
 
@@ -109,8 +109,8 @@ node analyzers/self-test.mjs
 pnpm pack                                  # 在各自的 plugin 目录里执行
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: 增加
-#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.1.tgz"
-#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.1.3.tgz"
+#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.2.tgz"
+#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.1.4.tgz"
 #   dsh.profile.bundles: 追加 "dsh-trajectory-tools"、"dsh-analysis-view"
 pnpm install            # 在 ~/.dsh/profiles/web
 # 重启 dsh web(host 插件不会可靠热更新)
@@ -139,8 +139,8 @@ node analyzers/shape-law.mjs --mutate   # 13 种合理错法,逃走必须为 0
 - 压缩后对账只在 `compaction/end` 成功、且这一轮走到收尾点时说话:失败的压缩(投影没换)与子代理会话都跳过;注入本身失败不打断这一轮,只在 host 日志里留一行 `warn`。「是否该对账」由记号(会话级、一次压缩一个)判定,不由模型猜。
 - 不给 `session` 时,`view="events"` 的默认扫描集是「当前会话 + 所有 live 会话 + 最近若干已持久化会话」;已持久化会话按 `createdAt` 排序(没有便宜的"最近活动"信号),很久以前的会话请显式传 session。
 - `trajectory_graph` 是三个入口里唯一依赖 `ctx.sessionQuery` 的;search / read 只依赖 `sessions` / `sessionPersistence`。
-- 面向 DSH 0.1.6-alpha.1 核对过全部用到的 host/客户端 API:`defineTool` 参数 DSL、`sessionQuery` 方法表、`SessionHandle`、`skills.register`、`webServer.register`、`llm.stream`、`conversation.view` slot 与 `uiConversation.views/binding` 均未变;唯一需要迁移的就是上面那条同步读取弃用。
-- 运行环境:DSH 0.1.6-alpha.2,插件 0.3.1 / 0.1.3。三个入口的工具表占用约 1.8 KB(合并成三个之前是 5.7 KB);契约由自检(175 项)与真实语料离线核对覆盖,实机对照见上面「验证」。
+- 面向 DSH 0.2.1-rc.3 重新核对过全部用到的 host/客户端 API:`defineTool` 参数 DSL、`sessionQuery` 方法表、`SessionHandle`、`skills.register`、`webServer.register`、`llm.stream`、`conversation.view` slot 与 `uiConversation.views/binding` 均未变;迁移过的有两处:上面那条同步读取弃用,以及消息来源不再有共享的 `plugin` kind(0.2.x 起按 `plugin:<包名>` 声明,检索侧两种都认)。
+- 运行环境:DSH 0.2.1-rc.3,插件 0.3.2 / 0.1.4。三个入口的工具表占用约 1.8 KB(合并成三个之前是 5.7 KB);契约由自检(175 项)与真实语料离线核对覆盖,实机对照见上面「验证」。
 - `trajectory_search(view="cost")` 只读 `assistant/message.usage`,不新增埋点:适配器没上报 usage 的请求记 `unknown`(不是 0),单字段缺失记 `null` 且不进求和。DeepSeek 适配器基本不报 `cacheWriteTokens`,那是"没上报",不是"没写缓存";
 - 陷阱:会话格式迁移后,同一个会话目录里**同时留着 `session.v3.jsonl.zstd`(当前)与 `session.v2.jsonl.zstd`(迁移前旧副本)**。手动跑分析器要取 v3,否则会把旧副本当成"最近的会话"。`experiments/corpus/scan-sessions.mjs` 已按目录取版本号最高的一份。
 

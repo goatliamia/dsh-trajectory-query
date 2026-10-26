@@ -90,11 +90,11 @@ agent/turn-stopping   →  有记号 → agent.steer(一条 plugin notice)→ �
 - **为什么是收尾点,不是压缩点**:压缩发生在 step 之间。那一刻注入是插进正在进行的推理;
   收尾点的注入是 loop 会重新读的数据(`turnEnds && this.inbox.nextStep.length === 0` 那两行),
   自然落成单独一步。代价:每次压缩多一个 step。
-- **为什么是 notice 形态**:`{ kind: "plugin", plugin, form: "notice", summary }` 是 DSH 自己的
+- **为什么是 notice 形态**:`{ kind: "plugin:<包名>", form: "notice", summary }` 是 DSH 自己的
   写法(`model-selection` 的模型切换提示同款)。"这句话是谁说的"由 source 声明,不靠正文猜;
   人读 summary,模型读正文。
 - **它是事实的一部分,不是事实**:注入的 notice 默认被 `filter.excludeInjected` 排除
-  (`isPluginContext` 认 `source.kind === "plugin"`)—— 机器说的话不进"人说过什么"的检索结果,
+  (`isPluginContext` 认 `source.kind === "plugin"` 或以 `plugin:` 开头)—— 机器说的话不进"人说过什么"的检索结果,
   要核实是哪一轮用 `filter.excludeInjected: false`。
 - **判据是机械的**:有没有记号由事件决定,不由模型判断该不该对账;`agent.steer` 抛错只吞掉并
   `warn`,不在收尾点中断这一轮。
