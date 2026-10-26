@@ -64,15 +64,14 @@ window.__ModuleLoader__.load({
 .av-donut{position:relative;width:112px;height:112px;flex:none}
 .av-donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--dsw-alias-label-secondary);pointer-events:none}
 .av-donut-num{font-size:16px;font-weight:500;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
-.av-legend-col{flex:1;min-width:0;max-height:96px;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:3px;padding-right:2px;scrollbar-width:thin;scrollbar-color:color-mix(in srgb, var(--dsw-alias-label-secondary) 26%, transparent) transparent}
-.av-legend-col::-webkit-scrollbar{width:4px}
-.av-legend-col::-webkit-scrollbar-track{background:transparent}
-.av-legend-col::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--dsw-alias-label-secondary) 26%, transparent);border-radius:2px}
-.av-legend-col:hover::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--dsw-alias-label-secondary) 46%, transparent)}
-.av-cost-rows,.av-incident-list{scrollbar-width:thin;scrollbar-color:color-mix(in srgb, var(--dsw-alias-label-secondary) 26%, transparent) transparent}
-.av-cost-rows::-webkit-scrollbar,.av-incident-list::-webkit-scrollbar{width:4px}
-.av-cost-rows::-webkit-scrollbar-track,.av-incident-list::-webkit-scrollbar-track{background:transparent}
-.av-cost-rows::-webkit-scrollbar-thumb,.av-incident-list::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--dsw-alias-label-secondary) 26%, transparent);border-radius:2px}
+.av-legend-col{flex:1;min-width:0;max-height:96px;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:3px;padding-right:2px}
+/* 不画滚动条:上下留一道渐隐的阴影,提示"这里还有内容"。内容到底/到顶时阴影自然消失。 */
+.av-legend-col,.av-cost-rows,.av-incident-list{scrollbar-width:none;background:
+  linear-gradient(var(--dsw-alias-bg-layer-1) 40%,transparent) top/100% 16px no-repeat local,
+  linear-gradient(transparent,var(--dsw-alias-bg-layer-1) 60%) bottom/100% 16px no-repeat local,
+  radial-gradient(farthest-side at 50% 0,color-mix(in srgb,var(--dsw-alias-label-secondary) 22%,transparent),transparent) top/100% 10px no-repeat scroll,
+  radial-gradient(farthest-side at 50% 100%,color-mix(in srgb,var(--dsw-alias-label-secondary) 22%,transparent),transparent) bottom/100% 10px no-repeat scroll}
+.av-legend-col::-webkit-scrollbar,.av-cost-rows::-webkit-scrollbar,.av-incident-list::-webkit-scrollbar{display:none}
 .av-flow-side{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .av-leg{display:flex;align-items:center;gap:8px;background:transparent;border:0;border-radius:6px;padding:3px 5px;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .av-leg:hover{background:var(--dsw-alias-bg-layer-2)}
