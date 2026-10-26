@@ -76,8 +76,11 @@ window.__ModuleLoader__.load({
 .av-tool-detail-head{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
 .av-tool-detail-name{font-size:13px;font-weight:500}
 .av-tool-detail-meta{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
-.av-tool-line{display:grid;grid-template-columns:minmax(0,1fr) 40px 32px 48px 48px;align-items:center;gap:8px;font-size:12px;padding:2px 0}
-.av-tool-line-head{font-size:11px;color:var(--dsw-alias-label-secondary);border-bottom:1px solid var(--dsw-alias-border-l1);padding-bottom:4px;margin-bottom:2px}
+.av-tool-detail-body{display:flex;gap:12px;align-items:center}
+.av-donut-sm{width:96px;height:96px}
+.av-donut-sm .av-donut-num{font-size:14px}
+.av-tool-legend{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;max-height:128px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:2px}
+.av-tool-legend-row{display:grid;grid-template-columns:minmax(0,1fr) 38px 30px 48px;gap:6px;font-size:12px;align-items:center}
 @media (max-width:840px){.av-tool-grid{grid-template-columns:auto minmax(0,1fr)}.av-tool-detail{grid-column:1 / -1;border-left:0;border-top:1px solid var(--dsw-alias-border-l1);padding-left:0;padding-top:8px}}
 .av-num{font-variant-numeric:tabular-nums;text-align:right}
 .av-tool-name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -507,26 +510,6 @@ window.__ModuleLoader__.load({
         totalErrors += tool.errors;
       }
       const slices = [...buckets.values()].sort((a, b) => b.calls - a.calls);
-      const radius = 40;
-      const circumference = 2 * Math.PI * radius;
-      let consumed = 0;
-      const arcs = slices.map((slice) => {
-        const length = totalCalls === 0 ? 0 : (slice.calls / totalCalls) * circumference;
-        const arc = h("circle", {
-          key: slice.id,
-          cx: 50,
-          cy: 50,
-          r: radius,
-          fill: "none",
-          stroke: slice.color,
-          strokeWidth: 14,
-          strokeDasharray: length + " " + (circumference - length),
-          strokeDashoffset: String(-consumed),
-          transform: "rotate(-90 50 50)",
-        });
-        consumed += length;
-        return arc;
-      });
       const legend = slices.map((slice) => h("button", {
         key: slice.id,
         className: "av-leg",
@@ -540,7 +523,29 @@ window.__ModuleLoader__.load({
         slice.errors > 0 ? h("span", { key: "e", className: "av-leg-err" }, "×" + slice.errors) : null,
       ]));
       const selected = picked === null ? null : buckets.get(picked) || null;
-      const detailRows = selected === null ? [] : selected.tools.slice().sort((a, b) => b.calls - a.calls);
+      const detailTools = selected === null ? [] : selected.tools.slice().sort((a, b) => b.calls - a.calls);
+      const ring = (items, total, radius, stroke, gap, colorOf) => {
+        const circumference = 2 * Math.PI * radius;
+        let consumed = 0;
+        return items.map((item) => {
+          const raw = total === 0 ? 0 : (item.calls / total) * circumference;
+          const length = Math.max(0, raw - gap);
+          const arc = h("circle", {
+            key: item.id || item.name,
+            cx: 50,
+            cy: 50,
+            r: radius,
+            fill: "none",
+            stroke: colorOf(item),
+            strokeWidth: stroke,
+            strokeDasharray: length + " " + (circumference - length),
+            strokeDashoffset: String(-consumed),
+            transform: "rotate(-90 50 50)",
+          });
+          consumed += raw;
+          return arc;
+        });
+      };
       return h("div", { className: "av-section" }, [
         h("div", { key: "h", className: "av-section-head" }, [
           h("h3", { key: "t", className: "av-section-title" }, "工具"),
@@ -548,7 +553,7 @@ window.__ModuleLoader__.load({
         ]),
         h("div", { key: "d", className: "av-tool-grid" }, [
           h("div", { key: "chart", className: "av-donut" }, [
-            h("svg", { key: "s", viewBox: "0 0 100 100", width: "112", height: "112", role: "img", "aria-label": "工具调用占比" }, arcs),
+            h("svg", { key: "s", viewBox: "0 0 100 100", width: "112", height: "112", role: "img", "aria-label": "工具调用占比" }, ring(slices, totalCalls, 40, 14, 1, (slice) => slice.color)),
             h("div", { key: "c", className: "av-donut-center" }, [
               h("span", { key: "n", className: "av-donut-num" }, String(totalCalls)),
               h("span", { key: "l" }, "次调用"),
@@ -562,24 +567,25 @@ window.__ModuleLoader__.load({
                 h("span", { key: "n", className: "av-tool-detail-name" }, selected.label),
                 h("span", { key: "m", className: "av-tool-detail-meta" }, selected.tools.length + " 种 · " + selected.calls + " 次" + (selected.errors > 0 ? " · " + selected.errors + " 失败" : "")),
               ]),
-              h("div", { key: "cols", className: "av-tool-line av-tool-line-head" }, [
-                h("span", { key: "n" }, "工具"),
-                h("span", { key: "c", className: "av-num" }, "调用"),
-                h("span", { key: "e", className: "av-num" }, "失败"),
-                h("span", { key: "a", className: "av-num" }, "平均"),
-                h("span", { key: "x", className: "av-num" }, "最慢"),
+              h("div", { key: "body", className: "av-tool-detail-body" }, [
+                h("div", { key: "d", className: "av-donut av-donut-sm" }, [
+                  h("svg", { key: "s", viewBox: "0 0 100 100", width: "96", height: "96", role: "img", "aria-label": selected.label + " 内各工具调用占比" }, ring(detailTools, selected.calls, 40, 14, 2, () => selected.color)),
+                  h("div", { key: "c", className: "av-donut-center" }, [
+                    h("span", { key: "n", className: "av-donut-num" }, String(selected.calls)),
+                    h("span", { key: "l" }, "次"),
+                  ]),
+                ]),
+                h("div", { key: "l", className: "av-tool-legend" }, detailTools.map((tool) => h("div", {
+                  key: tool.name,
+                  className: "av-tool-legend-row",
+                  title: tool.name + " · 最近一次 seq " + tool.lastSeq + (tool.maxMs !== null ? " · 最慢 " + ms(tool.maxMs) : ""),
+                }, [
+                  h("span", { key: "n", className: "av-tool-name" }, tool.name),
+                  h("span", { key: "c", className: "av-num" }, String(tool.calls)),
+                  h("span", { key: "e", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? "×" + tool.errors : ""),
+                  h("span", { key: "a", className: "av-num" }, ms(tool.avgMs)),
+                ]))),
               ]),
-              ...detailRows.map((tool) => h("div", {
-                key: tool.name,
-                className: "av-tool-line",
-                title: tool.name + " · 最近一次 seq " + tool.lastSeq,
-              }, [
-                h("span", { key: "n", className: "av-tool-name" }, tool.name),
-                h("span", { key: "c", className: "av-num" }, String(tool.calls)),
-                h("span", { key: "e", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? "×" + tool.errors : ""),
-                h("span", { key: "a", className: "av-num" }, ms(tool.avgMs)),
-                h("span", { key: "x", className: "av-num" }, ms(tool.maxMs)),
-              ])),
             ]),
         ]),
       ]);
