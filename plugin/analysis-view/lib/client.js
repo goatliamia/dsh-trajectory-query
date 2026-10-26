@@ -49,6 +49,7 @@ window.__ModuleLoader__.load({
 .av-cost-head{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px}
 .av-cost-num{font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}
 .av-cost-label{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.av-cost-rows{max-height:240px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
 .av-cost-row{display:grid;grid-template-columns:44px 1fr;align-items:center;gap:8px;margin-bottom:4px}
 .av-cost-turn{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-track{display:flex;height:8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}
@@ -244,7 +245,9 @@ window.__ModuleLoader__.load({
       };
       const segments = turns.map((turn) => {
         const tone = turnTone(turn);
-        const callId = turn.firstErrorSeq === null ? undefined : index.get(turn.firstErrorSeq);
+        const callId = turn.firstErrorCallId !== undefined && turn.firstErrorCallId !== null
+          ? turn.firstErrorCallId
+          : turn.firstErrorSeq === null ? undefined : index.get(turn.firstErrorSeq);
         const clickable = callId !== undefined && props.openView !== undefined;
         const title = "第 " + turn.turn + " 轮 · " + turn.toolCalls + " 次调用" + (turn.errors > 0 ? " · " + turn.errors + " 次失败" : "") +
           (turn.durationMs !== null ? " · " + ms(turn.durationMs) : "") + (clickable ? " · 点击跳到轨迹" : "");
@@ -306,21 +309,30 @@ window.__ModuleLoader__.load({
     }
 
     function clickableHint(turns, index) {
-      const any = turns.some((turn) => turn.firstErrorSeq !== null && index.get(turn.firstErrorSeq) !== undefined);
+      const any = turns.some((turn) => (turn.firstErrorCallId !== undefined && turn.firstErrorCallId !== null) ||
+        (turn.firstErrorSeq !== null && index.get(turn.firstErrorSeq) !== undefined));
       return any ? "有失败的轮次可点,跳到轨迹里对应调用" : "轨迹视图里没有对应调用时不可跳转";
     }
 
+    const COST_ROWS_MAX = 120;
+
     function Cost(props) {
       const cost = props.cost;
+      const list = React.useRef(null);
+      const turns = React.useMemo(() => ((cost && Array.isArray(cost.byTurn)) ? cost.byTurn : []).filter((turn) => turn.turn !== null), [cost]);
+      React.useEffect(() => {
+        const el = list.current;
+        if (el !== null) el.scrollTop = el.scrollHeight;
+      }, [turns.length]);
       if (!cost || !cost.requestCount) {
         return h("div", { className: "av-section" }, [
           h("div", { key: "h", className: "av-section-head" }, h("h3", { className: "av-section-title" }, "花费")),
           h("div", { key: "e", className: "av-empty" }, "适配器没有上报 usage,这段会话没有 token 数据"),
         ]);
       }
-      const turns = (cost.byTurn || []).filter((turn) => turn.turn !== null);
       const max = turns.reduce((acc, turn) => Math.max(acc, (turn.input || 0) + (turn.cacheRead || 0) + (turn.output || 0)), 0);
-      const rows = turns.slice(-24).map((turn) => {
+      const shown = turns.slice(-COST_ROWS_MAX);
+      const rows = shown.map((turn) => {
         const total = (turn.input || 0) + (turn.cacheRead || 0) + (turn.output || 0);
         const width = (value) => (max === 0 ? 0 : Math.max(0, (value / max) * 100));
         return h("div", { key: String(turn.turn), className: "av-cost-row", title: "turn " + turn.turn + " · 输入 " + fmt(turn.input) + " · 缓存读 " + fmt(turn.cacheRead) + " · 输出 " + fmt(turn.output) + " · 缓存 " + pct(turn.cacheEfficiency) }, [
@@ -335,7 +347,7 @@ window.__ModuleLoader__.load({
       return h("div", { className: "av-section" }, [
         h("div", { key: "h", className: "av-section-head" }, [
           h("h3", { key: "t", className: "av-section-title" }, "花费"),
-          h("span", { key: "n", className: "av-hint" }, cost.requestCount + " 次请求" + (cost.unknownRequests > 0 ? " · " + cost.unknownRequests + " 次未上报" : "")),
+          h("span", { key: "n", className: "av-hint" }, cost.requestCount + " 次请求" + (cost.unknownRequests > 0 ? " · " + cost.unknownRequests + " 次未上报" : "") + (turns.length > 12 ? " · " + turns.length + " 轮,可滚动" : "")),
         ]),
         h("div", { key: "sum", className: "av-cost-head" }, [
           h("div", { key: "in" }, [h("div", { className: "av-cost-num" }, fmt(cost.input)), h("div", { className: "av-cost-label" }, "输入")]),
@@ -343,12 +355,12 @@ window.__ModuleLoader__.load({
           h("div", { key: "out" }, [h("div", { className: "av-cost-num" }, fmt(cost.output)), h("div", { className: "av-cost-label" }, "输出")]),
           h("div", { key: "eff" }, [h("div", { className: "av-cost-num" }, pct(cost.cacheEfficiency)), h("div", { className: "av-cost-label" }, "缓存命中")]),
         ]),
-        rows.length > 0 ? h("div", { key: "rows" }, rows) : null,
+        rows.length > 0 ? h("div", { key: "rows", className: "av-cost-rows", ref: list }, rows) : null,
         h("div", { key: "l", className: "av-legend" }, [
           h("span", { key: "i", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-brand-primary)", opacity: 0.9 } }), "输入"]),
           h("span", { key: "c", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-brand-primary)", opacity: 0.5 } }), "缓存读"]),
           h("span", { key: "o", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-brand-primary)", opacity: 0.28 } }), "输出"]),
-          turns.length > 24 ? h("span", { key: "more", className: "av-legend-item" }, "只画最近 24 个 turn") : null,
+          turns.length > COST_ROWS_MAX ? h("span", { key: "more", className: "av-legend-item" }, "只画最近 " + COST_ROWS_MAX + " 轮") : null,
         ]),
       ]);
     }

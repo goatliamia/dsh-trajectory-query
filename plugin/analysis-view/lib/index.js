@@ -232,6 +232,7 @@ export function computeWorkPath(events) {
         cacheRead: null,
         output: null,
         firstErrorSeq: null,
+        firstErrorCallId: null,
       };
       turns.push(current);
       continue;
@@ -263,7 +264,11 @@ export function computeWorkPath(events) {
         if (tool !== undefined) tool.errors += 1;
         if (current !== null) {
           current.errors += 1;
-          if (current.firstErrorSeq === null) current.firstErrorSeq = e.seq;
+          if (current.firstErrorSeq === null) {
+            current.firstErrorSeq = e.seq;
+            // 面板拿它去开轨迹;给了这个,红色轮次点不点得中就不再取决于投影有没有加载到那段。
+            current.firstErrorCallId = callId === undefined || callId === null ? null : String(callId);
+          }
         }
       }
       if (tool !== undefined && typeof call.time === "number" && typeof e.time === "number") {

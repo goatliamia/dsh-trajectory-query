@@ -178,8 +178,8 @@ const digest = {
     ],
   },
   turnStats: [
-    { turn: 1, startSeq: 0, endSeq: 40, startTime: 1000, endTime: 10000, durationMs: 9000, endReason: "end-turn", toolCalls: 3, errors: 0, requests: 1, input: 60, cacheRead: 600, output: 30, firstErrorSeq: null },
-    { turn: 2, startSeq: 41, endSeq: 99, startTime: 10001, endTime: 15000, durationMs: 4999, endReason: "end-turn", toolCalls: 2, errors: 1, requests: 1, input: 40, cacheRead: 300, output: 20, firstErrorSeq: 70 },
+    { turn: 1, startSeq: 0, endSeq: 40, startTime: 1000, endTime: 10000, durationMs: 9000, endReason: "end-turn", toolCalls: 3, errors: 0, requests: 1, input: 60, cacheRead: 600, output: 30, firstErrorSeq: null, firstErrorCallId: null },
+    { turn: 2, startSeq: 41, endSeq: 99, startTime: 10001, endTime: 15000, durationMs: 4999, endReason: "end-turn", toolCalls: 2, errors: 1, requests: 1, input: 40, cacheRead: 300, output: 20, firstErrorSeq: 70, firstErrorCallId: "call-err" },
   ],
   toolStats: [
     { name: "read", calls: 3, errors: 0, avgMs: 120, maxMs: 300, lastSeq: 30 },
@@ -199,6 +199,7 @@ const classes = nodes.map((node) => (node.props && node.props.className) || "");
 check("render: 标题与状态在位", text.includes("分析") && text.includes("abcdef123456"), text.slice(0, 120));
 check("render: 五个 KPI", ["轮次", "工具调用", "失败", "缓存命中", "事件"].every((label) => text.includes(label)), text.slice(0, 200));
 check("render: 轮次地图两个 turn", classes.filter((name) => /^av-seg /.test(name)).length === 2, classes.filter((name) => /^av-seg /.test(name)));
+check("render: 有失败的轮次靠 firstErrorCallId 可点(不依赖投影)", classes.some((name) => /^av-seg (warn|bad) clickable/.test(name)), classes.filter((name) => /^av-seg /.test(name)));
 check("render: 花费按轮画了两条", classes.filter((name) => name === "av-cost-row").length === 2);
 check("render: 工具表两行", text.includes("read") && text.includes("pwsh") && text.includes("900ms"), text.slice(0, 200));
 check("render: incident 卡片与因果链", text.includes("调用失败") && text.includes("Runtime 知道") && text.includes("影响"));
