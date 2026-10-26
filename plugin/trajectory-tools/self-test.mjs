@@ -464,7 +464,7 @@ check("events: matchAt 指向命中词", longHit.items[0].text.slice(longHit.ite
 // issue #1:转义路径 + normalize 开关
 const escaped = await search({ view: "events", session: LIVE_ID, query: "C:\\Users\\14100\\.dsh" });
 eq("events: 单反斜杠查到转义路径", escaped.items.map((item) => item.seq), [15]);
-eq("events: normalized=true", escaped.normalized, true);
+check("events: 默认归一化不再回显 true", escaped.normalized === undefined, escaped.normalized);
 check("events: 转义命中仍是原文", escaped.items[0].text.includes("C:\\\\Users\\\\14100"), escaped.items[0].text.slice(0, 60));
 eq("events: normalize=false 回到严格匹配", (await search({ view: "events", session: LIVE_ID, query: "C:\\Users\\14100\\.dsh", filter: { normalize: false } })).hitCount, 0);
 
@@ -500,8 +500,10 @@ eq("catalog: 当前会话第一", catalog.sessions[0].session, CURRENT_ID);
 const liveRow = catalog.sessions.find((row) => row.session === LIVE_ID);
 check("catalog: 默认过滤后计数", liveRow.events === 12, JSON.stringify(liveRow));
 eq("catalog: semanticEvents", liveRow.semanticEvents, 11);
-eq("catalog: byType", liveRow.byType["tool/call"], 2);
-eq("catalog: byTool 计调用", liveRow.byTool.read, 2);
+check("catalog: 默认不带直方图", liveRow.byType === undefined && liveRow.byTool === undefined, JSON.stringify(liveRow));
+const breakdown = (await search({ view: "catalog", filter: { breakdown: true } })).sessions.find((row) => row.session === LIVE_ID);
+eq("catalog: byType(按需)", breakdown.byType["tool/call"], 2);
+eq("catalog: byTool 计调用(按需)", breakdown.byTool.read, 2);
 eq("catalog: seq 区间", liveRow.seqRange, [0, 15]);
 eq("catalog: 时间区间", liveRow.timeRange, [1000, 1015]);
 check("catalog: 只给计数不给内容", !("text" in liveRow) && !("items" in liveRow), JSON.stringify(liveRow));

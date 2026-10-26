@@ -870,7 +870,7 @@ export function apply(ctx, config = {}) {
 
   const FILTER_KEYS = {
     events: ["types", "from", "to", "timeFrom", "timeTo", "sessionCount", "normalize", "excludeInjected", "excludeSelf"],
-    catalog: ["cwd", "timeFrom", "timeTo", "type", "tool"],
+    catalog: ["cwd", "timeFrom", "timeTo", "type", "tool", "breakdown"],
     cost: ["from", "to", "groupBy"],
     sessions: ["liveOnly"],
   };
@@ -958,8 +958,8 @@ export function apply(ctx, config = {}) {
           log,
           hitCount: hits.length,
           returned: Math.min(hits.length, limit),
-          normalized: normalize,
-          filtered,
+          ...(normalize ? {} : { normalized: false }),
+          ...(filtered.injected + filtered.self > 0 ? { filtered } : {}),
           items: hits.slice(0, limit).map((hit) => toItem(sessionId, hit, log.id)),
         };
       }
@@ -1001,8 +1001,8 @@ export function apply(ctx, config = {}) {
         failed: failures,
         targets: targets.map((record) => record.id),
         returned: items.length,
-        normalized: normalize,
-        filtered: filteredTotal,
+        ...(normalize ? {} : { normalized: false }),
+        ...(filteredTotal.injected + filteredTotal.self > 0 ? { filtered: filteredTotal } : {}),
         items,
       };
     } catch (error) {
@@ -1018,6 +1018,8 @@ export function apply(ctx, config = {}) {
       const all = typeof args.session === "string" && args.session !== "" ? null : await listSessions(ctx, currentId);
       const typeFilter = Array.isArray(filter.type) ? filter.type.map((value) => String(value)) : [];
       const toolNeedle = typeof filter.tool === "string" ? filter.tool.trim().toLowerCase() : "";
+      // 直方图默认不给;要细分加 filter.breakdown:true。
+      const breakdown = filter.breakdown === true;
       let candidates;
       if (all === null) {
         // 显式给了 session:会话清单里不一定有它(很老的已持久化会话)。
@@ -1043,7 +1045,8 @@ export function apply(ctx, config = {}) {
             timeTo: filter.timeTo,
           });
           const header = loaded.header || null;
-          sessions.push({
+          const { byType, byTool, ...base } = stats;
+          const row = {
             session: record.id,
             cwd: record.cwd === undefined ? ((header && header.cwd) || null) : record.cwd,
             current: record.current === true,
@@ -1051,8 +1054,13 @@ export function apply(ctx, config = {}) {
             // null = 这次没查证"是不是也落盘了",不代表没有。
             persisted: typeof record.persisted === "boolean" ? record.persisted : null,
             log: logIdentity(record.id, loaded.events).id,
-            ...stats,
-          });
+            ...base,
+          };
+          if (breakdown) {
+            row.byType = byType;
+            row.byTool = byTool;
+          }
+          sessions.push(row);
         } catch {
           failed++;
         }
@@ -1101,7 +1109,11 @@ export function apply(ctx, config = {}) {
           });
       const requests = costRequests(scoped);
       const totals = costTotals(requests);
+      const coverage = costCoverage(requests);
       const rows = groupBy === "turn" ? costByTurn(requests) : requests;
+      // coverage 只在"有请求没报全"时才给:全部字段都齐的时候它是一行恒等式的噪音。
+      const partial = coverage.input < totals.requests || coverage.cacheRead < totals.requests ||
+        coverage.output < totals.requests || coverage.total < totals.requests;
       return {
         ok: true,
         view: "cost",
@@ -1110,7 +1122,7 @@ export function apply(ctx, config = {}) {
         groupBy,
         requestCount: totals.requests,
         unknownRequests: totals.unknownRequests,
-        coverage: costCoverage(requests),
+        ...(partial ? { coverage } : {}),
         totals,
         rowCount: rows.length,
         returned: Math.min(rows.length, limit),

@@ -11,14 +11,14 @@ export const SKILL_DESCRIPTION =
 export const SKILL_WHEN_TO_USE =
   "当你要陈述一件发生在很久以前、已被压缩、或在别的会话/子代理里的事实,且当前上下文没有逐字证据时。";
 
-export const SKILL_BODY = `# trajectory-query(查询纪律 v5)
+export const SKILL_BODY = `# trajectory-query
 
 需要过去的信息时(被 compaction 覆盖、很久以前、其他会话/子代理):**不要猜,先查**。
 
 - \`trajectory_search\` — 查事实与数字,\`view\` 必填:
   \`events\` 按字面词搜事件(返回 \`(session, seq, type, time)\` 与逐字片段 + \`matchAt\`);
-  \`catalog\` 会话的计数与 seq / 时间范围(不含正文);
-  \`cost\` 逐请求 token 与 cache 效率;
+  \`catalog\` 会话的计数与 seq / 时间范围(不含正文);要按事件类型 / 工具细分时加 \`filter.breakdown:true\`;
+  \`cost\` 逐请求 token 与 cache 效率(\`coverage\` 只在有请求没报全时出现);
   \`sessions\` 可查会话列表。
   可选维度收在 \`filter\` 里,键按 view 不同(传错会告诉你这个 view 能用哪些)。
 - \`trajectory_read\` — 按 \`(session, seq 区间)\` 逐字取原文;默认只给有正文的事件,\`raw:true\` 给区间内全部。
