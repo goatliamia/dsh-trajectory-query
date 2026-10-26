@@ -50,6 +50,7 @@ window.__ModuleLoader__.load({
 .av-cost-cell{min-width:0}
 .av-cost-num{font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}
 .av-cost-label{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.av-cost-money{color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
 
 
 
@@ -415,6 +416,7 @@ window.__ModuleLoader__.load({
 
     function Cost(props) {
       const cost = props.cost;
+      const pricing = cost && cost.pricing !== undefined && cost.pricing !== null && cost.pricing.priced > 0 ? cost.pricing : null;
       const list = React.useRef(null);
       const turns = React.useMemo(() => ((cost && Array.isArray(cost.byTurn)) ? cost.byTurn : []).filter((turn) => turn.turn !== null), [cost]);
       // cost.byTurn 只有 token 数字,没有 seq;按轮号从 turnStats 里补 startSeq,跳转才知道要加载到哪。
@@ -480,12 +482,21 @@ window.__ModuleLoader__.load({
           h("span", { key: "n", className: "av-hint" }, cost.requestCount + " 次请求 · " + turns.length + " 轮" + (cost.unknownRequests > 0 ? " · " + cost.unknownRequests + " 次未上报" : "")),
         ]),
         h("div", { key: "sum", className: "av-cost-head" }, [
-          h("div", { key: "in", className: "av-cost-cell" }, [h("div", { className: "av-cost-num av-bad" }, fmt(cost.input)), h("div", { className: "av-cost-label av-bad" }, "未命中")]),
-          h("div", { key: "cr", className: "av-cost-cell" }, [h("div", { className: "av-cost-num" }, fmt(cost.cacheRead)), h("div", { className: "av-cost-label" }, "命中")]),
-          h("div", { key: "out", className: "av-cost-cell" }, [h("div", { className: "av-cost-num" }, fmt(cost.output)), h("div", { className: "av-cost-label" }, "输出")]),
+          h("div", { key: "in", className: "av-cost-cell" }, [
+            h("div", { className: "av-cost-num av-bad" }, fmt(cost.input)),
+            h("div", { className: "av-cost-label av-bad" }, ["未命中", pricing === null ? null : h("span", { key: "m", className: "av-cost-money" }, " ¥" + money(pricing.cost.miss))]),
+          ]),
+          h("div", { key: "cr", className: "av-cost-cell" }, [
+            h("div", { className: "av-cost-num" }, fmt(cost.cacheRead)),
+            h("div", { className: "av-cost-label" }, ["命中", pricing === null ? null : h("span", { key: "m", className: "av-cost-money" }, " ¥" + money(pricing.cost.hit))]),
+          ]),
+          h("div", { key: "out", className: "av-cost-cell" }, [
+            h("div", { className: "av-cost-num" }, fmt(cost.output)),
+            h("div", { className: "av-cost-label" }, ["输出", pricing === null ? null : h("span", { key: "m", className: "av-cost-money" }, " ¥" + money(pricing.cost.output))]),
+          ]),
           h("div", { key: "eff", className: "av-cost-cell" }, [h("div", { className: "av-cost-num" }, pct(cost.cacheEfficiency)), h("div", { className: "av-cost-label" }, "命中率")]),
-          cost.pricing === null || cost.pricing === undefined || cost.pricing.priced === 0 ? null : h("div", { key: "total", className: "av-cost-cell" }, [
-            h("div", { className: "av-cost-num" }, "≈ ¥" + money(cost.pricing.total)),
+          pricing === null ? null : h("div", { key: "total", className: "av-cost-cell" }, [
+            h("div", { className: "av-cost-num" }, "≈ ¥" + money(pricing.total)),
             h("div", { className: "av-cost-label" }, "合计"),
           ]),
         ]),
