@@ -340,6 +340,7 @@ export function computeWorkPath(events, options = {}) {
       errors: tool.errors,
       avgMs: tool.timed === 0 ? null : Math.round(tool.totalMs / tool.timed),
       maxMs: tool.timed === 0 ? null : Math.round(tool.maxMs),
+      totalMs: tool.timed === 0 ? null : Math.round(tool.totalMs),
       lastSeq: tool.lastSeq,
     }))
     .sort((a, b) => (b.calls - a.calls) || a.name.localeCompare(b.name));

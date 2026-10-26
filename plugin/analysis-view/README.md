@@ -31,8 +31,8 @@ no separate data source — and renders a **deterministic, evidence-cited** view
 - **Spend** — per turn, two bars: the reused prefix (cache hit) beside what was actually processed
   fresh (miss), with output on its own bar; each turn's hit rate sits on the right and turns amber
   below 90%. The list scrolls and starts at the newest turn.
-- **Tools** — a donut of call share by category with the total in the middle; pick a legend row to list
-  that category's tools (calls, failures, average duration). The category is decided by the **host from
+- **Tools** — three donuts (calls / duration / failures), each split by category, and a legend that opens
+  one category into its tools (calls, failures, average). The category is decided by the **host from
   each tool's own declaration**, never from a name list: the parameter schema decides first (`file_path`
   / `path` → 文件, `command` → 执行, `url`/`queries` → 网络, `session`/`seq` → 上下文, `todos`/`objective`/
   schedule fields / `questions` / `prompt` / `script` / agent ids → 协作, `provider`/`service`/`entry` →
@@ -93,9 +93,9 @@ node analyzers/shape-law.mjs --mutate   # prove the laws bite: reasonable mistak
 Dynamic plugins are session-scoped and vanish on reload; this one is installed into the web profile.
 
 ```text
-1. pnpm pack                      # -> dsh-analysis-view-0.3.4.tgz
+1. pnpm pack                      # -> dsh-analysis-view-0.3.5.tgz
 2. add to ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.3.4.tgz"
+     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.3.5.tgz"
      dsh.profile.bundles: append "dsh-analysis-view"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. rebuild / restart `dsh web`    # so the new client module enters the bundle
@@ -152,7 +152,8 @@ conversation.view  →  [对话] [轨迹] [分析]
   (`openView("trajectory", callId)`);图例直接写在界面上。
 - **花费**:每轮两条——命中(复用的前缀)与未命中(真正新处理)并排画,输出单独一条;右侧是这一轮的
   命中率,低于 90% 标警示色;列表可滚动,默认停在最新。
-- **工具**:一张环形图——按类别看调用占比,中心是总次数;点图例看该类的工具明细(名称、次数、失败、平均耗时)。
+- **工具**:三张环形图——调用次数 / 耗时 / 失败,都按类别看占比;点右边的类别展开这一类用了哪些工具
+  (名称、调用、失败、平均)。
   类别由 **host 从工具自己的声明**判定,不靠名字表:先看参数 schema(`file_path`/`path` → 文件,
   `command` → 执行,`url`/`queries` → 网络,`session`/`seq` → 上下文,`todos`/`objective`/调度字段/
   `questions`/`prompt`/`script`/代理 id → 协作,`provider`/`service`/`entry` → 插件),再看名字与描述,
@@ -203,9 +204,9 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 动态插件是会话级、刷新即失;这个是装进 web profile 的常驻插件。
 
 ```text
-1. pnpm pack                      # 生成 dsh-analysis-view-0.3.4.tgz
+1. pnpm pack                      # 生成 dsh-analysis-view-0.3.5.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.3.4.tgz"
+     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.3.5.tgz"
      dsh.profile.bundles 追加 "dsh-analysis-view"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重建/重启 `dsh web`,让新的 client 模块进入前端包

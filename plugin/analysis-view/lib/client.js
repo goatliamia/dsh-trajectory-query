@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
     /* 样式 */
     const STYLE_ID = "dsh-analysis-view-style";
     const CSS = `
-.av-root{padding:16px;overflow:auto;min-height:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5}
+.av-root{--av-accent:color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, var(--dsw-alias-state-success-primary));padding:16px;overflow:auto;min-height:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5}
 .av-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .av-title{margin:0;font-size:14px;font-weight:500;letter-spacing:.01em}
 .av-meta{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
@@ -19,7 +19,7 @@ window.__ModuleLoader__.load({
 .av-btn{font:inherit;font-size:12px;line-height:1;padding:5px 9px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-primary);cursor:pointer}
 .av-btn:hover{background:var(--dsw-alias-bg-layer-2)}
 .av-btn:disabled{opacity:.55;cursor:default}
-.av-btn.primary{border-color:var(--dsw-alias-brand-primary);color:var(--dsw-alias-brand-primary)}
+.av-btn.primary{border-color:var(--av-accent);color:var(--av-accent)}
 .av-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);margin-bottom:12px;overflow:hidden}
 .av-kpi{padding:10px 14px;min-width:0;border-left:1px solid var(--dsw-alias-border-l1)}
 .av-kpi:first-child{border-left:0}
@@ -52,13 +52,13 @@ window.__ModuleLoader__.load({
 .av-cost-rows{max-height:240px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
 .av-cost-row{display:grid;grid-template-columns:34px minmax(0,1fr) minmax(52px,.42fr) 44px;align-items:center;gap:8px;margin-bottom:4px;border-radius:4px;cursor:pointer}
 .av-cost-row:hover{background:var(--dsw-alias-bg-layer-2)}
-.av-cost-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.av-cost-row:focus-visible{outline:2px solid var(--av-accent);outline-offset:-2px}
 .av-cost-turn{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-track{display:flex;height:8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}
 .av-fill{height:100%}
 .av-fill.hit{background:var(--dsw-alias-state-success-primary);opacity:.55}
 .av-fill.miss{background:var(--dsw-alias-state-warn-primary);opacity:.85}
-.av-fill.out{background:var(--dsw-alias-brand-primary);opacity:.75}
+.av-fill.out{background:var(--av-accent);opacity:.75}
 .av-rate{font-size:11px;text-align:right;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-rate.warn{color:var(--dsw-alias-state-warn-primary)}
 .av-donut{position:relative;width:112px;height:112px;flex:none}
@@ -71,17 +71,16 @@ window.__ModuleLoader__.load({
 .av-leg-name{font-size:12px}
 .av-leg-num{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-leg-err{font-size:11px;color:var(--dsw-alias-state-error-primary)}
-.av-tool-grid{display:grid;grid-template-columns:auto minmax(150px,210px) minmax(0,1fr);gap:16px;align-items:start}
-.av-tool-detail{min-height:120px;border-left:1px solid var(--dsw-alias-border-l1);padding-left:16px}
-.av-tool-detail-head{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.av-tool-grid{display:grid;grid-template-columns:repeat(3,auto) minmax(170px,1fr);gap:16px;align-items:start}
+.av-ring-block{display:flex;flex-direction:column;align-items:center}
+.av-tool-detail{grid-column:1 / -1;border-top:1px solid var(--dsw-alias-border-l1);padding-top:10px;min-height:0}
+.av-tool-detail-head{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
 .av-tool-detail-name{font-size:13px;font-weight:500}
 .av-tool-detail-meta{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
-.av-tool-detail-body{display:flex;gap:12px;align-items:center}
-.av-donut-sm{width:96px;height:96px}
-.av-donut-sm .av-donut-num{font-size:14px}
-.av-tool-legend{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;max-height:128px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:2px}
-.av-tool-legend-row{display:grid;grid-template-columns:minmax(0,1fr) 38px 30px 48px;gap:6px;font-size:12px;align-items:center}
-@media (max-width:840px){.av-tool-grid{grid-template-columns:auto minmax(0,1fr)}.av-tool-detail{grid-column:1 / -1;border-left:0;border-top:1px solid var(--dsw-alias-border-l1);padding-left:0;padding-top:8px}}
+.av-donut-sm{width:88px;height:88px}
+.av-donut-sm .av-donut-num{font-size:13px}
+.av-tool-line{display:grid;grid-template-columns:minmax(80px,180px) 40px 34px 52px;gap:8px;font-size:12px;align-items:center;padding:1px 0}
+@media (max-width:840px){.av-tool-grid{grid-template-columns:repeat(3,auto)}.av-legend-col{grid-column:1 / -1}}
 .av-num{font-variant-numeric:tabular-nums;text-align:right}
 .av-tool-name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .av-bad{color:var(--dsw-alias-state-error-primary)}
@@ -106,7 +105,7 @@ window.__ModuleLoader__.load({
 .av-skel.line{height:10px;margin-bottom:8px}
 .av-notice{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--dsw-alias-label-secondary);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .av-empty{padding:32px 12px;text-align:center;color:var(--dsw-alias-label-secondary);font-size:12px;min-height:120px;display:flex;align-items:center;justify-content:center}
-.av-btn:focus-visible,.av-seg:focus-visible,.av-chip:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+.av-btn:focus-visible,.av-seg:focus-visible,.av-chip:focus-visible{outline:2px solid var(--av-accent);outline-offset:1px}
 .av-btn,.av-seg,.av-chip{transition:background-color .14s ease,border-color .14s ease,color .14s ease}
 @media (prefers-reduced-motion:reduce){.av-btn,.av-seg,.av-chip{transition-duration:.01ms}}
 .av-interp{font-size:13px;white-space:pre-wrap}
@@ -473,7 +472,7 @@ window.__ModuleLoader__.load({
         h("div", { key: "l", className: "av-legend" }, [
           h("span", { key: "h", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-state-success-primary)", opacity: 0.55 } }), "命中"]),
           h("span", { key: "m", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-state-warn-primary)", opacity: 0.85 } }), "未命中"]),
-          h("span", { key: "o", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-brand-primary)", opacity: 0.75 } }), "输出"]),
+          h("span", { key: "o", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--av-accent)", opacity: 0.75 } }), "输出"]),
           turns.length > COST_ROWS_MAX ? h("span", { key: "more", className: "av-legend-item" }, "只画最近 " + COST_ROWS_MAX + " 轮") : null,
         ]),
       ]);
@@ -482,10 +481,10 @@ window.__ModuleLoader__.load({
     // 类别由 host 按工具自己的声明判定(digest 里每个工具带 category),客户端只负责画。
     const CATEGORY_LABELS = { file: "文件", run: "执行", web: "网络", context: "上下文", coop: "协作", plugin: "插件", other: "其他" };
     const CATEGORY_COLORS = {
-      file: "var(--dsw-alias-brand-primary)",
+      file: "var(--av-accent)",
       run: "var(--dsw-alias-state-warn-primary)",
       web: "var(--dsw-alias-state-success-primary)",
-      context: "color-mix(in srgb, var(--dsw-alias-brand-primary) 50%, var(--dsw-alias-bg-layer-2))",
+      context: "color-mix(in srgb, var(--av-accent) 50%, var(--dsw-alias-bg-layer-2))",
       coop: "var(--dsw-alias-state-idle-primary)",
       plugin: "var(--dsw-alias-border-l2)",
       other: "color-mix(in srgb, var(--dsw-alias-state-idle-primary) 55%, var(--dsw-alias-bg-layer-2))",
@@ -499,44 +498,34 @@ window.__ModuleLoader__.load({
       const buckets = new Map();
       let totalCalls = 0;
       let totalErrors = 0;
+      let totalMs = 0;
       for (const tool of tools) {
         const id = categoryOf(tool);
-        if (!buckets.has(id)) buckets.set(id, { id, label: CATEGORY_LABELS[id], color: CATEGORY_COLORS[id], calls: 0, errors: 0, tools: [] });
+        if (!buckets.has(id)) buckets.set(id, { id, label: CATEGORY_LABELS[id], color: CATEGORY_COLORS[id], calls: 0, errors: 0, ms: 0, tools: [] });
         const bucket = buckets.get(id);
         bucket.calls += tool.calls;
         bucket.errors += tool.errors;
+        bucket.ms += tool.totalMs || 0;
         bucket.tools.push(tool);
         totalCalls += tool.calls;
         totalErrors += tool.errors;
+        totalMs += tool.totalMs || 0;
       }
       const slices = [...buckets.values()].sort((a, b) => b.calls - a.calls);
-      const legend = slices.map((slice) => h("button", {
-        key: slice.id,
-        className: "av-leg",
-        "aria-pressed": picked === slice.id,
-        onClick: () => setPicked((current) => (current === slice.id ? null : slice.id)),
-        title: "只看「" + slice.label + "」的工具",
-      }, [
-        h("span", { key: "s", className: "av-swatch", style: { background: slice.color } }),
-        h("span", { key: "n", className: "av-leg-name" }, slice.label),
-        h("span", { key: "c", className: "av-leg-num" }, slice.calls + " 次 · " + Math.round((slice.calls / totalCalls) * 100) + "%"),
-        slice.errors > 0 ? h("span", { key: "e", className: "av-leg-err" }, "×" + slice.errors) : null,
-      ]));
-      const selected = picked === null ? null : buckets.get(picked) || null;
-      const detailTools = selected === null ? [] : selected.tools.slice().sort((a, b) => b.calls - a.calls);
-      const ring = (items, total, radius, stroke, gap, colorOf) => {
+      const ring = (total, valueOf, radius, stroke, gap) => {
         const circumference = 2 * Math.PI * radius;
         let consumed = 0;
-        return items.map((item) => {
-          const raw = total === 0 ? 0 : (item.calls / total) * circumference;
+        return slices.map((slice) => {
+          const value = Math.max(0, valueOf(slice) || 0);
+          const raw = total === 0 ? 0 : (value / total) * circumference;
           const length = Math.max(0, raw - gap);
           const arc = h("circle", {
-            key: item.id || item.name,
+            key: slice.id,
             cx: 50,
             cy: 50,
             r: radius,
             fill: "none",
-            stroke: colorOf(item),
+            stroke: slice.color,
             strokeWidth: stroke,
             strokeDasharray: length + " " + (circumference - length),
             strokeDashoffset: String(-consumed),
@@ -546,46 +535,56 @@ window.__ModuleLoader__.load({
           return arc;
         });
       };
+      const block = (key, caption, valueOf, total, format) => h("div", { key, className: "av-ring-block" }, [
+        h("div", { key: "d", className: "av-donut av-donut-sm" }, [
+          h("svg", { key: "s", viewBox: "0 0 100 100", width: "88", height: "88", role: "img", "aria-label": caption }, ring(total, valueOf, 40, 13, 1)),
+          h("div", { key: "c", className: "av-donut-center" }, [
+            h("span", { key: "n", className: "av-donut-num" }, format(total)),
+            h("span", { key: "l" }, caption),
+          ]),
+        ]),
+      ]);
+      const legend = slices.map((slice) => h("button", {
+        key: slice.id,
+        className: "av-leg",
+        "aria-pressed": picked === slice.id,
+        onClick: () => setPicked((current) => (current === slice.id ? null : slice.id)),
+        title: "展开「" + slice.label + "」的工具明细",
+      }, [
+        h("span", { key: "s", className: "av-swatch", style: { background: slice.color } }),
+        h("span", { key: "n", className: "av-leg-name" }, slice.label),
+        h("span", { key: "c", className: "av-leg-num" }, slice.calls + " 次 · " + Math.round((slice.calls / totalCalls) * 100) + "%"),
+        slice.errors > 0 ? h("span", { key: "e", className: "av-leg-err" }, "×" + slice.errors) : null,
+      ]));
+      const selected = picked === null ? null : buckets.get(picked) || null;
+      const detailTools = selected === null ? [] : selected.tools.slice().sort((a, b) => b.calls - a.calls);
       return h("div", { className: "av-section" }, [
         h("div", { key: "h", className: "av-section-head" }, [
           h("h3", { key: "t", className: "av-section-title" }, "工具"),
-          h("span", { key: "n", className: "av-hint" }, tools.length + " 种 · " + totalCalls + " 次" + (totalErrors > 0 ? " · " + totalErrors + " 失败" : "")),
+          h("span", { key: "n", className: "av-hint" }, tools.length + " 种 · " + totalCalls + " 次 · " + ms(totalMs) + (totalErrors > 0 ? " · " + totalErrors + " 失败" : "")),
         ]),
         h("div", { key: "d", className: "av-tool-grid" }, [
-          h("div", { key: "chart", className: "av-donut" }, [
-            h("svg", { key: "s", viewBox: "0 0 100 100", width: "112", height: "112", role: "img", "aria-label": "工具调用占比" }, ring(slices, totalCalls, 40, 14, 1, (slice) => slice.color)),
-            h("div", { key: "c", className: "av-donut-center" }, [
-              h("span", { key: "n", className: "av-donut-num" }, String(totalCalls)),
-              h("span", { key: "l" }, "次调用"),
-            ]),
-          ]),
+          block("calls", "次调用", (slice) => slice.calls, totalCalls, (value) => String(value)),
+          block("time", "耗时", (slice) => slice.ms, totalMs, (value) => ms(value)),
+          block("errors", "失败", (slice) => slice.errors, totalErrors, (value) => String(value)),
           h("div", { key: "legend", className: "av-legend-col" }, legend),
           h("div", { key: "detail", className: "av-tool-detail" }, selected === null
-            ? h("div", { key: "empty", className: "av-empty", style: { padding: "16px 8px" } }, "点中间的类别,看这一类用了哪些工具")
+            ? h("div", { key: "empty", className: "av-empty", style: { padding: "12px 8px" } }, "点右边的类别,看这一类的工具")
             : [
               h("div", { key: "h", className: "av-tool-detail-head" }, [
                 h("span", { key: "n", className: "av-tool-detail-name" }, selected.label),
-                h("span", { key: "m", className: "av-tool-detail-meta" }, selected.tools.length + " 种 · " + selected.calls + " 次" + (selected.errors > 0 ? " · " + selected.errors + " 失败" : "")),
+                h("span", { key: "m", className: "av-tool-detail-meta" }, selected.tools.length + " 种 · " + selected.calls + " 次 · " + ms(selected.ms) + (selected.errors > 0 ? " · " + selected.errors + " 失败" : "")),
               ]),
-              h("div", { key: "body", className: "av-tool-detail-body" }, [
-                h("div", { key: "d", className: "av-donut av-donut-sm" }, [
-                  h("svg", { key: "s", viewBox: "0 0 100 100", width: "96", height: "96", role: "img", "aria-label": selected.label + " 内各工具调用占比" }, ring(detailTools, selected.calls, 40, 14, 2, () => selected.color)),
-                  h("div", { key: "c", className: "av-donut-center" }, [
-                    h("span", { key: "n", className: "av-donut-num" }, String(selected.calls)),
-                    h("span", { key: "l" }, "次"),
-                  ]),
-                ]),
-                h("div", { key: "l", className: "av-tool-legend" }, detailTools.map((tool) => h("div", {
-                  key: tool.name,
-                  className: "av-tool-legend-row",
-                  title: tool.name + " · 最近一次 seq " + tool.lastSeq + (tool.maxMs !== null ? " · 最慢 " + ms(tool.maxMs) : ""),
-                }, [
-                  h("span", { key: "n", className: "av-tool-name" }, tool.name),
-                  h("span", { key: "c", className: "av-num" }, String(tool.calls)),
-                  h("span", { key: "e", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? "×" + tool.errors : ""),
-                  h("span", { key: "a", className: "av-num" }, ms(tool.avgMs)),
-                ]))),
-              ]),
+              ...detailTools.map((tool) => h("div", {
+                key: tool.name,
+                className: "av-tool-line",
+                title: tool.name + " · 平均 " + ms(tool.avgMs) + " · 最慢 " + ms(tool.maxMs),
+              }, [
+                h("span", { key: "n", className: "av-tool-name" }, tool.name),
+                h("span", { key: "c", className: "av-num" }, String(tool.calls)),
+                h("span", { key: "e", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? "×" + tool.errors : ""),
+                h("span", { key: "a", className: "av-num" }, ms(tool.avgMs)),
+              ])),
             ]),
         ]),
       ]);
