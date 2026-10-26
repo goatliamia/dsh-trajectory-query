@@ -49,9 +49,11 @@ window.__ModuleLoader__.load({
 .av-cost-head{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-start}
 .av-cost-num{font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}
 .av-cost-label{font-size:11px;color:var(--dsw-alias-label-secondary)}
-.av-price{margin-left:auto;text-align:right;font-size:11px;color:var(--dsw-alias-label-secondary);line-height:1.5}
-.av-price-total{font-size:15px;font-weight:500;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
-.av-price-units{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.av-price{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);line-height:1.5}
+.av-price-table{display:grid;grid-template-columns:auto 52px 52px;gap:1px 10px;justify-content:end;font-variant-numeric:tabular-nums}
+.av-price-key{text-align:left}
+.av-price-unit{text-align:left;color:var(--dsw-alias-label-secondary)}
+.av-price-total{font-size:15px;font-weight:500;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums;text-align:right;margin-top:2px}
 .av-cost-rows{max-height:240px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
 .av-cost-row{display:grid;grid-template-columns:34px minmax(0,1fr) minmax(52px,.42fr) 44px;align-items:center;gap:8px;margin-bottom:4px;border-radius:4px;cursor:pointer}
 .av-cost-row:hover{background:var(--dsw-alias-bg-layer-2)}
@@ -67,7 +69,7 @@ window.__ModuleLoader__.load({
 .av-donut{position:relative;width:112px;height:112px;flex:none}
 .av-donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--dsw-alias-label-secondary);pointer-events:none}
 .av-donut-num{font-size:16px;font-weight:500;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
-.av-legend-col{flex:1;min-width:0;max-height:96px;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:3px;padding-right:2px}
+.av-legend-col{flex:1;min-width:0;max-height:150px;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:3px;padding-right:2px}
 /* 不画滚动条:上下留一道渐隐的阴影,提示"这里还有内容"。内容到底/到顶时阴影自然消失。 */
 .av-legend-col,.av-cost-rows,.av-incident-list{scrollbar-width:none;background:
   linear-gradient(var(--dsw-alias-bg-layer-1) 40%,transparent) top/100% 16px no-repeat local,
@@ -87,9 +89,9 @@ window.__ModuleLoader__.load({
 .av-flow-head{display:flex;align-items:baseline;gap:8px;min-width:0;height:18px}
 .av-flow-title{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .av-flow-meta{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;white-space:nowrap}
-.av-flow-body{display:flex;gap:14px;align-items:flex-start;min-width:0;padding:4px 0}
-.av-donut-sm{width:96px;height:96px;flex:none}
-.av-donut-sm .av-donut-num{font-size:14px}
+.av-flow-body{display:flex;gap:14px;align-items:flex-start;min-width:0}
+.av-donut-sm{width:112px;height:112px;flex:none}
+.av-donut-sm .av-donut-num{font-size:15px}
 .av-leg-static{cursor:default}
 .av-leg-static:hover{background:transparent}
 .av-stat-line{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:4px;font-variant-numeric:tabular-nums}
@@ -481,13 +483,21 @@ window.__ModuleLoader__.load({
           h("div", { key: "out" }, [h("div", { className: "av-cost-num" }, fmt(cost.output)), h("div", { className: "av-cost-label" }, "输出")]),
           h("div", { key: "eff" }, [h("div", { className: "av-cost-num" }, pct(cost.cacheEfficiency)), h("div", { className: "av-cost-label" }, "命中率")]),
           cost.pricing === null || cost.pricing === undefined || cost.pricing.priced === 0 ? null : h("div", { key: "price", className: "av-price" }, [
-            h("div", { key: "t", className: "av-price-total", title: "官方 API 价目 · 峰谷时段已计入" }, "≈ ¥" + money(cost.pricing.total)),
-            h("div", { key: "m", className: "av-price-meta" }, "官方 API · " + cost.pricing.models.join(" / ")),
-            h("div", { key: "u", className: "av-price-units" }, [
-              h("span", { key: "a" }, "未命中 ¥" + money(cost.pricing.perM.miss) + "/M"),
-              h("span", { key: "b" }, "命中 ¥" + money(cost.pricing.perM.hit) + "/M"),
-              h("span", { key: "c" }, "输出 ¥" + money(cost.pricing.perM.output) + "/M"),
+            cost.pricing.rates === null ? null : h("div", { key: "t", className: "av-price-table" }, [
+              h("span", { key: "h0", className: "av-price-unit" }, "¥/M"),
+              h("span", { key: "h1", className: "av-num" }, "高峰"),
+              h("span", { key: "h2", className: "av-num" }, "空闲"),
+              h("span", { key: "m0", className: "av-price-key" }, "未命中"),
+              h("span", { key: "m1", className: "av-num" }, money(cost.pricing.rates.cacheMiss[1])),
+              h("span", { key: "m2", className: "av-num" }, money(cost.pricing.rates.cacheMiss[0])),
+              h("span", { key: "c0", className: "av-price-key" }, "命中"),
+              h("span", { key: "c1", className: "av-num" }, money(cost.pricing.rates.cacheHit[1])),
+              h("span", { key: "c2", className: "av-num" }, money(cost.pricing.rates.cacheHit[0])),
+              h("span", { key: "o0", className: "av-price-key" }, "输出"),
+              h("span", { key: "o1", className: "av-num" }, money(cost.pricing.rates.output[1])),
+              h("span", { key: "o2", className: "av-num" }, money(cost.pricing.rates.output[0])),
             ]),
+            h("div", { key: "s", className: "av-price-total" }, "合计 ≈ ¥" + money(cost.pricing.total)),
           ]),
         ]),
         cost.cacheEfficiency === null ? null : h("div", { key: "note", className: "av-hint", style: { marginBottom: 8 } },
@@ -603,7 +613,7 @@ window.__ModuleLoader__.load({
             ]),
             h("div", { key: "b", className: "av-flow-body" }, [
               h("div", { key: "d", className: "av-donut av-donut-sm" }, [
-                h("svg", { key: "s", viewBox: "0 0 100 100", width: "96", height: "96", role: "img", "aria-label": "各类别调用占比" }, ring(slices, totalCalls, (slice) => slice.calls, 40, 13, 1, (slice) => slice.color)),
+                h("svg", { key: "s", viewBox: "0 0 100 100", width: "112", height: "112", role: "img", "aria-label": "各类别调用占比" }, ring(slices, totalCalls, (slice) => slice.calls, 40, 13, 1, (slice) => slice.color)),
                 h("div", { key: "c", className: "av-donut-center" }, [
                   h("span", { key: "n", className: "av-donut-num" }, String(totalCalls)),
                   h("span", { key: "l" }, "次调用"),
@@ -619,7 +629,7 @@ window.__ModuleLoader__.load({
             ]),
             h("div", { key: "b", className: "av-flow-body" }, [
               h("div", { key: "d", className: "av-donut av-donut-sm" }, [
-                h("svg", { key: "s", viewBox: "0 0 100 100", width: "96", height: "96", role: "img", "aria-label": category.label + "内各工具占比" }, ring(toolSlices, category.calls, (item) => item.calls, 40, 13, 2, (item) => item.color)),
+                h("svg", { key: "s", viewBox: "0 0 100 100", width: "112", height: "112", role: "img", "aria-label": category.label + "内各工具占比" }, ring(toolSlices, category.calls, (item) => item.calls, 40, 13, 2, (item) => item.color)),
                 h("div", { key: "c", className: "av-donut-center" }, [
                   h("span", { key: "n", className: "av-donut-num" }, String(categoryTools.length)),
                   h("span", { key: "l" }, "种"),
@@ -646,7 +656,7 @@ window.__ModuleLoader__.load({
             ]),
             h("div", { key: "b", className: "av-flow-body" }, [
               h("div", { key: "d", className: "av-donut av-donut-sm" }, [
-                h("svg", { key: "s", viewBox: "0 0 100 100", width: "96", height: "96", role: "img", "aria-label": tool.name + " 在各轮的调用占比" }, ring(turnSlices, tool.calls, (item) => item.calls, 40, 13, 1.5, (item) => item.color)),
+                h("svg", { key: "s", viewBox: "0 0 100 100", width: "112", height: "112", role: "img", "aria-label": tool.name + " 在各轮的调用占比" }, ring(turnSlices, tool.calls, (item) => item.calls, 40, 13, 1.5, (item) => item.color)),
                 h("div", { key: "c", className: "av-donut-center" }, [
                   h("span", { key: "n", className: "av-donut-num" }, String(tool.calls)),
                   h("span", { key: "l" }, "次"),

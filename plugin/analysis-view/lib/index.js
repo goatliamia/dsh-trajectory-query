@@ -172,9 +172,12 @@ function computePricing(requests) {
     priced += 1;
   }
   const perM = (value, count) => (count === 0 ? null : (value / count) * 1e6);
+  const pricedModels = [...models];
   return {
     currency: "CNY",
-    models: [...models],
+    models: pricedModels,
+    // 只有一个模型时给出它的价目([空闲, 高峰]),面板按"未命中 / 命中 / 输出 × 峰/谷"排成小表。
+    rates: pricedModels.length === 1 ? DEEPSEEK_PRICES[pricedModels[0]] : null,
     priced,
     unpriced,
     peakRequests,
