@@ -337,7 +337,7 @@ async function interpret(ctx, sessionId, events, facts, log, cost) {
     id: "analysis-view-interpret",
     role: "user",
     content: [{ type: "text", text: "会话:" + sessionId + "\n\n" + buildEvidence(sessionId, events, facts, log, cost) }],
-    source: { kind: "plugin", plugin: "dsh-analysis-view", form: "notice" }
+    source: { kind: "plugin:dsh-analysis-view" }
   }];
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 60000);

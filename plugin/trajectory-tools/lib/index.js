@@ -196,7 +196,7 @@ export function isInjectedText(text) {
 export function isPluginContext(event) {
   const data = (event && event.data) || {};
   const source = data.source || (data.message && data.message.source);
-  return source !== undefined && source !== null && source.kind === "plugin";
+  return source !== undefined && source !== null && typeof source.kind === "string" && (source.kind === "plugin" || source.kind.startsWith("plugin:"));
 }
 
 export function isTrajectoryTool(name) {
@@ -789,7 +789,7 @@ export function reconcileMessage(sentence, id = randomUUID()) {
     id,
     role: "user",
     content: [{ type: "text", text: sentence }],
-    source: { kind: "plugin", plugin: PLUGIN_NAME, form: "notice", summary: RECONCILE_SUMMARY },
+    source: { kind: `plugin:${PLUGIN_NAME}`, form: "notice", summary: RECONCILE_SUMMARY },
   });
 }
 

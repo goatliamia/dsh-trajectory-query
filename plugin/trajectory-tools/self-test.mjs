@@ -688,7 +688,7 @@ eq("reconcile: 压缩后收尾点注入一句", base.steers.length, 1);
 const notice = base.steers[0] || {};
 eq("reconcile: 是 user 角色", notice.role, "user");
 eq("reconcile: 正文是默认那句话", notice.content && notice.content[0] && notice.content[0].text, DEFAULT_RECONCILE_SENTENCE);
-eq("reconcile: 声明来源是插件", notice.source && notice.source.plugin, "dsh-trajectory-tools");
+eq("reconcile: 声明来源是插件", notice.source && notice.source.kind, "plugin:dsh-trajectory-tools");
 eq("reconcile: 形态是 notice(人读 summary)", notice.source && notice.source.form, "notice");
 check("reconcile: 带一句给人看的 summary", typeof (notice.source || {}).summary === "string" && notice.source.summary.length > 0);
 check("reconcile: 消息 id 非空", typeof notice.id === "string" && notice.id.length > 0);
@@ -756,9 +756,9 @@ bare.fire("agent/turn-stopping", { agent: { session: RECONCILE_SESSION } });
 eq("reconcile: 没有 steer 的内核不注入", bare.steers.length, 0);
 
 // plugin notice 是"机器说的话",默认检索与目录统计都不该把它当人的事实。
-check("isPluginContext: 认 plugin 来源", isPluginContext({ data: { source: { kind: "plugin", plugin: "x" } } }) === true);
+check("isPluginContext: 认 plugin 来源", isPluginContext({ data: { source: { kind: "plugin:x" } } }) === true);
 check("isPluginContext: 不认人的消息", isPluginContext({ data: { source: { kind: "user" } } }) === false);
-check("isPluginContext: 认 tool/result 里的 message.source", isPluginContext({ data: { message: { source: { kind: "plugin" } } } }) === true);
+check("isPluginContext: 认 tool/result 里的 message.source", isPluginContext({ data: { message: { source: { kind: "plugin:x" } } } }) === true);
 const noticeEvents = [
   { seq: 0, type: "user/message", time: 1, data: reconcileMessage("reconcile-marker", "notice-1") },
   { seq: 1, type: "user/message", time: 2, data: { id: "human-1", role: "user", content: [{ type: "text", text: "reconcile-marker 是人说的" }], source: { kind: "user" } } },
