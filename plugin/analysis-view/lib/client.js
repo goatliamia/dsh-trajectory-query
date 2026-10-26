@@ -59,18 +59,21 @@ window.__ModuleLoader__.load({
 .av-fill.out{background:var(--dsw-alias-brand-primary);opacity:.75}
 .av-rate{font-size:11px;text-align:right;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-rate.warn{color:var(--dsw-alias-state-warn-primary)}
-.av-table{width:100%;border-collapse:collapse;font-size:12px}
-.av-table th{text-align:left;font-weight:400;font-size:11px;color:var(--dsw-alias-label-secondary);padding:0 8px 6px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
-.av-table th.av-num{text-align:right}
-.av-table td{padding:5px 8px 5px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
-.av-table tr:last-child td{border-bottom:0}
+.av-groups{display:flex;flex-direction:column;gap:2px;max-height:320px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
+.av-group{margin-bottom:8px}
+.av-group-head{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+.av-group-name{font-size:12px;min-width:32px}
+.av-group-bar{flex:1;height:8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;min-width:40px}
+.av-group-fill{height:100%;background:var(--dsw-alias-brand-primary);opacity:.55}
+.av-group-count{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.av-tool-row{display:grid;grid-template-columns:112px minmax(0,1fr) 40px 34px 52px;align-items:center;gap:8px;font-size:12px;padding:1px 0 1px 8px}
 .av-num{font-variant-numeric:tabular-nums;text-align:right}
-.av-tool{display:flex;align-items:center;gap:8px}
-.av-tool-name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
-.av-share{flex:1;height:4px;border-radius:2px;background:var(--dsw-alias-bg-layer-2);min-width:24px}
+.av-tool-name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.av-share{flex:1;height:4px;border-radius:2px;background:var(--dsw-alias-bg-layer-2);min-width:24px;display:block}
 .av-share-fill{height:100%;border-radius:2px;background:var(--dsw-alias-brand-primary);opacity:.55}
 .av-bad{color:var(--dsw-alias-state-error-primary)}
 .av-warn{color:var(--dsw-alias-state-warn-primary)}
+.av-incident-list{max-height:360px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
 .av-incident{position:relative;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:10px 12px 10px 14px;margin-bottom:8px;background:var(--dsw-alias-bg-layer-1)}
 .av-incident:last-child{margin-bottom:0}
 .av-bar{position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--dsw-alias-state-idle-primary)}
@@ -387,33 +390,78 @@ window.__ModuleLoader__.load({
       ]);
     }
 
+    // 工具按"它在干什么"归类:一眼能看出这次会话主要在读文件、跑命令,还是查轨迹。
+    const TOOL_GROUPS = [
+      { id: "file", label: "文件", pattern: /^(read|edit|write|glob|grep)$/ },
+      { id: "shell", label: "命令", pattern: /^(pwsh|bash|terminal_.*)$/ },
+      { id: "trace", label: "轨迹", pattern: /^(trajectory_|session_)/ },
+      { id: "web", label: "网络", pattern: /^(web_search|web_fetch)$/ },
+      { id: "agent", label: "代理", pattern: /^(subagent.*|send_message|wait_agent|list_agents|interrupt_agent)$/ },
+      { id: "plugin", label: "插件", pattern: /^(cordis_.*|plugin_manager|mcp_.*)$/ },
+      { id: "flow", label: "流程", pattern: /^(todo_write|create_goal|update_goal|get_goal|schedule_.*|skill|present|read_image|ask_user_question|workflow|ralph)$/ },
+    ];
+    const TOOLS_PER_GROUP = 4;
+
+    function toolGroup(name) {
+      for (const group of TOOL_GROUPS) if (group.pattern.test(name)) return group;
+      return { id: "other", label: "其他" };
+    }
+
     function Tools(props) {
       const tools = (props.tools || []).filter((tool) => tool.calls > 0);
       if (tools.length === 0) return null;
-      const max = tools.reduce((acc, tool) => Math.max(acc, tool.calls), 0);
-      const shown = tools.slice(0, 12);
+      const groups = new Map();
+      let totalCalls = 0;
+      let totalErrors = 0;
+      for (const tool of tools) {
+        const group = toolGroup(tool.name);
+        if (!groups.has(group.id)) groups.set(group.id, { id: group.id, label: group.label, calls: 0, errors: 0, tools: [] });
+        const bucket = groups.get(group.id);
+        bucket.calls += tool.calls;
+        bucket.errors += tool.errors;
+        bucket.tools.push(tool);
+        totalCalls += tool.calls;
+        totalErrors += tool.errors;
+      }
+      const ordered = [...groups.values()].sort((a, b) => b.calls - a.calls);
+      const maxGroup = ordered.reduce((acc, group) => Math.max(acc, group.calls), 0);
+      const rows = [];
+      for (const group of ordered) {
+        const maxTool = group.tools.reduce((acc, tool) => Math.max(acc, tool.calls), 0);
+        rows.push(h("div", { key: "g-" + group.id, className: "av-group" }, [
+          h("div", { key: "h", className: "av-group-head" }, [
+            h("span", { key: "l", className: "av-group-name" }, group.label),
+            h("span", { key: "b", className: "av-group-bar" }, h("span", {
+              className: "av-group-fill",
+              style: { width: (maxGroup === 0 ? 0 : (group.calls / maxGroup) * 100) + "%", display: "block" },
+            })),
+            h("span", { key: "c", className: "av-group-count" }, group.calls + " 次" + (group.errors > 0 ? " · " + group.errors + " 失败" : "")),
+          ]),
+          group.tools.slice(0, TOOLS_PER_GROUP).map((tool) => h("div", {
+            key: tool.name,
+            className: "av-tool-row",
+            title: tool.name + " · " + tool.calls + " 次" + (tool.errors > 0 ? " · " + tool.errors + " 次失败" : "") + (tool.maxMs !== null ? " · 最慢 " + ms(tool.maxMs) : ""),
+          }, [
+            h("span", { key: "n", className: "av-tool-name" }, tool.name),
+            h("span", { key: "b", className: "av-share" }, h("span", {
+              className: "av-share-fill",
+              style: { width: (maxTool === 0 ? 0 : (tool.calls / maxTool) * 100) + "%", display: "block" },
+            })),
+            h("span", { key: "c", className: "av-num" }, String(tool.calls)),
+            h("span", { key: "e", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? "×" + tool.errors : ""),
+            h("span", { key: "m", className: "av-num" }, ms(tool.avgMs)),
+          ])),
+          group.tools.length > TOOLS_PER_GROUP
+            ? h("div", { key: "more", className: "av-hint", style: { paddingLeft: 8 } }, "还有 " + (group.tools.length - TOOLS_PER_GROUP) + " 种")
+            : null,
+        ]));
+      }
       return h("div", { className: "av-section" }, [
         h("div", { key: "h", className: "av-section-head" }, [
           h("h3", { key: "t", className: "av-section-title" }, "工具"),
-          h("span", { key: "n", className: "av-hint" }, tools.length + " 种 · 按调用次数" + (tools.length > shown.length ? ",只列前 " + shown.length : "")),
+          h("span", { key: "n", className: "av-hint" }, tools.length + " 种 · " + totalCalls + " 次" + (totalErrors > 0 ? " · " + totalErrors + " 失败" : "") + " · 按类别"),
         ]),
-        h("table", { key: "t", className: "av-table" }, [
-          h("thead", { key: "h" }, h("tr", {}, [
-            h("th", { key: "n" }, "工具"),
-            h("th", { key: "c", className: "av-num", style: { width: 56 } }, "调用"),
-            h("th", { key: "e", className: "av-num", style: { width: 56 } }, "失败"),
-            h("th", { key: "m", className: "av-num", style: { width: 72 } }, "平均耗时"),
-          ])),
-          h("tbody", { key: "b" }, shown.map((tool) => h("tr", { key: tool.name, title: "最近一次 seq " + tool.lastSeq + (tool.maxMs !== null ? " · 最慢 " + ms(tool.maxMs) : "") }, [
-            h("td", { key: "n" }, h("div", { className: "av-tool" }, [
-              h("span", { className: "av-tool-name" }, tool.name),
-              h("span", { className: "av-share" }, h("span", { className: "av-share-fill", style: { width: (max === 0 ? 0 : (tool.calls / max) * 100) + "%", display: "block" } })),
-            ])),
-            h("td", { key: "c", className: "av-num" }, String(tool.calls)),
-            h("td", { key: "e", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? String(tool.errors) : "—"),
-            h("td", { key: "m", className: "av-num" }, ms(tool.avgMs)),
-          ]))),
-        ]),
+        h("div", { key: "g", className: "av-groups" }, rows),
       ]);
     }
 
@@ -443,7 +491,8 @@ window.__ModuleLoader__.load({
           h("div", { key: "e", className: "av-empty" }, "没有发现可归因的 incident"),
         ]);
       }
-      const cards = incidents.map((incident, position) => {
+      const shown = incidents.slice(0, 20);
+      const cards = shown.map((incident, position) => {
         const tone = incident.severity >= 5 ? "high" : incident.severity >= 3 ? "mid" : "";
         return h("div", { key: incident.type + "-" + position, className: "av-incident" }, [
           h("span", { key: "bar", className: "av-bar" + (tone ? " " + tone : "") }),
@@ -476,7 +525,8 @@ window.__ModuleLoader__.load({
           h("h3", { key: "t", className: "av-section-title" }, "Incident"),
           h("span", { key: "n", className: "av-hint" }, incidents.length + " 条 · 按严重度排序 · seq 可点"),
         ]),
-        h("div", { key: "c" }, cards),
+        h("div", { key: "c", className: "av-incident-list" }, cards),
+        incidents.length > shown.length ? h("div", { key: "more", className: "av-hint", style: { marginTop: 6 } }, "还有 " + (incidents.length - shown.length) + " 条") : null,
       ]);
     }
 

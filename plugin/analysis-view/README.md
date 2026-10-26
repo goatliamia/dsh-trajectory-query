@@ -31,7 +31,8 @@ no separate data source — and renders a **deterministic, evidence-cited** view
 - **Spend** — per turn, two bars: the reused prefix (cache hit) beside what was actually processed
   fresh (miss), with output on its own bar; each turn's hit rate sits on the right and turns amber
   below 90%. The list scrolls and starts at the newest turn.
-- **Tools** — calls, failures and average duration per tool, sorted by call count.
+- **Tools** — grouped by what they do (files / shell / trace / web / agents / plugins / flow), one share
+  bar per group, and each group's tools sorted by call count with failures and average duration.
 - **Incident cards** — only *evidence-backed* incidents. Each card is a causal chain:
   `Cause / Runtime knew / Model received / Harness response / Impact`, with evidence `seq` chips
   that jump to the Trajectory tab.
@@ -87,9 +88,9 @@ node analyzers/shape-law.mjs --mutate   # prove the laws bite: reasonable mistak
 Dynamic plugins are session-scoped and vanish on reload; this one is installed into the web profile.
 
 ```text
-1. pnpm pack                      # -> dsh-analysis-view-0.2.7.tgz
+1. pnpm pack                      # -> dsh-analysis-view-0.2.8.tgz
 2. add to ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.2.7.tgz"
+     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.2.8.tgz"
      dsh.profile.bundles: append "dsh-analysis-view"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. rebuild / restart `dsh web`    # so the new client module enters the bundle
@@ -146,7 +147,8 @@ conversation.view  →  [对话] [轨迹] [分析]
   (`openView("trajectory", callId)`);图例直接写在界面上。
 - **花费**:每轮两条——命中(复用的前缀)与未命中(真正新处理)并排画,输出单独一条;右侧是这一轮的
   命中率,低于 90% 标警示色;列表可滚动,默认停在最新。
-- **工具**:按调用次数排序的调用数、失败数、平均耗时。
+- **工具**:按类别归组(文件 / 命令 / 轨迹 / 网络 / 代理 / 插件 / 流程),每组一条占比条,
+  组内按调用次数排序,带失败标记与平均耗时。
 - **Incident 卡片**:只列**有证据**的 incident,每张是一条因果链
   `Cause / Runtime 知道 / Model 收到 / Harness 反应 / 影响`,并带证据 `seq` 徽章。
 - **开放解读(一次模型调用)**:按钮触发,host 用**当前默认模型**直接发一次 `llm.stream`——system prompt
@@ -193,9 +195,9 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 动态插件是会话级、刷新即失;这个是装进 web profile 的常驻插件。
 
 ```text
-1. pnpm pack                      # 生成 dsh-analysis-view-0.2.7.tgz
+1. pnpm pack                      # 生成 dsh-analysis-view-0.2.8.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.2.7.tgz"
+     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.2.8.tgz"
      dsh.profile.bundles 追加 "dsh-analysis-view"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重建/重启 `dsh web`,让新的 client 模块进入前端包
