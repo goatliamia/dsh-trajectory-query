@@ -1,0 +1,7 @@
+# dsh-conversation-search bundle layer.
+#
+# 往 web profile 的 bundle 名册里插一行。行为都在 `dsh.client` 的浏览器入口:
+# host 半边只提供一个只读检索路由。
+- insert:
+    - id: dsh-conversation-search
+      name: dsh-conversation-search

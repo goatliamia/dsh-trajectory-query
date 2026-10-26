@@ -79,6 +79,8 @@ read(session="session-e0636aa9-…", seq=1248)
 
 **3. 两份 Skill** —— `trajectory-query`(随查询插件注册为 runtime skill):先查再答、逐字引用、引用写 `(session, seq@logId)`、空结果就是可验证的"没有";`analysis.md`:把研究问题变成可核验分析(证据纪律、维度发现、分析器契约),规定入口,不规定结论。
 
+**4. 右侧栏的对话搜索** —— 与「工作区文件」「终端」同一排的「对话搜索」tab:在当前会话的日志里做字面检索(大小写不敏感),结果按轮次列出并高亮命中词,点一条滚到「对话」里对应的那一轮。检索走只读路由 `GET /conversation-search/search?session=<id>&q=<词>`,不新增工具、不改对话内容;跳转复用对话自己的行锚点(先按 `seq` 加载到那一页,再滚到视口中间)。
+
 ## 怎么用
 
 ```text
@@ -102,20 +104,22 @@ node analyzers/self-test.mjs
 
 - `plugin/trajectory-tools/` —— host 插件:三个只读入口(search/read/graph)+ 自带 runtime skill
 - `plugin/analysis-view/` —— 常驻「分析」标签(客户端 + host 路由)
+- `plugin/conversation-search/` —— 右侧栏「对话搜索」tab(客户端 + host 检索路由)
 - `analyzers/` —— 确定性分析器、digest 运行器、自检
 - `skill/` —— `trajectory-query.md`(查询纪律)、`analysis.md`(分析方法)
 - `docs/` —— 设计说明与实验协议
 - `experiments/` —— 语料、探针、manifest、生成的报告
 
-## 安装(两个常驻插件)
+## 安装(三个常驻插件)
 
 ```text
 pnpm pack                                  # 在各自的 plugin 目录里执行
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: 增加
-#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.4.tgz"
-#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.2.3.tgz"
-#   dsh.profile.bundles: 追加 "dsh-trajectory-tools"、"dsh-analysis-view"
+#     "dsh-trajectory-tools":   "file:<绝对路径>/dsh-trajectory-tools-0.3.4.tgz"
+#     "dsh-analysis-view":      "file:<绝对路径>/dsh-analysis-view-0.2.3.tgz"
+#     "dsh-conversation-search":"file:<绝对路径>/dsh-conversation-search-0.1.2.tgz"
+#   dsh.profile.bundles: 追加 "dsh-trajectory-tools"、"dsh-analysis-view"、"dsh-conversation-search"
 pnpm install            # 在 ~/.dsh/profiles/web
 # 重启 dsh web(host 插件不会可靠热更新)
 ```
@@ -129,6 +133,7 @@ node analyzers/host-self-test.mjs   # host 侧 incident 判定
 node analyzers/shape-law.mjs        # incident 形状:认领 / 漂移 / 差分 / 证人
 node analyzers/shape-law.mjs --mutate   # 13 种合理错法,逃走必须为 0
 node plugin/analysis-view/self-test.mjs # 面板渲染冒烟(React 垫片,不开浏览器)
+node plugin/conversation-search/self-test.mjs # 对话搜索:大小写 / 轮次 / matchAt / 上限
 ```
 
 装好后重启 `dsh web`,确认:模型工具表里出现 `trajectory_search` / `trajectory_read` / `trajectory_graph` 三个入口(不再是六个)、skill 目录里出现 `trajectory-query`、`search(view="events")` 的返回里带 `matchAt` / `filtered` / `normalized`、`graph` 的关系链是 `{count, head, tail}` 形态、`/analysis-view/digest` 对已结算会话返回 200。压缩后对账要等**真的发生一次压缩**才能看到(想马上看就在会话里 `/compact`,再随便回一句话):那一轮收尾时多一句模型回复,host 日志里同时多一行 `compaction reconcile`。

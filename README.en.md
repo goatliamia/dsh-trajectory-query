@@ -125,6 +125,13 @@ verifiable absence; `analysis.md`: how to turn a research question into a verifi
 (evidence discipline, dimension discovery, analyzer contract) — it defines entry points, not
 conclusions.
 
+**4. Conversation search in the right sidebar** — a tab next to Workspace files and Terminal:
+literal, case-insensitive search over the current session's log, results grouped by turn with the
+match highlighted; clicking one scrolls the Conversation to that turn. Search is a read-only route
+(`GET /conversation-search/search?session=<id>&q=<term>`); it registers no tools and writes nothing.
+The jump reuses the Conversation's own row anchors: load the page by `seq`, then scroll the
+`data-chat-turn` row to the middle of the viewport.
+
 **One declaration for the shape** — the ten fields of the `incidents` fact are declared in
 `plugin/analysis-view/lib/incident-shape.js` (it lives in the package, because the runtime cannot import
 repo scripts, so `analyzers/` imports it *back*). Records can only be built through `incident()`, which
