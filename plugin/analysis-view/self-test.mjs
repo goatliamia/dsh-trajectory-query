@@ -215,7 +215,7 @@ check("render: 花费把命中与未命中分开画", classes.filter((name) => n
 check("render: 低命中率那一轮标 warn", classes.filter((name) => name === "av-rate warn").length === 1, classes.filter((name) => name.startsWith("av-rate")));
 check("render: 花费总览用未命中/命中", text.includes("未命中") && text.includes("命中率") && text.includes("缓存承担了"), text.slice(0, 260));
 check("render: 花费行可点跳对话", nodes.some((node) => node.props && node.props.className === "av-cost-row" && node.props.role === "button" && typeof node.props.onClick === "function"), classes.filter((name) => name === "av-cost-row"));
-check("render: 价目按峰/谷排成小表并有总价", text.includes("高峰") && text.includes("空闲") && text.includes("未命中") && text.includes("合计 ≈ ¥0.012"), text.slice(0, 400));
+check("render: 合计进入 KPI 行,价目按峰/谷排成表", text.includes("≈ ¥0.012") && text.includes("合计") && text.includes("价目 ¥/M") && text.includes("高峰") && text.includes("空闲") && classes.filter((name) => name === "av-cost-cell").length === 5, classes.filter((name) => name === "av-cost-cell"));
 check("render: 工具画成环形图并按 host 类别分组", nodes.some((node) => node.type === "svg") && classes.filter((name) => name === "av-leg").length >= 2 && text.includes("文件") && text.includes("执行"), classes.filter((name) => name === "av-leg"));
 check("render: 工具默认就是三张(类别 / 工具 / 轮次)", classes.filter((name) => name === "av-flow-card").length === 3 && nodes.filter((node) => node.type === "svg").length === 3 && text.includes("按类别") && text.includes("用在哪些轮"), classes.filter((name) => name.startsWith("av-flow")));
 check("render: incident 卡片与因果链", text.includes("调用失败") && text.includes("Runtime 知道") && text.includes("影响"));

@@ -46,14 +46,13 @@ window.__ModuleLoader__.load({
 .av-legend{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
 .av-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dsw-alias-label-secondary)}
 .av-swatch{width:8px;height:8px;border-radius:2px;flex:none}
-.av-cost-head{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-start}
+.av-cost-head{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:12px;margin-bottom:10px}
+.av-cost-cell{min-width:0}
 .av-cost-num{font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}
 .av-cost-label{font-size:11px;color:var(--dsw-alias-label-secondary)}
-.av-price{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);line-height:1.5}
-.av-price-table{display:grid;grid-template-columns:auto 52px 52px;gap:1px 10px;justify-content:end;font-variant-numeric:tabular-nums}
-.av-price-key{text-align:left}
-.av-price-unit{text-align:left;color:var(--dsw-alias-label-secondary)}
-.av-price-total{font-size:15px;font-weight:500;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums;text-align:right;margin-top:2px}
+.av-rates{display:grid;grid-template-columns:auto 72px 72px 72px;gap:2px 14px;justify-content:start;font-size:11px;color:var(--dsw-alias-label-secondary);margin-bottom:10px;font-variant-numeric:tabular-nums}
+.av-rates-label{text-align:left}
+.av-rates-head{text-align:right;color:var(--dsw-alias-label-secondary)}
 .av-cost-rows{max-height:240px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
 .av-cost-row{display:grid;grid-template-columns:34px minmax(0,1fr) minmax(52px,.42fr) 44px;align-items:center;gap:8px;margin-bottom:4px;border-radius:4px;cursor:pointer}
 .av-cost-row:hover{background:var(--dsw-alias-bg-layer-2)}
@@ -478,27 +477,28 @@ window.__ModuleLoader__.load({
           h("span", { key: "n", className: "av-hint" }, cost.requestCount + " 次请求 · " + turns.length + " 轮" + (cost.unknownRequests > 0 ? " · " + cost.unknownRequests + " 次未上报" : "")),
         ]),
         h("div", { key: "sum", className: "av-cost-head" }, [
-          h("div", { key: "in" }, [h("div", { className: "av-cost-num av-bad" }, fmt(cost.input)), h("div", { className: "av-cost-label av-bad" }, "未命中")]),
-          h("div", { key: "cr" }, [h("div", { className: "av-cost-num" }, fmt(cost.cacheRead)), h("div", { className: "av-cost-label" }, "命中")]),
-          h("div", { key: "out" }, [h("div", { className: "av-cost-num" }, fmt(cost.output)), h("div", { className: "av-cost-label" }, "输出")]),
-          h("div", { key: "eff" }, [h("div", { className: "av-cost-num" }, pct(cost.cacheEfficiency)), h("div", { className: "av-cost-label" }, "命中率")]),
-          cost.pricing === null || cost.pricing === undefined || cost.pricing.priced === 0 ? null : h("div", { key: "price", className: "av-price" }, [
-            cost.pricing.rates === null ? null : h("div", { key: "t", className: "av-price-table" }, [
-              h("span", { key: "h0", className: "av-price-unit" }, "¥/M"),
-              h("span", { key: "h1", className: "av-num" }, "高峰"),
-              h("span", { key: "h2", className: "av-num" }, "空闲"),
-              h("span", { key: "m0", className: "av-price-key" }, "未命中"),
-              h("span", { key: "m1", className: "av-num" }, money(cost.pricing.rates.cacheMiss[1])),
-              h("span", { key: "m2", className: "av-num" }, money(cost.pricing.rates.cacheMiss[0])),
-              h("span", { key: "c0", className: "av-price-key" }, "命中"),
-              h("span", { key: "c1", className: "av-num" }, money(cost.pricing.rates.cacheHit[1])),
-              h("span", { key: "c2", className: "av-num" }, money(cost.pricing.rates.cacheHit[0])),
-              h("span", { key: "o0", className: "av-price-key" }, "输出"),
-              h("span", { key: "o1", className: "av-num" }, money(cost.pricing.rates.output[1])),
-              h("span", { key: "o2", className: "av-num" }, money(cost.pricing.rates.output[0])),
-            ]),
-            h("div", { key: "s", className: "av-price-total" }, "合计 ≈ ¥" + money(cost.pricing.total)),
+          h("div", { key: "in", className: "av-cost-cell" }, [h("div", { className: "av-cost-num av-bad" }, fmt(cost.input)), h("div", { className: "av-cost-label av-bad" }, "未命中")]),
+          h("div", { key: "cr", className: "av-cost-cell" }, [h("div", { className: "av-cost-num" }, fmt(cost.cacheRead)), h("div", { className: "av-cost-label" }, "命中")]),
+          h("div", { key: "out", className: "av-cost-cell" }, [h("div", { className: "av-cost-num" }, fmt(cost.output)), h("div", { className: "av-cost-label" }, "输出")]),
+          h("div", { key: "eff", className: "av-cost-cell" }, [h("div", { className: "av-cost-num" }, pct(cost.cacheEfficiency)), h("div", { className: "av-cost-label" }, "命中率")]),
+          cost.pricing === null || cost.pricing === undefined || cost.pricing.priced === 0 ? null : h("div", { key: "total", className: "av-cost-cell" }, [
+            h("div", { className: "av-cost-num" }, "≈ ¥" + money(cost.pricing.total)),
+            h("div", { className: "av-cost-label" }, "合计"),
           ]),
+        ]),
+        cost.pricing === null || cost.pricing === undefined || cost.pricing.rates === null ? null : h("div", { key: "rates", className: "av-rates" }, [
+          h("span", { key: "h0", className: "av-rates-label" }, "价目 ¥/M"),
+          h("span", { key: "h1", className: "av-rates-head av-num" }, "未命中"),
+          h("span", { key: "h2", className: "av-rates-head av-num" }, "命中"),
+          h("span", { key: "h3", className: "av-rates-head av-num" }, "输出"),
+          h("span", { key: "p0", className: "av-rates-label" }, "高峰"),
+          h("span", { key: "p1", className: "av-num" }, money(cost.pricing.rates.cacheMiss[1])),
+          h("span", { key: "p2", className: "av-num" }, money(cost.pricing.rates.cacheHit[1])),
+          h("span", { key: "p3", className: "av-num" }, money(cost.pricing.rates.output[1])),
+          h("span", { key: "o0", className: "av-rates-label" }, "空闲"),
+          h("span", { key: "o1", className: "av-num" }, money(cost.pricing.rates.cacheMiss[0])),
+          h("span", { key: "o2", className: "av-num" }, money(cost.pricing.rates.cacheHit[0])),
+          h("span", { key: "o3", className: "av-num" }, money(cost.pricing.rates.output[0])),
         ]),
         cost.cacheEfficiency === null ? null : h("div", { key: "note", className: "av-hint", style: { marginBottom: 8 } },
           "缓存承担了 " + pct(cost.cacheEfficiency) + " 的输入处理,实际新处理 " + fmt(cost.input)),
