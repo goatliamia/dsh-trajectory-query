@@ -120,18 +120,23 @@ window.__ModuleLoader__.load({
     };
 
     /* ---------------- 数据 ---------------- */
-    function useDigest(sessionId) {
+    // version 是轨迹投影的节点数:会话在长,它就变。变了就重取一次(带 700ms 静默期),
+    // 手点「刷新」则跳过后端 2 秒缓存并立刻取。
+    function useDigest(sessionId, version) {
       const [state, setState] = React.useState({ status: sessionId ? "loading" : "idle", data: null, error: null, at: 0 });
       const [nonce, setNonce] = React.useState(0);
+      const fetchedNonce = React.useRef(-1);
       React.useEffect(() => {
         if (!sessionId) {
           setState({ status: "idle", data: null, error: null, at: 0 });
           return void 0;
         }
         let alive = true;
+        const manual = fetchedNonce.current !== nonce;
+        fetchedNonce.current = nonce;
         const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
         const timer = setTimeout(() => {
-          const url = "/analysis-view/digest?session=" + encodeURIComponent(sessionId) + (nonce > 0 ? "&fresh=1" : "");
+          const url = "/analysis-view/digest?session=" + encodeURIComponent(sessionId) + (manual ? "&fresh=1" : "");
           fetch(url, ctl ? { signal: ctl.signal, cache: "no-store" } : { cache: "no-store" })
             .then((r) => {
               if (!r.ok) throw new Error("HTTP " + r.status);
@@ -148,13 +153,13 @@ window.__ModuleLoader__.load({
               const message = String((error && error.message) || error);
               setState((prev) => ({ status: prev.data ? "stale" : "error", data: prev.data, error: message, at: prev.at }));
             });
-        }, nonce > 0 ? 0 : 120);
+        }, manual ? 0 : 700);
         return () => {
           alive = false;
           clearTimeout(timer);
           if (ctl) ctl.abort();
         };
-      }, [sessionId, nonce]);
+      }, [sessionId, version, nonce]);
       const refresh = React.useCallback(() => setNonce((value) => value + 1), []);
       return { ...state, refresh };
     }
@@ -427,10 +432,10 @@ window.__ModuleLoader__.load({
       React.useEffect(() => ensureStyle(), []);
       const sessionId = props && props.sessionId;
       const openView = props && props.openView;
-      const digest = useDigest(sessionId);
       const useTrajectory = props && props.useTrajectory;
       const snapshot = useTrajectory ? useTrajectory((state) => state) : null;
       const { index, version } = React.useMemo(() => buildCallIndex(snapshot), [snapshot]);
+      const digest = useDigest(sessionId, version);
       const data = digest.data;
       const incidents = data && Array.isArray(data.incidents) ? data.incidents : [];
       const status = digest.status;
