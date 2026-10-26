@@ -227,7 +227,7 @@ export function computeWorkPath(events, options = {}) {
   const bucket = (name) => {
     let tool = tools.get(name);
     if (tool === undefined) {
-      tool = { name, calls: 0, errors: 0, totalMs: 0, timed: 0, maxMs: 0, lastSeq: 0 };
+      tool = { name, calls: 0, errors: 0, totalMs: 0, timed: 0, maxMs: 0, lastSeq: 0, turnCounts: new Map() };
       tools.set(name, tool);
     }
     return tool;
@@ -278,6 +278,7 @@ export function computeWorkPath(events, options = {}) {
         current.toolCalls += 1;
         // 这一轮的第一条调用:任何一轮都能在轨迹里定位,不用等失败。
         if (current.firstCallId === null && d.callId !== undefined) current.firstCallId = String(d.callId);
+        tool.turnCounts.set(current.turn, (tool.turnCounts.get(current.turn) || 0) + 1);
       }
       continue;
     }
@@ -341,6 +342,11 @@ export function computeWorkPath(events, options = {}) {
       avgMs: tool.timed === 0 ? null : Math.round(tool.totalMs / tool.timed),
       maxMs: tool.timed === 0 ? null : Math.round(tool.maxMs),
       totalMs: tool.timed === 0 ? null : Math.round(tool.totalMs),
+      // 这个工具集中在哪几轮用:第三张环要它。
+      byTurn: [...tool.turnCounts.entries()]
+        .map(([turn, calls]) => ({ turn, calls }))
+        .sort((a, b) => (b.calls - a.calls) || (a.turn - b.turn))
+        .slice(0, 8),
       lastSeq: tool.lastSeq,
     }))
     .sort((a, b) => (b.calls - a.calls) || a.name.localeCompare(b.name));

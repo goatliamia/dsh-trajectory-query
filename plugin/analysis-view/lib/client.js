@@ -71,23 +71,23 @@ window.__ModuleLoader__.load({
 .av-leg-name{font-size:12px}
 .av-leg-num{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-leg-err{font-size:11px;color:var(--dsw-alias-state-error-primary)}
-.av-tool-flow{display:flex;gap:14px;align-items:stretch;flex-wrap:wrap}
-.av-flow-card{flex:0 0 300px;min-width:0;display:flex;flex-direction:column;gap:8px}
-.av-flow-card-grow{flex:1 1 200px}
-.av-flow-head{display:flex;align-items:baseline;gap:8px;min-width:0}
+.av-tool-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
+.av-flow-card{min-width:0;display:flex;flex-direction:column;gap:8px}
+.av-flow-head{display:flex;align-items:baseline;gap:8px;min-width:0;height:18px}
 .av-flow-title{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .av-flow-meta{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;white-space:nowrap}
-.av-flow-body{display:flex;gap:12px;align-items:center;min-width:0}
-.av-donut-sm{width:84px;height:84px}
+.av-flow-body{display:flex;gap:12px;align-items:flex-start;min-width:0}
+.av-donut-sm{width:84px;height:84px;flex:none}
 .av-donut-sm .av-donut-num{font-size:13px}
-.av-tool-rows{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;max-height:132px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain}
+.av-tool-rows{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;max-height:84px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain}
 .av-tool-row{display:grid;grid-template-columns:minmax(0,1fr) 34px 28px 44px;gap:6px;align-items:center;font-size:12px;padding:2px 4px;border:0;background:transparent;border-radius:4px;color:inherit;font:inherit;cursor:pointer;text-align:left}
 .av-tool-row:hover{background:var(--dsw-alias-bg-layer-2)}
 .av-tool-row.on{background:var(--dsw-alias-bg-layer-2);outline:1px solid var(--dsw-alias-border-l1);outline-offset:-1px}
-.av-stats{display:flex;flex-direction:column;gap:2px}
+.av-stats{display:flex;flex-direction:column;gap:2px;min-width:0}
 .av-stat{display:flex;justify-content:space-between;gap:12px;font-size:12px}
 .av-stat > span:first-child{color:var(--dsw-alias-label-secondary)}
-@media (max-width:760px){.av-flow-card{flex:1 1 260px}}
+.av-turns{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:4px;font-variant-numeric:tabular-nums}
+@media (max-width:760px){.av-tool-flow{grid-template-columns:minmax(0,1fr)}}
 .av-num{font-variant-numeric:tabular-nums;text-align:right}
 .av-tool-name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .av-bad{color:var(--dsw-alias-state-error-primary)}
@@ -491,11 +491,11 @@ window.__ModuleLoader__.load({
     const CATEGORY_COLORS = {
       file: "var(--av-accent)",
       run: "var(--dsw-static-amber-400)",
-      web: "var(--dsw-static-green-500)",
-      context: "var(--dsw-static-deepseek-450)",
-      coop: "var(--dsw-static-neutral-400)",
-      plugin: "var(--dsw-static-neutral-500)",
-      other: "var(--dsw-static-blue-300)",
+      web: "var(--dsw-static-deepseek-450)",
+      context: "var(--dsw-static-blue-300)",
+      coop: "var(--dsw-static-green-500)",
+      plugin: "var(--dsw-static-neutral-400)",
+      other: "var(--dsw-static-neutral-300)",
     };
     const categoryOf = (tool) => (tool.category !== undefined && CATEGORY_LABELS[tool.category] !== undefined ? tool.category : "other");
 
@@ -544,13 +544,18 @@ window.__ModuleLoader__.load({
           return arc;
         });
       };
-      const category = pickedCategory === null ? null : buckets.get(pickedCategory) || null;
+      // 三张图默认都在:类别 → 该类工具 → 一个工具的分布。没选就给默认(最大类别、它的第一名工具)。
+      const defaultCategory = slices.length > 0 ? slices[0] : null;
+      const category = pickedCategory === null ? defaultCategory : buckets.get(pickedCategory) || defaultCategory;
       const categoryTools = category === null ? [] : category.tools.slice().sort((a, b) => b.calls - a.calls);
-      const tool = category === null || pickedTool === null ? null : categoryTools.find((item) => item.name === pickedTool) || null;
+      const defaultTool = categoryTools.length > 0 ? categoryTools[0] : null;
+      const tool = category === null || pickedTool === null ? defaultTool : categoryTools.find((item) => item.name === pickedTool) || defaultTool;
+      const toolTurns = tool === null ? [] : (tool.byTurn || []).map((item) => ({ id: "t" + item.turn, label: "T" + item.turn, calls: item.calls }));
+      const activeCategory = pickedCategory === null ? null : pickedCategory;
       const legend = slices.map((slice) => h("button", {
         key: slice.id,
         className: "av-leg",
-        "aria-pressed": category !== null && category.id === slice.id,
+        "aria-pressed": activeCategory === slice.id,
         onClick: () => {
           setPickedCategory((current) => (current === slice.id ? null : slice.id));
           setPickedTool(null);
@@ -561,73 +566,76 @@ window.__ModuleLoader__.load({
         h("span", { key: "c", className: "av-leg-num" }, slice.calls + " 次 · " + Math.round((slice.calls / totalCalls) * 100) + "%"),
         slice.errors > 0 ? h("span", { key: "e", className: "av-leg-err" }, "×" + slice.errors) : null,
       ]));
-      const cards = [
-        h("div", { key: "category", className: "av-flow-card" }, [
-          h("div", { key: "h", className: "av-flow-head" }, [
-            h("span", { key: "t", className: "av-flow-title" }, "按类别"),
-            h("span", { key: "m", className: "av-flow-meta" }, slices.length + " 类"),
-          ]),
-          h("div", { key: "b", className: "av-flow-body" }, [
-            h("div", { key: "d", className: "av-donut av-donut-sm" }, [
-              h("svg", { key: "s", viewBox: "0 0 100 100", width: "84", height: "84", role: "img", "aria-label": "各类别调用占比" }, ring(slices, totalCalls, (slice) => slice.calls, 40, 13, 1, (slice) => slice.color)),
-              h("div", { key: "c", className: "av-donut-center" }, [
-                h("span", { key: "n", className: "av-donut-num" }, String(totalCalls)),
-                h("span", { key: "l" }, "次调用"),
-              ]),
-            ]),
-            h("div", { key: "l", className: "av-legend-col" }, legend),
-          ]),
-        ]),
-      ];
-      if (category !== null) {
-        cards.push(h("div", { key: "tools", className: "av-flow-card" }, [
-          h("div", { key: "h", className: "av-flow-head" }, [
-            h("span", { key: "t", className: "av-flow-title" }, category.label + "的工具"),
-            h("span", { key: "m", className: "av-flow-meta" }, category.calls + " 次 · " + ms(category.ms) + (category.errors > 0 ? " · " + category.errors + " 失败" : "")),
-          ]),
-          h("div", { key: "b", className: "av-flow-body" }, [
-            h("div", { key: "d", className: "av-donut av-donut-sm" }, [
-              h("svg", { key: "s", viewBox: "0 0 100 100", width: "84", height: "84", role: "img", "aria-label": category.label + "内各工具占比" }, ring(categoryTools, category.calls, (item) => item.calls, 40, 13, 2, () => category.color)),
-              h("div", { key: "c", className: "av-donut-center" }, [
-                h("span", { key: "n", className: "av-donut-num" }, String(categoryTools.length)),
-                h("span", { key: "l" }, "种"),
-              ]),
-            ]),
-            h("div", { key: "l", className: "av-tool-rows" }, categoryTools.map((item) => h("button", {
-              key: item.name,
-              className: "av-tool-row" + (tool !== null && tool.name === item.name ? " on" : ""),
-              onClick: () => setPickedTool((current) => (current === item.name ? null : item.name)),
-              title: item.name + " · 平均 " + ms(item.avgMs) + " · 最慢 " + ms(item.maxMs),
-            }, [
-              h("span", { key: "n", className: "av-tool-name" }, item.name),
-              h("span", { key: "c", className: "av-num" }, String(item.calls)),
-              item.errors > 0 ? h("span", { key: "e", className: "av-num av-bad" }, "×" + item.errors) : h("span", { key: "e" }),
-              h("span", { key: "a", className: "av-num" }, ms(item.avgMs)),
-            ]))),
-          ]),
-        ]));
-      }
-      if (tool !== null) {
-        cards.push(h("div", { key: "tool", className: "av-flow-card av-flow-card-grow" }, [
-          h("div", { key: "h", className: "av-flow-head" }, [
-            h("span", { key: "t", className: "av-flow-title" }, tool.name),
-            h("span", { key: "m", className: "av-flow-meta" }, "占本类 " + Math.round((tool.calls / Math.max(1, category.calls)) * 100) + "%"),
-          ]),
-          h("div", { key: "s", className: "av-stats" }, [
-            h("div", { key: "c", className: "av-stat" }, [h("span", { key: "k" }, "调用"), h("span", { key: "v", className: "av-num" }, String(tool.calls))]),
-            h("div", { key: "e", className: "av-stat" }, [h("span", { key: "k" }, "失败"), h("span", { key: "v", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? String(tool.errors) : "—")]),
-            h("div", { key: "a", className: "av-stat" }, [h("span", { key: "k" }, "平均"), h("span", { key: "v", className: "av-num" }, ms(tool.avgMs))]),
-            h("div", { key: "x", className: "av-stat" }, [h("span", { key: "k" }, "最慢"), h("span", { key: "v", className: "av-num" }, ms(tool.maxMs))]),
-            h("div", { key: "t", className: "av-stat" }, [h("span", { key: "k" }, "合计"), h("span", { key: "v", className: "av-num" }, ms(tool.totalMs))]),
-          ]),
-        ]));
-      }
       return h("div", { className: "av-section" }, [
         h("div", { key: "h", className: "av-section-head" }, [
           h("h3", { key: "t", className: "av-section-title" }, "工具"),
           h("span", { key: "n", className: "av-hint" }, tools.length + " 种 · " + totalCalls + " 次 · " + ms(totalMs) + (totalErrors > 0 ? " · " + totalErrors + " 失败" : "")),
         ]),
-        h("div", { key: "flow", className: "av-tool-flow" }, cards),
+        h("div", { key: "flow", className: "av-tool-flow" }, [
+          h("div", { key: "category", className: "av-flow-card" }, [
+            h("div", { key: "h", className: "av-flow-head" }, [
+              h("span", { key: "t", className: "av-flow-title" }, "按类别"),
+              h("span", { key: "m", className: "av-flow-meta" }, slices.length + " 类"),
+            ]),
+            h("div", { key: "b", className: "av-flow-body" }, [
+              h("div", { key: "d", className: "av-donut av-donut-sm" }, [
+                h("svg", { key: "s", viewBox: "0 0 100 100", width: "84", height: "84", role: "img", "aria-label": "各类别调用占比" }, ring(slices, totalCalls, (slice) => slice.calls, 40, 13, 1, (slice) => slice.color)),
+                h("div", { key: "c", className: "av-donut-center" }, [
+                  h("span", { key: "n", className: "av-donut-num" }, String(totalCalls)),
+                  h("span", { key: "l" }, "次调用"),
+                ]),
+              ]),
+              h("div", { key: "l", className: "av-legend-col" }, legend),
+            ]),
+          ]),
+          category === null ? null : h("div", { key: "tools", className: "av-flow-card" }, [
+            h("div", { key: "h", className: "av-flow-head" }, [
+              h("span", { key: "t", className: "av-flow-title" }, category.label + "的工具"),
+              h("span", { key: "m", className: "av-flow-meta" }, category.calls + " 次 · " + ms(category.ms) + (category.errors > 0 ? " · " + category.errors + " 失败" : "")),
+            ]),
+            h("div", { key: "b", className: "av-flow-body" }, [
+              h("div", { key: "d", className: "av-donut av-donut-sm" }, [
+                h("svg", { key: "s", viewBox: "0 0 100 100", width: "84", height: "84", role: "img", "aria-label": category.label + "内各工具占比" }, ring(categoryTools, category.calls, (item) => item.calls, 40, 13, 2, () => category.color)),
+                h("div", { key: "c", className: "av-donut-center" }, [
+                  h("span", { key: "n", className: "av-donut-num" }, String(categoryTools.length)),
+                  h("span", { key: "l" }, "种"),
+                ]),
+              ]),
+              h("div", { key: "l", className: "av-tool-rows" }, categoryTools.map((item) => h("button", {
+                key: item.name,
+                className: "av-tool-row" + (tool !== null && tool.name === item.name ? " on" : ""),
+                onClick: () => setPickedTool((current) => (current === item.name ? null : item.name)),
+                title: item.name + " · 平均 " + ms(item.avgMs) + " · 最慢 " + ms(item.maxMs),
+              }, [
+                h("span", { key: "n", className: "av-tool-name" }, item.name),
+                h("span", { key: "c", className: "av-num" }, String(item.calls)),
+                item.errors > 0 ? h("span", { key: "e", className: "av-num av-bad" }, "×" + item.errors) : h("span", { key: "e" }),
+                h("span", { key: "a", className: "av-num" }, ms(item.avgMs)),
+              ]))),
+            ]),
+          ]),
+          tool === null ? null : h("div", { key: "tool", className: "av-flow-card" }, [
+            h("div", { key: "h", className: "av-flow-head" }, [
+              h("span", { key: "t", className: "av-flow-title" }, tool.name + " 用在哪些轮"),
+              h("span", { key: "m", className: "av-flow-meta" }, tool.calls + " 次"),
+            ]),
+            h("div", { key: "b", className: "av-flow-body" }, [
+              h("div", { key: "d", className: "av-donut av-donut-sm" }, [
+                h("svg", { key: "s", viewBox: "0 0 100 100", width: "84", height: "84", role: "img", "aria-label": tool.name + " 在各轮的调用占比" }, ring(toolTurns, tool.calls, (item) => item.calls, 40, 13, 1.5, () => category.color)),
+                h("div", { key: "c", className: "av-donut-center" }, [
+                  h("span", { key: "n", className: "av-donut-num" }, String(tool.calls)),
+                  h("span", { key: "l" }, "次"),
+                ]),
+              ]),
+              h("div", { key: "l", className: "av-stats" }, [
+                h("div", { key: "e", className: "av-stat" }, [h("span", { key: "k" }, "失败"), h("span", { key: "v", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? String(tool.errors) : "—")]),
+                h("div", { key: "a", className: "av-stat" }, [h("span", { key: "k" }, "平均"), h("span", { key: "v", className: "av-num" }, ms(tool.avgMs))]),
+                h("div", { key: "x", className: "av-stat" }, [h("span", { key: "k" }, "最慢"), h("span", { key: "v", className: "av-num" }, ms(tool.maxMs))]),
+                h("div", { key: "t", className: "av-turns" }, toolTurns.slice(0, 4).map((item) => item.label + " " + item.calls).join(" · ")),
+              ]),
+            ]),
+          ]),
+        ]),
       ]);
     }
 

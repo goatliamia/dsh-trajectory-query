@@ -182,8 +182,8 @@ const digest = {
     { turn: 2, startSeq: 41, endSeq: 99, startTime: 10001, endTime: 15000, durationMs: 4999, endReason: "end-turn", toolCalls: 2, errors: 1, requests: 1, input: 40, cacheRead: 300, output: 20, firstErrorSeq: 70, firstErrorCallId: "call-err", firstCallId: "call-2" },
   ],
   toolStats: [
-    { name: "read", category: "file", calls: 3, errors: 0, avgMs: 120, maxMs: 300, lastSeq: 30 },
-    { name: "pwsh", category: "run", calls: 2, errors: 1, avgMs: 900, maxMs: 1200, lastSeq: 70 },
+    { name: "read", category: "file", calls: 3, errors: 0, avgMs: 120, maxMs: 300, totalMs: 360, byTurn: [{ turn: 1, calls: 2 }, { turn: 2, calls: 1 }], lastSeq: 30 },
+    { name: "pwsh", category: "run", calls: 2, errors: 1, avgMs: 900, maxMs: 1200, totalMs: 1800, byTurn: [{ turn: 2, calls: 2 }], lastSeq: 70 },
   ],
   eventCount: 100,
 };
@@ -206,7 +206,7 @@ check("render: 低命中率那一轮标 warn", classes.filter((name) => name ===
 check("render: 花费总览用未命中/命中", text.includes("未命中") && text.includes("命中率") && text.includes("缓存承担了"), text.slice(0, 260));
 check("render: 花费行可点跳对话", nodes.some((node) => node.props && node.props.className === "av-cost-row" && node.props.role === "button" && typeof node.props.onClick === "function"), classes.filter((name) => name === "av-cost-row"));
 check("render: 工具画成环形图并按 host 类别分组", nodes.some((node) => node.type === "svg") && classes.filter((name) => name === "av-leg").length === 2 && text.includes("文件") && text.includes("执行"), classes.filter((name) => name === "av-leg"));
-check("render: 工具默认只展开第一层(按类别)", classes.filter((name) => name === "av-flow-card").length === 1 && text.includes("按类别") && classes.filter((name) => name === "av-leg").length === 2, classes.filter((name) => name.startsWith("av-flow")));
+check("render: 工具默认就是三张(类别 / 工具 / 轮次)", classes.filter((name) => name === "av-flow-card").length === 3 && nodes.filter((node) => node.type === "svg").length === 3 && text.includes("按类别") && text.includes("用在哪些轮"), classes.filter((name) => name.startsWith("av-flow")));
 check("render: incident 卡片与因果链", text.includes("调用失败") && text.includes("Runtime 知道") && text.includes("影响"));
 check("render: 证据 chip 与解读入口", classes.filter((name) => name === "av-chip").length === 1 && text.includes("生成解读"));
 check("render: 页脚带日志身份", text.includes("日志 abcdef123456"), text.slice(-160));

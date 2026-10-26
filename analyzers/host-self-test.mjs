@@ -61,6 +61,10 @@ check('work: 首错带 callId(面板跳转不靠投影)', work.turns[1].firstErr
 check('work: 每轮带第一条调用的 callId', work.turns[0].firstCallId === 'c1' && work.turns[1].firstCallId === 'c2', work.turns.map((t) => t.firstCallId));
 check('work: usage 按 turn 汇总', work.turns[0].input === 100 && work.turns[0].cacheRead === 400 && work.turns[0].output === 50, work.turns[0]);
 check('work: bash 记一次失败', (work.tools.find((t) => t.name === 'bash') || {}).errors === 1, work.tools);
+check('work: 工具带按轮分布', (() => {
+  const tool = work.tools.find((t) => t.name === 'read') || {};
+  return Array.isArray(tool.byTurn) && tool.byTurn.length === 1 && tool.byTurn[0].turn === 1 && tool.byTurn[0].calls === 1;
+})(), (work.tools.find((t) => t.name === 'read') || {}).byTurn);
 check('work: endReason 记录', work.turns[1].endReason === 'error', work.turns[1].endReason);
 const timed = computeWorkPath([
   { type: 'turn/start', seq: 0, time: 1000, data: {} },
