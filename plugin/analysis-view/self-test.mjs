@@ -204,6 +204,7 @@ check("render: 花费按轮画了两条", classes.filter((name) => name === "av-
 check("render: 花费把命中与未命中分开画", classes.filter((name) => name === "av-fill hit").length === 2 && classes.filter((name) => name === "av-fill miss").length === 2, classes.filter((name) => name.startsWith("av-fill")));
 check("render: 低命中率那一轮标 warn", classes.filter((name) => name === "av-rate warn").length === 1, classes.filter((name) => name.startsWith("av-rate")));
 check("render: 花费总览用未命中/命中", text.includes("未命中") && text.includes("命中率") && text.includes("缓存承担了"), text.slice(0, 260));
+check("render: 花费行可点跳对话", nodes.some((node) => node.props && node.props.className === "av-cost-row" && node.props.role === "button" && typeof node.props.onClick === "function"), classes.filter((name) => name === "av-cost-row"));
 check("render: 工具画成环形图并按 host 类别分组", nodes.some((node) => node.type === "svg") && classes.filter((name) => name === "av-leg").length === 2 && text.includes("文件") && text.includes("执行"), classes.filter((name) => name === "av-leg"));
 check("render: incident 卡片与因果链", text.includes("调用失败") && text.includes("Runtime 知道") && text.includes("影响"));
 check("render: 证据 chip 与解读入口", classes.filter((name) => name === "av-chip").length === 1 && text.includes("生成解读"));

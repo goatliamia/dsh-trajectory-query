@@ -50,7 +50,9 @@ window.__ModuleLoader__.load({
 .av-cost-num{font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}
 .av-cost-label{font-size:11px;color:var(--dsw-alias-label-secondary)}
 .av-cost-rows{max-height:240px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
-.av-cost-row{display:grid;grid-template-columns:34px minmax(0,1fr) minmax(52px,.42fr) 44px;align-items:center;gap:8px;margin-bottom:4px}
+.av-cost-row{display:grid;grid-template-columns:34px minmax(0,1fr) minmax(52px,.42fr) 44px;align-items:center;gap:8px;margin-bottom:4px;border-radius:4px;cursor:pointer}
+.av-cost-row:hover{background:var(--dsw-alias-bg-layer-2)}
+.av-cost-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
 .av-cost-turn{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-track{display:flex;height:8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}
 .av-fill{height:100%}
@@ -112,6 +114,69 @@ window.__ModuleLoader__.load({
       document.head.appendChild(el);
       return () => { if (el.parentNode) el.parentNode.removeChild(el); };
     };
+
+    let clientCtx = null;
+
+    /** 等对话里那一轮的行出现(切视图是异步的)。 */
+    function waitForChatTurn(turn, ms) {
+      const selector = '[data-chat-turn="' + turn + '"]';
+      const found = document.querySelector(selector);
+      if (found !== null) return Promise.resolve(found);
+      return new Promise((resolve) => {
+        const observer = new MutationObserver(() => {
+          const row = document.querySelector(selector);
+          if (row !== null) {
+            observer.disconnect();
+            clearTimeout(timer);
+            resolve(row);
+          }
+        });
+        const timer = setTimeout(() => {
+          observer.disconnect();
+          resolve(null);
+        }, ms);
+        observer.observe(document.body, { childList: true, subtree: true });
+      });
+    }
+
+    function flashChatRow(row) {
+      const previous = row.style.outline;
+      const previousOffset = row.style.outlineOffset;
+      row.style.outline = "2px solid var(--dsw-alias-brand-primary)";
+      row.style.outlineOffset = "-2px";
+      setTimeout(() => {
+        row.style.outline = previous;
+        row.style.outlineOffset = previousOffset;
+      }, 1600);
+    }
+
+    /** 和对话搜索同一条路:切到「对话」→ 需要时按 seq 加载那一页 → 滚到该轮并描边。 */
+    async function jumpToChatTurn(openView, sessionId, turn) {
+      if (openView === undefined) return false;
+      try {
+        openView("chat", "");
+      } catch {
+        /* 切不过去就按当前 DOM 找 */
+      }
+      let row = await waitForChatTurn(turn.turn, 1200);
+      if (row === null && clientCtx !== null && typeof clientCtx.get === "function") {
+        const sessions = clientCtx.get("sessions");
+        const binding = sessions && typeof sessions.binding === "function" ? sessions.binding(sessionId) : undefined;
+        const session = binding && binding.session;
+        if (session && typeof session.loadThrough === "function" && typeof turn.startSeq === "number") {
+          try {
+            await session.loadThrough(turn.startSeq);
+          } catch {
+            /* 分页失败就按已加载的找 */
+          }
+          row = await waitForChatTurn(turn.turn, 1500);
+        }
+      }
+      if (row === null) return false;
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+      flashChatRow(row);
+      return true;
+    }
 
     /* ---------------- 数字与格式 ---------------- */
     const h = React.createElement;
@@ -355,7 +420,17 @@ window.__ModuleLoader__.load({
         const rate = turn.cacheEfficiency;
         const first = position === 0;
         const title = "第 " + turn.turn + " 轮 · 未命中 " + fmt(turn.input) + " · 命中 " + fmt(turn.cacheRead) + " · 输出 " + fmt(turn.output) + " · 命中率 " + pct(rate) + (first ? " · 首轮缓存是空的,命中率低属正常" : "");
-        return h("div", { key: String(turn.turn), className: "av-cost-row", title }, [
+        return h("div", {
+          key: String(turn.turn),
+          className: "av-cost-row",
+          title: title + " · 点击跳到对话这一轮",
+          role: "button",
+          tabIndex: 0,
+          onClick: () => jumpToChatTurn(props.openView, props.sessionId, turn),
+          onKeyDown: (event) => {
+            if (event.key === "Enter" || event.key === " ") jumpToChatTurn(props.openView, props.sessionId, turn);
+          },
+        }, [
           h("span", { key: "t", className: "av-cost-turn" }, "T" + turn.turn),
           h("div", { key: "i", className: "av-track" }, [
             h("div", { key: "h", className: "av-fill hit", style: { width: width(hit, maxInput) + "%" } }),
@@ -661,7 +736,7 @@ window.__ModuleLoader__.load({
           h(Kpi, { key: "events", label: "事件", value: fmt(data && data.eventCount) }),
         ]),
         h(WorkPath, { key: "w", turns, index, openView }),
-        h(Cost, { key: "c", cost }),
+        h(Cost, { key: "c", cost, sessionId, openView }),
         h(Tools, { key: "tools", tools }),
         h(Incidents, { key: "inc", incidents, index, openView }),
         h(Interpret, { key: "i", sessionId }),
@@ -684,6 +759,7 @@ window.__ModuleLoader__.load({
     return {
       inject: ["slots", "uiConversation"],
       apply(ctx) {
+        clientCtx = ctx;
         ctx.uiConversation.views.register({ target: "analysis", create: () => new AnalysisSnapshotBuilder(), isActive: () => true });
         const slots = ctx.slots;
         if (!slots) return;
