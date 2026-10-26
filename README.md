@@ -60,12 +60,16 @@ read(session="session-e0636aa9-…", seq=1248)
 
 | 元素 | 说明 |
 |---|---|
-| Incident 卡片 | `Event / Cause / Runtime 知道 / Model 知道 / Harness 反应 / 影响`,带证据 `seq` 可点跳轨迹 |
-| Turn 地图 | 一格一个 turn;红 = 该 turn 有失败(可点),灰 = 正常 |
-| 机械层事实 | 确定性数字 + 明确标注"需 host"的项 |
-| 开放解读 | 折叠区;**展开时**由 analysis skill 基于 incident 证据生成,每条带 `(session, seq)` 引用 |
+| KPI 条 | 轮次 / 工具调用 / 失败 / 缓存命中 / 事件,一个数字一格 |
+| 轮次地图 | 一条按时长分宽的比例带,颜色按该轮失败数;有失败的轮次可点跳轨迹 |
+| 花费 | 输入 / 缓存读 / 输出按轮堆叠,配总命中率;适配器没上报时明写"没有 token 数据",不画零 |
+| 工具 | 按调用次数排序:次数、失败数、平均耗时 |
+| Incident 卡片 | `Cause / Runtime 知道 / Model 收到 / Harness 反应 / 影响`,证据 `seq` 可点跳轨迹 |
+| 开放解读 | 按钮触发,点了才调用一次模型;每条陈述带 `(session, seq@logId)` 引用 |
 
-**Host 路由** —— `GET /analysis-view/digest?session=<id>` 返回确定性 incidents(同参重复 / 失败 / 空转 turn);`GET /analysis-view/interpret?session=<id>` 在展开「开放解读」时才调用一次模型,返回带引用的解读。两者都带 **`log` 身份**(`id` / `events` / `seq` 范围);引用格式为 `(session, seq@logId)`,避免跨日志修订误引。
+面板只消费 `conversation.view` 里的这个位置(与「对话」「轨迹」同一排,id `analysis`),不新开侧栏、不注册工具,工具表一个字节都不占。
+
+**Host 路由** —— `GET /analysis-view/digest?session=<id>` 一次返回确定性 incidents(同参重复 / 失败 / 空转 turn)、每个 turn 的调用/失败/耗时/token(`turnStats`)、按工具汇总的调用/失败/平均耗时(`toolStats`)与 token 成本;同一会话 2 秒内的重复请求直接复用上一次结果(`&fresh=1` 强刷)。`GET /analysis-view/interpret?session=<id>` 只在点了「生成解读」时调用一次模型,返回带引用的解读。两者都带 **`log` 身份**(`id` / `events` / `seq` 范围);引用格式为 `(session, seq@logId)`,避免跨日志修订误引。
 
 **机械分析器** —— `turns / tools / errors / retry / incidents / cost` 六个确定性 fold:同参重复、调用失败、空转 turn 由代码判定,不由模型判断;token 与 cache 效率直接 fold `assistant/message.usage`,不新增埋点;每个分析器自带 `summary(facts)`,runner 直接渲染表格(漏写显示 `(no summary)`,不会静默留空);`analyzers/self-test.mjs` 把语义与这个契约一起钉进测试。
 
@@ -109,8 +113,8 @@ node analyzers/self-test.mjs
 pnpm pack                                  # 在各自的 plugin 目录里执行
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: 增加
-#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.2.tgz"
-#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.1.4.tgz"
+#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.3.tgz"
+#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.2.0.tgz"
 #   dsh.profile.bundles: 追加 "dsh-trajectory-tools"、"dsh-analysis-view"
 pnpm install            # 在 ~/.dsh/profiles/web
 # 重启 dsh web(host 插件不会可靠热更新)
@@ -124,6 +128,7 @@ node analyzers/self-test.mjs        # 分析器语义
 node analyzers/host-self-test.mjs   # host 侧 incident 判定
 node analyzers/shape-law.mjs        # incident 形状:认领 / 漂移 / 差分 / 证人
 node analyzers/shape-law.mjs --mutate   # 13 种合理错法,逃走必须为 0
+node plugin/analysis-view/self-test.mjs # 面板渲染冒烟(React 垫片,不开浏览器)
 ```
 
 装好后重启 `dsh web`,确认:模型工具表里出现 `trajectory_search` / `trajectory_read` / `trajectory_graph` 三个入口(不再是六个)、skill 目录里出现 `trajectory-query`、`search(view="events")` 的返回里带 `matchAt` / `filtered` / `normalized`、`graph` 的关系链是 `{count, head, tail}` 形态、`/analysis-view/digest` 对已结算会话返回 200。压缩后对账要等**真的发生一次压缩**才能看到(想马上看就在会话里 `/compact`,再随便回一句话):那一轮收尾时多一句模型回复,host 日志里同时多一行 `compaction reconcile`。
@@ -140,7 +145,7 @@ node analyzers/shape-law.mjs --mutate   # 13 种合理错法,逃走必须为 0
 - 不给 `session` 时,`view="events"` 的默认扫描集是「当前会话 + 所有 live 会话 + 最近若干已持久化会话」;已持久化会话按 `createdAt` 排序(没有便宜的"最近活动"信号),很久以前的会话请显式传 session。
 - `trajectory_graph` 是三个入口里唯一依赖 `ctx.sessionQuery` 的;search / read 只依赖 `sessions` / `sessionPersistence`。
 - 面向 DSH 0.2.1-rc.3 重新核对过全部用到的 host/客户端 API:`defineTool` 参数 DSL、`sessionQuery` 方法表、`SessionHandle`、`skills.register`、`webServer.register`、`llm.stream`、`conversation.view` slot 与 `uiConversation.views/binding` 均未变;迁移过的有两处:上面那条同步读取弃用,以及消息来源不再有共享的 `plugin` kind(0.2.x 起按 `plugin:<包名>` 声明,检索侧两种都认)。
-- 运行环境:DSH 0.2.1-rc.3,插件 0.3.2 / 0.1.4。三个入口的工具表占用约 1.8 KB(合并成三个之前是 5.7 KB);契约由自检(175 项)与真实语料离线核对覆盖,实机对照见上面「验证」。
+- 运行环境:DSH 0.2.1-rc.3,插件 0.3.3 / 0.2.0。三个入口的工具表占用约 1.3 KB(合并成三个之前是 5.7 KB);契约由自检(175 + 14 项)与真实语料离线核对覆盖,实机对照见上面「验证」。
 - `trajectory_search(view="cost")` 只读 `assistant/message.usage`,不新增埋点:适配器没上报 usage 的请求记 `unknown`(不是 0),单字段缺失记 `null` 且不进求和。DeepSeek 适配器基本不报 `cacheWriteTokens`,那是"没上报",不是"没写缓存";
 - 陷阱:会话格式迁移后,同一个会话目录里**同时留着 `session.v3.jsonl.zstd`(当前)与 `session.v2.jsonl.zstd`(迁移前旧副本)**。手动跑分析器要取 v3,否则会把旧副本当成"最近的会话"。`experiments/corpus/scan-sessions.mjs` 已按目录取版本号最高的一份。
 

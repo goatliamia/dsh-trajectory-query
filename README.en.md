@@ -97,12 +97,16 @@ a **runtime incident view**:
 
 | Element | What it shows |
 |---|---|
-| Incident cards | `Event / Cause / Runtime knew / Model knew / Harness response / Impact`, with evidence `seq` chips that jump to the trajectory |
-| Turn map | one cell per turn; red = that turn has a failure (clickable), grey = normal |
-| Mechanical facts | deterministic numbers, plus explicit `needs host` markers |
-| Open interpretation | collapsed; generated **only when expanded**, by the analysis skill over bounded evidence, every claim citing `(session, seq)` |
+| KPI strip | turns / tool calls / failures / cache hit / events — one number per cell |
+| Turn map | one proportional band per turn, width by duration, colour by that turn's failure count; turns with failures jump to the trajectory |
+| Spend | input / cache read / output stacked per turn plus the overall hit rate; an adapter that reported nothing says so instead of drawing zeros |
+| Tools | sorted by call count: calls, failures, average duration |
+| Incident cards | `Cause / Runtime knew / Model received / Harness response / Impact`, with evidence `seq` chips that jump to the trajectory |
+| Open interpretation | button-triggered; one model call, every claim citing `(session, seq@logId)` |
 
-**Host routes** — `GET /analysis-view/digest?session=<id>` returns deterministic incidents (same-args repeat / failures / no-op turns); `GET /analysis-view/interpret?session=<id>` calls the model once, only when *Open interpretation* is expanded, and returns a cited interpretation. Both carry a **`log` identity** (`id` / `events` / `seq` range); citations read `(session, seq@logId)`, so a seq cannot be misread across log revisions.
+The panel only occupies this seat in `conversation.view` (same row as Conversation and Trajectory, id `analysis`): no new sidebar, no tools registered, zero bytes added to the tool table.
+
+**Host routes** — `GET /analysis-view/digest?session=<id>` returns, in one payload, the deterministic incidents (same-args repeat / failures / no-op turns), per-turn calls/failures/duration/tokens (`turnStats`), per-tool calls/failures/average duration (`toolStats`) and the token cost; repeated requests for the same session within 2 seconds reuse the previous result (`&fresh=1` forces a recompute). `GET /analysis-view/interpret?session=<id>` calls the model once, only after *Open interpretation* is pressed, and returns a cited interpretation. Both carry a **`log` identity** (`id` / `events` / `seq` range); citations read `(session, seq@logId)`, so a seq cannot be misread across log revisions.
 
 **Mechanical analyzers** — six deterministic folds: `turns / tools / errors / retry / incidents / cost`.
 Same-argument repeats, failed calls and no-op turns are decided by code, not by a model; tokens and
@@ -165,8 +169,8 @@ node analyzers/self-test.mjs
 pnpm pack                                  # in each plugin directory
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: add
-#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.2.tgz"
-#     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.1.4.tgz"
+#     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.3.tgz"
+#     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.2.0.tgz"
 #   dsh.profile.bundles: append "dsh-trajectory-tools" and "dsh-analysis-view"
 pnpm install            # in ~/.dsh/profiles/web
 # restart `dsh web` (host plugins do not hot-reload reliably)
@@ -180,6 +184,7 @@ node analyzers/self-test.mjs        # analyzer semantics
 node analyzers/host-self-test.mjs   # host-side incident detection
 node analyzers/shape-law.mjs        # incident shape: claim / drift / differential / witness
 node analyzers/shape-law.mjs --mutate   # 13 reasonable mistakes; escapes must be 0
+node plugin/analysis-view/self-test.mjs # panel render smoke test (React shim, no browser)
 ```
 
 After restarting `dsh web`, confirm that the model's tool list contains the three entries
@@ -203,7 +208,7 @@ short message): that turn ends with one extra model message, and the host log ga
 - Without `session`, `view="events"` scans the current session + every live session + a few persisted ones; persisted sessions are ranked by `createdAt` (there is no cheap last-activity signal), so pass `session` explicitly for a long-settled session.
 - `trajectory_graph` is the only one of the three that depends on `ctx.sessionQuery`; search and read need only `sessions` / `sessionPersistence`.
 - Every host/client API these plugins use was checked against DSH 0.2.1-rc.3: the `defineTool` parameter DSL, the `sessionQuery` method set, `SessionHandle`, `skills.register`, `webServer.register`, `llm.stream`, `agent/turn-stopping` + `agent.steer`, the `conversation.view` slot and `uiConversation.views/binding` are unchanged; the only migration needed is the deprecated synchronous read above.
-- Runtime: DSH 0.2.1-rc.3, plugins 0.3.2 / 0.1.4. The three entries cost about 1.8 KB of tool table (down from 5.7 KB with six); the contract is covered by the 175-check self-test and an offline check on real data — the live check is the **Verify** section above.
+- Runtime: DSH 0.2.1-rc.3, plugins 0.3.3 / 0.2.0. The three entries cost about 1.3 KB of tool table (down from 5.7 KB with six); the contract is covered by the 175-check and 14-check self-tests and an offline check on real data — the live check is the **Verify** section above.
 - `trajectory_search(view="cost")` reads `assistant/message.usage` only — no new instrumentation. A request whose adapter reported no usage is `unknown` (never zero), and a single missing field is `null` and stays out of the sums. The DeepSeek adapter usually does not report `cacheWriteTokens`: that means "not reported", not "no cache write".
 - Trap: after the format migration a session directory keeps **both `session.v3.jsonl.zstd` (current) and `session.v2.jsonl.zstd` (pre-migration copy)**. Pass the v3 file to the analyzers by hand, or you will read the stale copy as if it were the newest session. `experiments/corpus/scan-sessions.mjs` now picks the highest version per directory.
 

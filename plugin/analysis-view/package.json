@@ -1,6 +1,6 @@
 {
   "name": "dsh-analysis-view",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "常驻分析 tab:复用 conversation 视图框架,注册 uiConversation.views target 'analysis' + conversation.view occupant,消费 useTrajectory 投影的确定性 digest",
@@ -14,7 +14,8 @@
     "lib/client.js",
     "lib/index.js",
     "lib/incident-shape.js",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "self-test.mjs"
   ],
   "dsh": {
     "bundle": {
