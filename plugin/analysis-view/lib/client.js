@@ -99,9 +99,7 @@ window.__ModuleLoader__.load({
 .av-leg-static:hover{background:transparent}
 .av-stat-line{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:4px;font-variant-numeric:tabular-nums}
 @media (max-width:760px){.av-tool-flow{grid-template-columns:minmax(0,1fr)}}
-.av-num{font-variant-numeric:tabular-nums;text-align:right}
 .av-bad{color:var(--dsw-alias-state-error-primary)}
-.av-warn{color:var(--dsw-alias-state-warn-primary)}
 .av-incident-list{max-height:360px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
 .av-incident{position:relative;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:10px 12px 10px 14px;margin-bottom:8px;background:var(--dsw-alias-bg-layer-1)}
 .av-incident:last-child{margin-bottom:0}
@@ -127,7 +125,6 @@ window.__ModuleLoader__.load({
 @media (prefers-reduced-motion:reduce){.av-btn,.av-seg,.av-chip{transition-duration:.01ms}}
 .av-interp{font-size:13px;white-space:pre-wrap}
 .av-foot{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
-.av-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 `;
     const ensureStyle = () => {
       if (typeof document === "undefined") return () => {};

@@ -258,7 +258,6 @@ export function computeCost(events) {
 
 
 
-export const TOOL_CATEGORY_LABELS = Object.freeze({ file: "文件", run: "执行", web: "网络", context: "上下文", coop: "协作", plugin: "插件", other: "其他" });
 
 /**
  * 工具类别:先看声明里的参数(工具自己说它操作什么),再看名字与描述,最后落到"其他"。
