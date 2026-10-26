@@ -86,6 +86,16 @@ const foreign = computeCost([{
   data: { usage: { inputTokens: 1000, cacheReadTokens: 0, outputTokens: 10 }, message: { source: { kind: 'model', provider: 'openai', model: 'gpt-5' } } },
 }]);
 check('cost: 非官方 API 不产出价格', foreign.pricing === null, foreign.pricing);
+const mixed = computeCost([
+  official(1, Date.UTC(2026, 0, 5, 2, 0), 1000, 0, 10),
+  { type: 'assistant/message', seq: 2, time: Date.UTC(2026, 0, 5, 3, 0), data: { usage: { inputTokens: 10, cacheReadTokens: 0, outputTokens: 1 }, message: { source: { kind: 'model', provider: 'openai', model: 'gpt-5' } } } },
+]);
+check('cost: 混了非官方请求就整块不出价', mixed.pricing === null, mixed.pricing);
+const noUsage = computeCost([{
+  type: 'assistant/message', seq: 1, time: Date.UTC(2026, 0, 5, 2, 0),
+  data: { message: { source: { kind: 'model', provider: 'deepseek-account', model: 'deepseek-flash' } } },
+}]);
+check('cost: 缺 usage 的官方请求也不出价', noUsage.pricing === null, noUsage.pricing);
 check('work: endReason 记录', work.turns[1].endReason === 'error', work.turns[1].endReason);
 const timed = computeWorkPath([
   { type: 'turn/start', seq: 0, time: 1000, data: {} },

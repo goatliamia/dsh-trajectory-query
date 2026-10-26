@@ -147,7 +147,7 @@ function computePricing(requests) {
   for (const row of requests) {
     const provider = typeof row.provider === "string" ? row.provider : null;
     const model = typeof row.model === "string" ? row.model : null;
-    if (provider === null || model === null || !provider.startsWith("deepseek")) {
+    if (row.unknown || provider === null || model === null || !provider.startsWith("deepseek")) {
       unpriced += 1;
       continue;
     }
@@ -239,6 +239,7 @@ export function computeCost(events) {
       cacheEfficiency: turnCacheRead === null || turnInput === null || turnCacheRead + turnInput === 0 ? null : turnCacheRead / (turnCacheRead + turnInput),
     };
   });
+  const pricing = computePricing(requests);
   return {
     requestCount: requests.length,
     unknownRequests: requests.filter((row) => row.unknown).length,
@@ -249,14 +250,13 @@ export function computeCost(events) {
     reasoning: sum("reasoning"),
     total: sum("total"),
     cacheEfficiency: cacheRead === null || input === null || cacheRead + input === 0 ? null : cacheRead / (cacheRead + input),
-    pricing: priced(requests) ? computePricing(requests) : null,
+    // 只有"每一条请求都是官方 API 且都有 usage"才给价格;混了任何一条就别算,免得给出不完整的金额。
+    pricing: pricing.priced > 0 && pricing.unpriced === 0 ? pricing : null,
     byTurn,
   };
 }
 
-function priced(requests) {
-  return requests.some((row) => typeof row.provider === "string" && row.provider.startsWith("deepseek") && DEEPSEEK_PRICES[row.model] !== undefined);
-}
+
 
 export const TOOL_CATEGORY_LABELS = Object.freeze({ file: "文件", run: "执行", web: "网络", context: "上下文", coop: "协作", plugin: "插件", other: "其他" });
 
