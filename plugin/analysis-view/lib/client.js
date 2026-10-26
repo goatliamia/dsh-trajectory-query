@@ -55,6 +55,7 @@ window.__ModuleLoader__.load({
 .av-fill.out{background:var(--dsw-alias-brand-primary);opacity:.28}
 .av-table{width:100%;border-collapse:collapse;font-size:12px}
 .av-table th{text-align:left;font-weight:400;font-size:11px;color:var(--dsw-alias-label-secondary);padding:0 8px 6px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.av-table th.av-num{text-align:right}
 .av-table td{padding:5px 8px 5px 0;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .av-table tr:last-child td{border-bottom:0}
 .av-num{font-variant-numeric:tabular-nums;text-align:right}
