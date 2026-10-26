@@ -61,7 +61,6 @@ window.__ModuleLoader__.load({
 .av-fill.out{background:var(--dsw-alias-brand-primary);opacity:.75}
 .av-rate{font-size:11px;text-align:right;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-rate.warn{color:var(--dsw-alias-state-warn-primary)}
-.av-donut-wrap{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
 .av-donut{position:relative;width:112px;height:112px;flex:none}
 .av-donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--dsw-alias-label-secondary);pointer-events:none}
 .av-donut-num{font-size:16px;font-weight:500;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
@@ -72,8 +71,14 @@ window.__ModuleLoader__.load({
 .av-leg-name{font-size:12px}
 .av-leg-num{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-leg-err{font-size:11px;color:var(--dsw-alias-state-error-primary)}
-.av-tools-detail{max-height:160px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;margin-top:8px;padding-right:4px}
-.av-tool-line{display:grid;grid-template-columns:minmax(0,1fr) 48px 34px 52px;align-items:center;gap:8px;font-size:12px;padding:2px 0}
+.av-tool-grid{display:grid;grid-template-columns:auto minmax(150px,210px) minmax(0,1fr);gap:16px;align-items:start}
+.av-tool-detail{min-height:120px;border-left:1px solid var(--dsw-alias-border-l1);padding-left:16px}
+.av-tool-detail-head{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.av-tool-detail-name{font-size:13px;font-weight:500}
+.av-tool-detail-meta{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.av-tool-line{display:grid;grid-template-columns:minmax(0,1fr) 40px 32px 48px 48px;align-items:center;gap:8px;font-size:12px;padding:2px 0}
+.av-tool-line-head{font-size:11px;color:var(--dsw-alias-label-secondary);border-bottom:1px solid var(--dsw-alias-border-l1);padding-bottom:4px;margin-bottom:2px}
+@media (max-width:840px){.av-tool-grid{grid-template-columns:auto minmax(0,1fr)}.av-tool-detail{grid-column:1 / -1;border-left:0;border-top:1px solid var(--dsw-alias-border-l1);padding-left:0;padding-top:8px}}
 .av-num{font-variant-numeric:tabular-nums;text-align:right}
 .av-tool-name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .av-bad{color:var(--dsw-alias-state-error-primary)}
@@ -139,18 +144,7 @@ window.__ModuleLoader__.load({
       });
     }
 
-    function flashChatRow(row) {
-      const previous = row.style.outline;
-      const previousOffset = row.style.outlineOffset;
-      row.style.outline = "2px solid var(--dsw-alias-brand-primary)";
-      row.style.outlineOffset = "-2px";
-      setTimeout(() => {
-        row.style.outline = previous;
-        row.style.outlineOffset = previousOffset;
-      }, 1600);
-    }
-
-    /** 和对话搜索同一条路:切到「对话」→ 需要时按 seq 加载那一页 → 滚到该轮并描边。 */
+    /** 和对话搜索同一条路:切到「对话」→ 需要时按 seq 加载那一页 → 滚到该轮。 */
     async function jumpToChatTurn(openView, sessionId, turn) {
       if (openView === undefined) return false;
       try {
@@ -174,7 +168,6 @@ window.__ModuleLoader__.load({
       }
       if (row === null) return false;
       row.scrollIntoView({ block: "center", behavior: "smooth" });
-      flashChatRow(row);
       return true;
     }
 
@@ -546,13 +539,14 @@ window.__ModuleLoader__.load({
         h("span", { key: "c", className: "av-leg-num" }, slice.calls + " 次 · " + Math.round((slice.calls / totalCalls) * 100) + "%"),
         slice.errors > 0 ? h("span", { key: "e", className: "av-leg-err" }, "×" + slice.errors) : null,
       ]));
-      const detail = picked === null ? [] : (buckets.get(picked) || { tools: [] }).tools;
+      const selected = picked === null ? null : buckets.get(picked) || null;
+      const detailRows = selected === null ? [] : selected.tools.slice().sort((a, b) => b.calls - a.calls);
       return h("div", { className: "av-section" }, [
         h("div", { key: "h", className: "av-section-head" }, [
           h("h3", { key: "t", className: "av-section-title" }, "工具"),
           h("span", { key: "n", className: "av-hint" }, tools.length + " 种 · " + totalCalls + " 次" + (totalErrors > 0 ? " · " + totalErrors + " 失败" : "")),
         ]),
-        h("div", { key: "d", className: "av-donut-wrap" }, [
+        h("div", { key: "d", className: "av-tool-grid" }, [
           h("div", { key: "chart", className: "av-donut" }, [
             h("svg", { key: "s", viewBox: "0 0 100 100", width: "112", height: "112", role: "img", "aria-label": "工具调用占比" }, arcs),
             h("div", { key: "c", className: "av-donut-center" }, [
@@ -561,22 +555,33 @@ window.__ModuleLoader__.load({
             ]),
           ]),
           h("div", { key: "legend", className: "av-legend-col" }, legend),
+          h("div", { key: "detail", className: "av-tool-detail" }, selected === null
+            ? h("div", { key: "empty", className: "av-empty", style: { padding: "16px 8px" } }, "点中间的类别,看这一类用了哪些工具")
+            : [
+              h("div", { key: "h", className: "av-tool-detail-head" }, [
+                h("span", { key: "n", className: "av-tool-detail-name" }, selected.label),
+                h("span", { key: "m", className: "av-tool-detail-meta" }, selected.tools.length + " 种 · " + selected.calls + " 次" + (selected.errors > 0 ? " · " + selected.errors + " 失败" : "")),
+              ]),
+              h("div", { key: "cols", className: "av-tool-line av-tool-line-head" }, [
+                h("span", { key: "n" }, "工具"),
+                h("span", { key: "c", className: "av-num" }, "调用"),
+                h("span", { key: "e", className: "av-num" }, "失败"),
+                h("span", { key: "a", className: "av-num" }, "平均"),
+                h("span", { key: "x", className: "av-num" }, "最慢"),
+              ]),
+              ...detailRows.map((tool) => h("div", {
+                key: tool.name,
+                className: "av-tool-line",
+                title: tool.name + " · 最近一次 seq " + tool.lastSeq,
+              }, [
+                h("span", { key: "n", className: "av-tool-name" }, tool.name),
+                h("span", { key: "c", className: "av-num" }, String(tool.calls)),
+                h("span", { key: "e", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? "×" + tool.errors : ""),
+                h("span", { key: "a", className: "av-num" }, ms(tool.avgMs)),
+                h("span", { key: "x", className: "av-num" }, ms(tool.maxMs)),
+              ])),
+            ]),
         ]),
-        picked === null
-          ? h("div", { key: "hint", className: "av-hint" }, "点左侧图例看某一类的工具明细")
-          : h("div", { key: "detail", className: "av-tools-detail" }, detail
-            .slice()
-            .sort((a, b) => b.calls - a.calls)
-            .map((tool) => h("div", {
-              key: tool.name,
-              className: "av-tool-line",
-              title: tool.name + " · " + tool.calls + " 次" + (tool.errors > 0 ? " · " + tool.errors + " 次失败" : "") + (tool.maxMs !== null ? " · 最慢 " + ms(tool.maxMs) : ""),
-            }, [
-              h("span", { key: "n", className: "av-tool-name" }, tool.name),
-              h("span", { key: "c", className: "av-num" }, String(tool.calls)),
-              h("span", { key: "e", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? "×" + tool.errors : ""),
-              h("span", { key: "m", className: "av-num" }, ms(tool.avgMs)),
-            ]))),
       ]);
     }
 
