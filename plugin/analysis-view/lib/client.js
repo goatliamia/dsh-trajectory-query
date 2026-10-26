@@ -28,8 +28,8 @@ window.__ModuleLoader__.load({
 .av-kpi-num.bad{color:var(--dsw-alias-state-error-primary)}
 .av-kpi-label{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:760px){.av-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.av-kpi:nth-child(4){border-left:0}.av-kpi:nth-child(n+4){border-top:1px solid var(--dsw-alias-border-l1)}}
-.av-section{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);padding:14px;margin-bottom:16px}
-.av-section-head{display:flex;align-items:baseline;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.av-section{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);padding:12px;margin-bottom:12px}
+.av-section-head{display:flex;align-items:baseline;gap:8px;margin-bottom:10px;flex-wrap:wrap}
 .av-section-title{font-size:13px;font-weight:500;margin:0}
 .av-hint{font-size:11px;color:var(--dsw-alias-label-secondary)}
 .av-strip{display:flex;align-items:stretch;gap:2px;height:28px}
@@ -64,7 +64,7 @@ window.__ModuleLoader__.load({
 .av-donut{position:relative;width:112px;height:112px;flex:none}
 .av-donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--dsw-alias-label-secondary);pointer-events:none}
 .av-donut-num{font-size:16px;font-weight:500;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
-.av-legend-col{flex:1;min-width:0;max-height:84px;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:3px;padding-right:2px;scrollbar-width:thin;scrollbar-color:color-mix(in srgb, var(--dsw-alias-label-secondary) 26%, transparent) transparent}
+.av-legend-col{flex:1;min-width:0;max-height:96px;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:3px;padding-right:2px;scrollbar-width:thin;scrollbar-color:color-mix(in srgb, var(--dsw-alias-label-secondary) 26%, transparent) transparent}
 .av-legend-col::-webkit-scrollbar{width:4px}
 .av-legend-col::-webkit-scrollbar-track{background:transparent}
 .av-legend-col::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--dsw-alias-label-secondary) 26%, transparent);border-radius:2px}
@@ -81,13 +81,13 @@ window.__ModuleLoader__.load({
 .av-leg-num{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-leg-err{font-size:11px;color:var(--dsw-alias-state-error-primary)}
 .av-tool-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:start}
-.av-flow-card{min-width:0;display:flex;flex-direction:column;gap:10px}
+.av-flow-card{min-width:0;display:flex;flex-direction:column;gap:8px}
 .av-flow-head{display:flex;align-items:baseline;gap:8px;min-width:0;height:18px}
 .av-flow-title{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .av-flow-meta{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;white-space:nowrap}
 .av-flow-body{display:flex;gap:14px;align-items:flex-start;min-width:0}
-.av-donut-sm{width:84px;height:84px;flex:none}
-.av-donut-sm .av-donut-num{font-size:13px}
+.av-donut-sm{width:96px;height:96px;flex:none}
+.av-donut-sm .av-donut-num{font-size:14px}
 .av-leg-static{cursor:default}
 .av-leg-static:hover{background:transparent}
 .av-stat-line{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:4px;font-variant-numeric:tabular-nums}
@@ -585,7 +585,7 @@ window.__ModuleLoader__.load({
             ]),
             h("div", { key: "b", className: "av-flow-body" }, [
               h("div", { key: "d", className: "av-donut av-donut-sm" }, [
-                h("svg", { key: "s", viewBox: "0 0 100 100", width: "84", height: "84", role: "img", "aria-label": "各类别调用占比" }, ring(slices, totalCalls, (slice) => slice.calls, 40, 13, 1, (slice) => slice.color)),
+                h("svg", { key: "s", viewBox: "0 0 100 100", width: "96", height: "96", role: "img", "aria-label": "各类别调用占比" }, ring(slices, totalCalls, (slice) => slice.calls, 40, 13, 1, (slice) => slice.color)),
                 h("div", { key: "c", className: "av-donut-center" }, [
                   h("span", { key: "n", className: "av-donut-num" }, String(totalCalls)),
                   h("span", { key: "l" }, "次调用"),
@@ -601,7 +601,7 @@ window.__ModuleLoader__.load({
             ]),
             h("div", { key: "b", className: "av-flow-body" }, [
               h("div", { key: "d", className: "av-donut av-donut-sm" }, [
-                h("svg", { key: "s", viewBox: "0 0 100 100", width: "84", height: "84", role: "img", "aria-label": category.label + "内各工具占比" }, ring(toolSlices, category.calls, (item) => item.calls, 40, 13, 2, (item) => item.color)),
+                h("svg", { key: "s", viewBox: "0 0 100 100", width: "96", height: "96", role: "img", "aria-label": category.label + "内各工具占比" }, ring(toolSlices, category.calls, (item) => item.calls, 40, 13, 2, (item) => item.color)),
                 h("div", { key: "c", className: "av-donut-center" }, [
                   h("span", { key: "n", className: "av-donut-num" }, String(categoryTools.length)),
                   h("span", { key: "l" }, "种"),
@@ -628,7 +628,7 @@ window.__ModuleLoader__.load({
             ]),
             h("div", { key: "b", className: "av-flow-body" }, [
               h("div", { key: "d", className: "av-donut av-donut-sm" }, [
-                h("svg", { key: "s", viewBox: "0 0 100 100", width: "84", height: "84", role: "img", "aria-label": tool.name + " 在各轮的调用占比" }, ring(turnSlices, tool.calls, (item) => item.calls, 40, 13, 1.5, (item) => item.color)),
+                h("svg", { key: "s", viewBox: "0 0 100 100", width: "96", height: "96", role: "img", "aria-label": tool.name + " 在各轮的调用占比" }, ring(turnSlices, tool.calls, (item) => item.calls, 40, 13, 1.5, (item) => item.color)),
                 h("div", { key: "c", className: "av-donut-center" }, [
                   h("span", { key: "n", className: "av-donut-num" }, String(tool.calls)),
                   h("span", { key: "l" }, "次"),
