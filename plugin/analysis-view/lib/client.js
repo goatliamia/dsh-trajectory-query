@@ -399,6 +399,16 @@ window.__ModuleLoader__.load({
       const cost = props.cost;
       const list = React.useRef(null);
       const turns = React.useMemo(() => ((cost && Array.isArray(cost.byTurn)) ? cost.byTurn : []).filter((turn) => turn.turn !== null), [cost]);
+      // cost.byTurn 只有 token 数字,没有 seq;按轮号从 turnStats 里补 startSeq,跳转才知道要加载到哪。
+      const startSeqByTurn = React.useMemo(() => {
+        const map = new Map();
+        for (const stat of props.turnStats || []) if (typeof stat.startSeq === "number") map.set(stat.turn, stat.startSeq);
+        return map;
+      }, [props.turnStats]);
+      const jumpTurn = (turn) => jumpToChatTurn(props.openView, props.sessionId, {
+        turn: turn.turn,
+        startSeq: startSeqByTurn.get(turn.turn),
+      });
       React.useEffect(() => {
         const el = list.current;
         if (el !== null) el.scrollTop = el.scrollHeight;
@@ -426,9 +436,9 @@ window.__ModuleLoader__.load({
           title: title + " · 点击跳到对话这一轮",
           role: "button",
           tabIndex: 0,
-          onClick: () => jumpToChatTurn(props.openView, props.sessionId, turn),
+          onClick: () => jumpTurn(turn),
           onKeyDown: (event) => {
-            if (event.key === "Enter" || event.key === " ") jumpToChatTurn(props.openView, props.sessionId, turn);
+            if (event.key === "Enter" || event.key === " ") jumpTurn(turn);
           },
         }, [
           h("span", { key: "t", className: "av-cost-turn" }, "T" + turn.turn),
@@ -736,7 +746,7 @@ window.__ModuleLoader__.load({
           h(Kpi, { key: "events", label: "事件", value: fmt(data && data.eventCount) }),
         ]),
         h(WorkPath, { key: "w", turns, index, openView }),
-        h(Cost, { key: "c", cost, sessionId, openView }),
+        h(Cost, { key: "c", cost, turnStats: turns, sessionId, openView }),
         h(Tools, { key: "tools", tools }),
         h(Incidents, { key: "inc", incidents, index, openView }),
         h(Interpret, { key: "i", sessionId }),
