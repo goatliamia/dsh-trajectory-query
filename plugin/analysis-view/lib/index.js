@@ -1,9 +1,5 @@
-// dsh-analysis-view host half — computes incidents from the session's raw log and serves them
-// over a read-only route so the client panel can render host-detected incidents (same-args repeat,
-// no-op turn, harness response) instead of guessing from the client projection.
-//
-// The client panel only has the trajectory projection (no tool arguments, no state), so it marks
-// those incident types as "needs host". This half provides them.
+// dsh-analysis-view host half — 把一次会话折成面板要的事实(incidents / cost / 每轮与每工具的统计),
+// 通过 /analysis-view 的只读路由给出。
 
 import { createHash } from "node:crypto";
 import { incident } from "./incident-shape.js";
@@ -121,8 +117,7 @@ export function deriveHarnessResponse(kinds) {
 }
 
 /**
- * Deterministic token-usage fold over `assistant/message.usage` (issue #5; mirror of
- * analyzers/cost.mjs). Numbers only — whether the spend was worth it is the model's job.
+ * Deterministic token-usage fold over `assistant/message.usage` (mirror of analyzers/cost.mjs).
  * A request whose adapter reported no usage is `unknown`, never zero; a single missing
  * field is null and is excluded from the sums.
  */
@@ -189,8 +184,7 @@ export function computeCost(events) {
 }
 
 /**
- * 一次遍历算出"工作路径":每个 turn 的起止、耗时、调用与 token,以及按工具名汇总的调用/失败/耗时。
- * 只做投影,不判断好坏 —— 面板负责画,归因留给 incident。
+ * 一次遍历算出每个 turn 的起止/耗时/调用/token,以及按工具名汇总的调用、失败与耗时。
  * @param events - SessionEvent[]
  * @returns {{turns: object[], tools: object[], eventCount: number}}
  */
@@ -497,8 +491,7 @@ export function buildDigest(sessionId, events) {
 export function apply(ctx) {
   const webServer = ctx.get("webServer");
   if (webServer === undefined) return;
-  // 面板每次切回「分析」都会拉一次;同一会话 2 秒内的重复请求直接复用上一次的结果。
-  // 活跃会话的数据本来就在变,超过这个窗口就重算,不做更细的失效判断。
+  // 面板每次切回「分析」都会拉一次;同一会话 2 秒内的重复请求复用上一次结果。
   const digestCache = new Map();
   const DIGEST_TTL_MS = 2000;
   const CACHE_MAX = 32;

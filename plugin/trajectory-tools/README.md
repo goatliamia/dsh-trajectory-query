@@ -200,9 +200,9 @@ reply should end with the two lines, and the host log gains one `compaction reco
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.3.3.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.3.4.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.3.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.4.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. restart `dsh web`              # host plugins do not hot-reload reliably
@@ -229,7 +229,7 @@ override by id** in `~/.dsh/profiles/web/cordis.patch.yml` — never a second `i
 |---|---|
 | `lib/index.js` | host half: reads the log, registers the three tools, and wires the optional reconcile |
 | `lib/skill.js` | the `trajectory-query` runtime skill body |
-| `self-test.mjs` | 175 contract checks against a fake ctx + synthetic log (no real session) |
+| `self-test.mjs` | 176 contract checks against a fake ctx + synthetic log (no real session) |
 | `cordis.patch.yml` | bundle layer that inserts the plugin row |
 | `package.json` | `dsh.bundle.patch` (host-only; no client half) |
 
@@ -403,9 +403,9 @@ export function apply(ctx, config = {}) {      // 不是 apply(ctx)
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.3.3.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.3.4.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.3.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.4.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新
@@ -421,7 +421,7 @@ export function apply(ctx, config = {}) {      // 不是 apply(ctx)
 |---|---|
 | `lib/index.js` | host 半边:读日志、注册三个入口,并挂上可选的对账 |
 | `lib/skill.js` | `trajectory-query` runtime skill 正文 |
-| `self-test.mjs` | 175 项契约检查(假 ctx + 合成日志,不连真实会话) |
+| `self-test.mjs` | 176 项契约检查(假 ctx + 合成日志,不连真实会话) |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch`(纯 host,无客户端半边) |
 

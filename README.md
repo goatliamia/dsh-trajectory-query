@@ -113,8 +113,8 @@ node analyzers/self-test.mjs
 pnpm pack                                  # 在各自的 plugin 目录里执行
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: 增加
-#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.3.tgz"
-#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.2.1.tgz"
+#     "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.4.tgz"
+#     "dsh-analysis-view":    "file:<绝对路径>/dsh-analysis-view-0.2.2.tgz"
 #   dsh.profile.bundles: 追加 "dsh-trajectory-tools"、"dsh-analysis-view"
 pnpm install            # 在 ~/.dsh/profiles/web
 # 重启 dsh web(host 插件不会可靠热更新)
@@ -123,7 +123,7 @@ pnpm install            # 在 ~/.dsh/profiles/web
 ## 验证
 
 ```text
-cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (175 checks)
+cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs   # ALL PASS (176 checks)
 node analyzers/self-test.mjs        # 分析器语义
 node analyzers/host-self-test.mjs   # host 侧 incident 判定
 node analyzers/shape-law.mjs        # incident 形状:认领 / 漂移 / 差分 / 证人
@@ -140,12 +140,12 @@ node plugin/analysis-view/self-test.mjs # 面板渲染冒烟(React 垫片,不开
 - host 分析与 `analyzers/incidents.mjs` 是两份实现(运行时无法 import 仓库脚本),语义分别由 `analyzers/host-self-test.mjs`、`analyzers/self-test.mjs` 钉住。
 - 会话经 `sessionQuery.observeSession(id)` 读取(DSH 0.1.6 起 `snapshotEvents` 等同步读取已弃用;兼容退路依次是内存快照 → `sessionPersistence.open(id, 'read')` → 旧版 `inspect()`)。
 - `seq` 只在同一份日志修订内稳定,所以引用必须带 `logId`;跨版本重写过的日志,旧 `seq` 可能指向别的事件。
-- 查询工具是 host 插件:装好后必须重启 `dsh web` 才会出现在模型工具表里;若同名工具已被别的插件注册,插件会显式报错而不是静默注册一半。契约由 `plugin/trajectory-tools/self-test.mjs`(175 项)钉住。
+- 查询工具是 host 插件:装好后必须重启 `dsh web` 才会出现在模型工具表里;若同名工具已被别的插件注册,插件会显式报错而不是静默注册一半。契约由 `plugin/trajectory-tools/self-test.mjs`(176 项)钉住。
 - 压缩后对账只在 `compaction/end` 成功、且这一轮走到收尾点时说话:失败的压缩(投影没换)与子代理会话都跳过;注入本身失败不打断这一轮,只在 host 日志里留一行 `warn`。「是否该对账」由记号(会话级、一次压缩一个)判定,不由模型猜。
 - 不给 `session` 时,`view="events"` 的默认扫描集是「当前会话 + 所有 live 会话 + 最近若干已持久化会话」;已持久化会话按 `createdAt` 排序(没有便宜的"最近活动"信号),很久以前的会话请显式传 session。
 - `trajectory_graph` 是三个入口里唯一依赖 `ctx.sessionQuery` 的;search / read 只依赖 `sessions` / `sessionPersistence`。
 - 面向 DSH 0.2.1-rc.3 重新核对过全部用到的 host/客户端 API:`defineTool` 参数 DSL、`sessionQuery` 方法表、`SessionHandle`、`skills.register`、`webServer.register`、`llm.stream`、`conversation.view` slot 与 `uiConversation.views/binding` 均未变;迁移过的有两处:上面那条同步读取弃用,以及消息来源不再有共享的 `plugin` kind(0.2.x 起按 `plugin:<包名>` 声明,检索侧两种都认)。
-- 运行环境:DSH 0.2.1-rc.3,插件 0.3.3 / 0.2.1。三个入口的工具表占用约 1.3 KB(合并成三个之前是 5.7 KB);契约由自检(175 + 14 项)与真实语料离线核对覆盖,实机对照见上面「验证」。
+- 运行环境:DSH 0.2.1-rc.3,插件 0.3.4 / 0.2.2。三个入口的工具表占用约 1.3 KB(合并成三个之前是 5.7 KB);契约由自检(176 + 14 项)与真实语料离线核对覆盖,实机对照见上面「验证」。
 - `trajectory_search(view="cost")` 只读 `assistant/message.usage`,不新增埋点:适配器没上报 usage 的请求记 `unknown`(不是 0),单字段缺失记 `null` 且不进求和。DeepSeek 适配器基本不报 `cacheWriteTokens`,那是"没上报",不是"没写缓存";
 - 陷阱:会话格式迁移后,同一个会话目录里**同时留着 `session.v3.jsonl.zstd`(当前)与 `session.v2.jsonl.zstd`(迁移前旧副本)**。手动跑分析器要取 v3,否则会把旧副本当成"最近的会话"。`experiments/corpus/scan-sessions.mjs` 已按目录取版本号最高的一份。
 

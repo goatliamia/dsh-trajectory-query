@@ -1,14 +1,11 @@
-// dsh-analysis-view — runtime incident view(「分析」标签)。
-//
-// 三件事:把一次会话的工作路径画出来(轮次 / 花费 / 工具)、把有证据的 incident 展开成因果链、
-// 需要时再花一次模型调用生成"开放解读"。面板自己只做投影与排版:什么算 incident 由 host 判定,
-// 这里不发明事实。位置固定在 conversation.view 的 analysis(与「对话」「轨迹」同一排)。
+// dsh-analysis-view — 「分析」标签的客户端半边。
+// 版面:轮次 / 花费 / 工具 / incident / 按需解读;数据全部来自 /analysis-view/digest。
 window.__ModuleLoader__.load({
   id: "dsh-analysis-view",
   factory: (require) => {
     const React = require("react");
 
-    /* ---------------- 样式:只消费主题 token,深浅色各验过 ---------------- */
+    /* 样式 */
     const STYLE_ID = "dsh-analysis-view-style";
     const CSS = `
 .av-root{padding:16px;overflow:auto;min-height:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5}
@@ -440,8 +437,7 @@ window.__ModuleLoader__.load({
       const incidents = data && Array.isArray(data.incidents) ? data.incidents : [];
       const status = digest.status;
 
-      // 降级:host 路由读不到时,从轨迹投影里只认"工具结果报错"这一种事实,
-      // 并明确写出"计数来自投影、需要 host 才能归因"。形状仍与 host 的 incident 同键同序。
+      // 读不到 host 时降级:只列轨迹投影里的工具报错,并写明计数来源。
       const localErrors = React.useMemo(() => {
         const nodes = Array.isArray(snapshot && snapshot.eventNodes) ? snapshot.eventNodes : [];
         const seqs = [];
