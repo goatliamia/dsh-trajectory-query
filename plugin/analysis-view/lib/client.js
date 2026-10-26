@@ -33,7 +33,10 @@ window.__ModuleLoader__.load({
 .av-section-title{font-size:13px;font-weight:500;margin:0}
 .av-hint{font-size:11px;color:var(--dsw-alias-label-secondary)}
 .av-strip{display:flex;align-items:stretch;gap:2px;height:28px}
-.av-seg{position:relative;border-radius:4px;background:var(--dsw-alias-bg-layer-2);border:0;padding:0;min-width:6px;cursor:default;overflow:hidden}
+.av-strip.scroll{overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;padding-bottom:3px;cursor:grab;scrollbar-width:thin}
+.av-strip.scroll:active{cursor:grabbing}
+.av-strip.scroll .av-seg{flex:0 0 14px;width:14px}
+.av-seg{position:relative;border-radius:4px;background:var(--dsw-alias-bg-layer-2);border:0;padding:0;min-width:14px;cursor:default;overflow:hidden}
 .av-seg.ok{background:var(--dsw-alias-bg-layer-2);background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 22%,transparent)}
 .av-seg.warn{background:var(--dsw-alias-state-warn-primary);background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 30%,transparent)}
 .av-seg.bad{background:var(--dsw-alias-state-error-primary);background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 30%,transparent)}
@@ -212,9 +215,23 @@ window.__ModuleLoader__.load({
       return "ok";
     }
 
+    // 24 轮以内按比例铺满,每格至少 14px;再多就换成等宽格 + 横向拖动,右边是最新。
+    const STRIP_MAX = 24;
+
     function WorkPath(props) {
       const turns = props.turns || [];
       const index = props.index;
+      const many = turns.length > STRIP_MAX;
+      const rail = React.useRef(null);
+      const drag = React.useRef(null);
+      const [atEnd, setAtEnd] = React.useState(true);
+      const scrollToEnd = React.useCallback(() => {
+        const el = rail.current;
+        if (el !== null) el.scrollLeft = el.scrollWidth;
+      }, []);
+      React.useEffect(() => {
+        if (many) scrollToEnd();
+      }, [many, turns.length, scrollToEnd]);
       if (turns.length === 0) {
         return h("div", { className: "av-section" }, [
           h("div", { key: "h", className: "av-section-head" }, h("h3", { className: "av-section-title" }, "轮次")),
@@ -229,24 +246,56 @@ window.__ModuleLoader__.load({
         const tone = turnTone(turn);
         const callId = turn.firstErrorSeq === null ? undefined : index.get(turn.firstErrorSeq);
         const clickable = callId !== undefined && props.openView !== undefined;
-        const title = "turn " + turn.turn + " · " + turn.toolCalls + " 次调用" + (turn.errors > 0 ? " · " + turn.errors + " 次失败" : "") +
+        const title = "第 " + turn.turn + " 轮 · " + turn.toolCalls + " 次调用" + (turn.errors > 0 ? " · " + turn.errors + " 次失败" : "") +
           (turn.durationMs !== null ? " · " + ms(turn.durationMs) : "") + (clickable ? " · 点击跳到轨迹" : "");
         return h("button", {
           key: turn.turn,
           className: "av-seg " + tone + (clickable ? " clickable" : ""),
-          style: { flexGrow: String(weight(turn)), flexBasis: "0" },
+          style: many ? undefined : { flexGrow: String(weight(turn)), flexBasis: "0" },
           title,
           "aria-label": title,
           tabIndex: clickable ? 0 : -1,
           onClick: clickable ? () => props.openView("trajectory", callId) : undefined,
-        }, turns.length <= 40 ? h("span", { className: "av-seg-label" }, String(turn.turn)) : null);
+        }, turns.length <= 20 ? h("span", { className: "av-seg-label" }, String(turn.turn)) : null);
       });
+      const startDrag = (event) => {
+        const el = rail.current;
+        if (!many || el === null) return;
+        drag.current = { x: event.clientX, left: el.scrollLeft };
+      };
+      const moveDrag = (event) => {
+        const state = drag.current;
+        const el = rail.current;
+        if (state === null || el === null) return;
+        el.scrollLeft = state.left - (event.clientX - state.x);
+      };
+      const endDrag = () => {
+        drag.current = null;
+      };
+      const onScroll = () => {
+        const el = rail.current;
+        if (el === null) return;
+        setAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 4);
+      };
       return h("div", { className: "av-section" }, [
         h("div", { key: "h", className: "av-section-head" }, [
           h("h3", { key: "t", className: "av-section-title" }, "轮次"),
-          h("span", { key: "n", className: "av-hint" }, turns.length + " 个 turn · 宽度按时长,颜色按失败"),
+          h("span", { key: "n", className: "av-hint" }, many
+            ? turns.length + " 轮 · 右边最新,可拖动;每格 14px 起,点一下就能选中"
+            : turns.length + " 个 turn · 宽度按时长,颜色按失败"),
+          many && !atEnd ? h("span", { key: "sp", className: "av-spacer" }) : null,
+          many && !atEnd ? h("button", { key: "end", className: "av-btn", onClick: scrollToEnd }, "回到最新") : null,
         ]),
-        h("div", { key: "s", className: "av-strip" }, segments),
+        h("div", {
+          key: "s",
+          ref: rail,
+          className: "av-strip" + (many ? " scroll" : ""),
+          onScroll: many ? onScroll : undefined,
+          onPointerDown: many ? startDrag : undefined,
+          onPointerMove: many ? moveDrag : undefined,
+          onPointerUp: many ? endDrag : undefined,
+          onPointerLeave: many ? endDrag : undefined,
+        }, segments),
         h("div", { key: "l", className: "av-legend" }, [
           h("span", { key: "ok", className: "av-legend-item" }, [h("span", { key: "s", className: "av-swatch", style: { background: "var(--dsw-alias-state-success-primary)", opacity: 0.5 } }), "正常"]),
           h("span", { key: "warn", className: "av-legend-item" }, [h("span", { key: "s", className: "av-swatch", style: { background: "var(--dsw-alias-state-warn-primary)" } }), "有失败"]),

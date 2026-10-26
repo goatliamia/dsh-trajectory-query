@@ -17,16 +17,16 @@ window.__ModuleLoader__.load({
 .cs-scope{margin-left:auto;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none}
 .cs-scope input{margin:0}
 .cs-list{flex:1;min-height:0;overflow:auto;border-top:1px solid var(--dsw-alias-border-l1)}
-.cs-turn{display:block;width:100%;text-align:left;background:transparent;border:0;border-bottom:1px solid var(--dsw-alias-border-l1);padding:8px 6px;cursor:pointer;font:inherit;color:inherit}
+.cs-turn{display:block;width:100%;text-align:left;background:transparent;border:0;border-bottom:1px solid var(--dsw-alias-border-l1);padding:10px 8px;cursor:pointer;font:inherit;color:inherit}
 .cs-turn:hover{background:var(--dsw-alias-bg-layer-2)}
 .cs-turn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
-.cs-turn-head{display:flex;align-items:baseline;gap:6px;font-size:11px;color:var(--dsw-alias-label-secondary);margin-bottom:3px}
+.cs-turn-head{display:flex;align-items:baseline;gap:6px;font-size:11px;color:var(--dsw-alias-label-secondary);margin-bottom:5px}
 .cs-count{margin-left:auto;font-variant-numeric:tabular-nums}
-.cs-prompt{font-size:12px;color:var(--dsw-alias-label-secondary);margin-bottom:4px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.cs-match{display:flex;gap:6px;font-size:12px;line-height:1.5;margin-top:2px}
-.cs-role{flex:none;color:var(--dsw-alias-label-secondary);font-size:11px;padding-top:1px}
+.cs-match{display:flex;gap:8px;font-size:12px;line-height:1.65;margin-top:3px}
+.cs-role{flex:none;width:30px;text-align:right;color:var(--dsw-alias-label-secondary);font-size:11px;line-height:1.7}
+.cs-prompt{flex:1;min-width:0;color:var(--dsw-alias-label-secondary);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .cs-text{flex:1;min-width:0;word-break:break-word}
-.cs-text mark{background:transparent;color:var(--dsw-alias-brand-primary)}
+.cs-text mark{background:transparent;background:color-mix(in srgb,var(--dsw-alias-brand-primary) 16%,transparent);color:inherit;font-weight:500;border-radius:2px;padding:0 1px}
 .cs-empty{padding:24px 8px;text-align:center;color:var(--dsw-alias-label-secondary);font-size:12px}
 .cs-hint{font-size:11px;color:var(--dsw-alias-label-secondary);padding:2px 0}
 `;
@@ -170,7 +170,10 @@ window.__ModuleLoader__.load({
             h("span", { key: "c", className: "cs-count" }, group.count + " 处"),
           ]),
           group.prompt !== "" && !promptIsMatch
-            ? h("div", { key: "prompt", className: "cs-prompt" }, "你:" + group.prompt)
+            ? h("div", { key: "prompt", className: "cs-match" }, [
+              h("span", { key: "r", className: "cs-role" }, "你"),
+              h("span", { key: "t", className: "cs-prompt" }, group.prompt),
+            ])
             : null,
           group.matches.map((match) => h("div", { key: match.seq, className: "cs-match" }, [
             h("span", { key: "r", className: "cs-role" }, match.role),

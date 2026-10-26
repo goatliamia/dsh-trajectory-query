@@ -35,9 +35,9 @@
 ## 安装
 
 ```text
-pnpm pack                            # -> dsh-conversation-search-0.2.0.tgz
+pnpm pack                            # -> dsh-conversation-search-0.2.1.tgz
 # ~/.dsh/profiles/web/package.json: dependencies 增加
-#   "dsh-conversation-search": "file:<绝对路径>/dsh-conversation-search-0.2.0.tgz"
+#   "dsh-conversation-search": "file:<绝对路径>/dsh-conversation-search-0.2.1.tgz"
 #   dsh.profile.bundles 追加 "dsh-conversation-search"
 pnpm install                         # 在 ~/.dsh/profiles/web
 # 重启 dsh web
