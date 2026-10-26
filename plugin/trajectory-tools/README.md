@@ -36,6 +36,12 @@ key the view does not accept and the error names the keys that view does accept.
 `trajectory_read` and `trajectory_graph` declare `isConcurrencySafe`, so one step may run several of
 them in parallel; `trajectory_search` stays exclusive because its default scan reads several sessions.
 
+`view="events"` pages with `offset` and returns `nextOffset` (`null` on the last page).
+`view="sessions"` carries each session's title when the host can fold one.
+`trajectory_read` takes `format: "json"` for the complete event objects — envelopes, sources and
+stream records included — and still returns the same `log` identity, so `(session, seq@logId)`
+citations keep working.
+
 ### Principles
 
 1. **Read-only.** No event is written or rewritten; returned text is verbatim.
@@ -203,9 +209,9 @@ reply should end with the two lines, and the host log gains one `compaction reco
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.3.5.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.3.6.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.5.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.6.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. restart `dsh web`              # host plugins do not hot-reload reliably
@@ -409,9 +415,9 @@ export function apply(ctx, config = {}) {      // 不是 apply(ctx)
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.3.5.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.3.6.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.5.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.6.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新

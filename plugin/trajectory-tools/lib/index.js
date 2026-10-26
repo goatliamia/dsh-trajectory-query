@@ -894,6 +894,7 @@ export function apply(ctx, config = {}) {
   /* ---------------- view=events:字面检索 ---------------- */
   async function searchEvents(args, exec, filter) {
     const limit = rowLimit(args, DEFAULT_ROWS);
+    const offset = Math.min(Math.max(Math.floor(Number(args.offset || 0)), 0), MAX_ROWS);
     const needle = typeof args.query === "string" ? args.query.trim() : "";
     const types = Array.isArray(filter.types) ? filter.types.map((type) => String(type)) : [];
     const hasRange = filter.from !== undefined || filter.to !== undefined || filter.timeFrom !== undefined || filter.timeTo !== undefined;
@@ -950,6 +951,7 @@ export function apply(ctx, config = {}) {
         const loaded = await withTimeout(loadEvents(ctx, sessionId), LOAD_TIMEOUT_MS, "trajectory_search");
         const { hits, filtered } = scan(loaded.events);
         const log = logIdentity(sessionId, loaded.events);
+        const page = hits.slice(offset, offset + limit);
         return {
           ok: true,
           view: "events",
@@ -957,10 +959,12 @@ export function apply(ctx, config = {}) {
           source: loaded.source,
           log,
           hitCount: hits.length,
-          returned: Math.min(hits.length, limit),
+          offset,
+          returned: page.length,
+          nextOffset: offset + page.length < hits.length ? offset + page.length : null,
           ...(normalize ? {} : { normalized: false }),
           ...(filtered.injected + filtered.self > 0 ? { filtered } : {}),
-          items: hits.slice(0, limit).map((hit) => toItem(sessionId, hit, log.id)),
+          items: page.map((hit) => toItem(sessionId, hit, log.id)),
         };
       }
 
@@ -973,11 +977,12 @@ export function apply(ctx, config = {}) {
       const targets = [...always, ...extra];
 
       const items = [];
+      const wanted = offset + limit;
       let scanned = 0;
       let failures = 0;
       const filteredTotal = { injected: 0, self: 0 };
       for (const target of targets) {
-        if (items.length >= limit) break;
+        if (items.length >= wanted) break;
         scanned++;
         try {
           const loaded = await withTimeout(loadEvents(ctx, target.id), LOAD_TIMEOUT_MS, "trajectory_search");
@@ -986,13 +991,14 @@ export function apply(ctx, config = {}) {
           filteredTotal.injected += filtered.injected;
           filteredTotal.self += filtered.self;
           for (const hit of hits) {
-            if (items.length >= limit) break;
+            if (items.length >= wanted) break;
             items.push(toItem(target.id, hit, log.id));
           }
         } catch {
           failures++;
         }
       }
+      const page = items.slice(offset);
       return {
         ok: true,
         view: "events",
@@ -1000,10 +1006,12 @@ export function apply(ctx, config = {}) {
         scanned,
         failed: failures,
         targets: targets.map((record) => record.id),
-        returned: items.length,
+        offset,
+        returned: page.length,
+        nextOffset: items.length >= wanted ? offset + page.length : null,
         ...(normalize ? {} : { normalized: false }),
         ...(filteredTotal.injected + filteredTotal.self > 0 ? { filtered: filteredTotal } : {}),
-        items,
+        items: page,
       };
     } catch (error) {
       return FAILED(error);
@@ -1078,17 +1086,50 @@ export function apply(ctx, config = {}) {
       const currentId = currentSessionId(ctx, exec);
       const all = await listSessions(ctx, currentId);
       const filtered = filter.liveOnly === true ? all.filter((item) => item.live) : all;
+      const page = filtered.slice(0, limit);
+      const titles = await sessionTitles(ctx, page.map((item) => item.id));
       return {
         ok: true,
         view: "sessions",
         current: currentId || null,
         total: all.length,
-        returned: Math.min(filtered.length, limit),
-        items: filtered.slice(0, limit),
+        returned: page.length,
+        items: page.map((item) => ({ ...item, title: titles.get(item.id) ?? null })),
       };
     } catch (error) {
       return FAILED(error);
     }
+  }
+
+  /** 会话标题(附加信息:拿不到就 null,不影响列表)。 */
+  async function sessionTitles(ctx, ids) {
+    const titles = new Map();
+    if (ids.length === 0) return titles;
+    const query = ctx.get("sessionQuery");
+    if (query === undefined) return titles;
+    try {
+      if (typeof query.readTitleSnapshots === "function") {
+        for (const result of (await query.readTitleSnapshots(ids)) || []) {
+          if (result && result.status === "fulfilled" && result.value && result.value.title && typeof result.value.title.title === "string") {
+            titles.set(result.sessionId, result.value.title.title);
+          }
+        }
+        return titles;
+      }
+      if (typeof query.readTitle === "function") {
+        for (const id of ids) {
+          try {
+            const snapshot = await query.readTitle(id);
+            if (snapshot && typeof snapshot.title === "string") titles.set(id, snapshot.title);
+          } catch {
+            /* 单个取不到不影响列表 */
+          }
+        }
+      }
+    } catch {
+      /* 标题只是附加信息 */
+    }
+    return titles;
   }
 
   /* ---------------- view=cost:token 成本 ---------------- */
@@ -1164,6 +1205,21 @@ export function apply(ctx, config = {}) {
         return { ok: false, error: "窗口超过 " + MAX_WINDOW + " 事件上限,请缩小范围", window: { from, to } };
       }
       const window = await withTimeout(readWindow(ctx, sessionId, Math.max(from, 0), to), LOAD_TIMEOUT_MS, "trajectory_read");
+      const log = { id: logIdOf(sessionId, window.first), eventCount: window.total === undefined ? null : window.total };
+      if (args.format === "json") {
+        // 完整事件对象(仍是 60 条窗口):给需要看信封/来源/stream 的人;JSON 往返保证输出是纯 JSON。
+        const raw = window.events.map((event) => JSON.parse(JSON.stringify(event)));
+        return {
+          ok: true,
+          session: sessionId,
+          source: window.source,
+          log,
+          requested: { from, to },
+          returned: raw.length,
+          format: "json",
+          events: raw,
+        };
+      }
       const rows = [];
       for (const event of window.events) {
         const text = eventText(event);
@@ -1175,7 +1231,7 @@ export function apply(ctx, config = {}) {
         ok: true,
         session: sessionId,
         source: window.source,
-        log: { id: logIdOf(sessionId, window.first), eventCount: window.total === undefined ? null : window.total },
+        log,
         requested: { from, to },
         returned: rows.length,
         events: rows,
@@ -1235,6 +1291,7 @@ export function apply(ctx, config = {}) {
       query: { type: "string", description: "字面词,events 用" },
       filter: { type: "object", additionalProperties: true, description: "可选维度;键按 view 不同,传错会列出该 view 的可选键" },
       limit: { type: "integer", description: "行数上限,默认 " + DEFAULT_ROWS },
+      offset: { type: "integer", description: "跳过前 N 条(events 用);返回 nextOffset,没有更多就是 null" },
     },
     output: OUTPUT,
     // search 故意不标并发安全:默认扫描集要读多份会话,并行只会把成本乘起来。
@@ -1250,6 +1307,7 @@ export function apply(ctx, config = {}) {
       from: { type: "integer", description: "起点 seq(含)" },
       to: { type: "integer", description: "终点 seq(含);窗口上限 " + MAX_WINDOW },
       raw: { type: "boolean", description: "true=连没有正文的事件也给" },
+      format: { type: "string", enum: ["text", "json"], description: "json=完整事件对象(信封/来源/stream 都在),默认 text=逐字正文" },
     },
     output: OUTPUT,
     // 只读且定点:同一 step 里可以和其他调用并行。

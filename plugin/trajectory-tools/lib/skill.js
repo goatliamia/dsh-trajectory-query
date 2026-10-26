@@ -16,12 +16,12 @@ export const SKILL_BODY = `# trajectory-query
 需要过去的信息时(被 compaction 覆盖、很久以前、其他会话/子代理):**不要猜,先查**。
 
 - \`trajectory_search\` — 查事实与数字,\`view\` 必填:
-  \`events\` 按字面词搜事件(返回 \`(session, seq, type, time)\` 与逐字片段 + \`matchAt\`);
+  \`events\` 按字面词搜事件(返回 \`(session, seq, type, time)\` 与逐字片段 + \`matchAt\`;\`offset\` 翻页,返回 \`nextOffset\`);
   \`catalog\` 会话的计数与 seq / 时间范围(不含正文);要按事件类型 / 工具细分时加 \`filter.breakdown:true\`;
   \`cost\` 逐请求 token 与 cache 效率(\`coverage\` 只在有请求没报全时出现);
-  \`sessions\` 可查会话列表。
+  \`sessions\` 可查会话列表(带标题)。
   可选维度收在 \`filter\` 里,键按 view 不同(传错会告诉你这个 view 能用哪些)。
-- \`trajectory_read\` — 按 \`(session, seq 区间)\` 逐字取原文;默认只给有正文的事件,\`raw:true\` 给区间内全部。
+- \`trajectory_read\` — 按 \`(session, seq 区间)\` 逐字取原文;默认只给有正文的事件,\`raw:true\` 给区间内全部;\`format:"json"\` 给完整事件对象(信封/来源都在),log 身份照样带。
 - \`trajectory_graph\` — 事件关系链(替换/引用/派生)或会话谱系;链默认只给计数与首尾,\`full:true\` 给完整数组。
 
 默认行为:

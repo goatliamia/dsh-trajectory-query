@@ -218,6 +218,10 @@ const fakeQuery = {
       derivedEventSeqs: [7],
     };
   },
+  // 标题是 sessions 视图的附加信息;真实服务用 readTitleSnapshots 批量取
+  async readTitleSnapshots(ids) {
+    return ids.map((id) => ({ sessionId: id, status: "fulfilled", value: { title: { title: "title of " + id } } }));
+  },
   async traceSession(sessionId) {
     traceCalls.push(sessionId);
     return { complete: true, ancestors: [], descendants: [] };
@@ -449,6 +453,7 @@ eq("sessions: 报出当前会话", sessions.current, CURRENT_ID);
 eq("sessions: 排序 当前→live→已持久化", sessions.items.map((item) => item.id), [CURRENT_ID, LIVE_ID, NEWER[0], NEWER[1], NEWER[2], PERSISTED_ID]);
 eq("sessions: 标记当前会话", sessions.items[0].current, true);
 eq("sessions: filter.liveOnly", (await search({ view: "sessions", filter: { liveOnly: true } })).items.map((item) => item.id), [CURRENT_ID, LIVE_ID]);
+eq("sessions: 带标题", sessions.items.find((item) => item.id === LIVE_ID).title, "title of " + LIVE_ID);
 
 const found = await search({ view: "events", session: LIVE_ID, query: "fs_not_observed" });
 eq("events: 大小写不敏感命中", found.hitCount, 2);
@@ -460,6 +465,14 @@ eq("events: filter.types", (await search({ view: "events", session: LIVE_ID, fil
 eq("events: filter.from/to", (await search({ view: "events", session: LIVE_ID, query: "file", filter: { from: 5, to: 6 } })).items.map((item) => item.seq), [5, 6]);
 eq("events: 空结果 = 可验证的没有", (await search({ view: "events", session: LIVE_ID, query: "zzz-not-in-log" })).hitCount, 0);
 eq("events: 没有任何条件时拒绝", (await search({ view: "events", session: LIVE_ID })).ok, false);
+
+// offset:同一批命中分页取
+const hitPage1 = await search({ view: "events", session: LIVE_ID, query: "fs_not_observed", limit: 1 });
+const hitPage2 = await search({ view: "events", session: LIVE_ID, query: "fs_not_observed", limit: 1, offset: 1 });
+eq("events: 第一页给 nextOffset", hitPage1.nextOffset, 1);
+eq("events: offset 取到第二条", hitPage2.items.map((item) => item.seq), [6]);
+eq("events: 最后一页 nextOffset 为 null", hitPage2.nextOffset, null);
+eq("events: offset 越界返回空", (await search({ view: "events", session: LIVE_ID, query: "fs_not_observed", offset: 99 })).items.length, 0);
 
 // 长事件:命中点在第 800 字符之后,片段必须仍然带它
 const longHit = await search({ view: "events", session: LIVE_ID, query: "needle-at-the-end" });
@@ -499,6 +512,13 @@ const settledRead = await read({ session: PERSISTED_ID, from: 3, to: 5, raw: tru
 eq("read: 已持久化会话切片", settledRead.events.map((row) => row.seq), [3, 4, 5]);
 eq("read: 已持久化会话的 log 身份", settledRead.log.id, persistedLogId);
 eq("read: 事件数取自 stat", settledRead.log.eventCount, 16);
+
+// format=json:完整事件对象(带 data),log 身份不丢
+const jsonRead = await read({ session: PERSISTED_ID, from: 3, to: 4, format: "json" });
+eq("read: json 模式返回原样事件", jsonRead.events.map((event) => event.seq), [3, 4]);
+check("read: json 模式保留 data", jsonRead.events.every((event) => event !== null && typeof event === "object" && "data" in event), jsonRead.events[0]);
+eq("read: json 模式仍带 log 身份", jsonRead.log.id, persistedLogId);
+eq("read: json 模式标记格式", jsonRead.format, "json");
 
 /* ---------------- view=catalog / cost ---------------- */
 const catalog = await search({ view: "catalog" });
