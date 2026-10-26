@@ -34,8 +34,11 @@ no separate data source — and renders a **deterministic, evidence-cited** view
 - **Incident cards** — only *evidence-backed* incidents. Each card is a causal chain:
   `Cause / Runtime knew / Model received / Harness response / Impact`, with evidence `seq` chips
   that jump to the Trajectory tab.
-- **Open interpretation (AI skill)** — a button; interpretation is generated only when pressed, over
-  bounded evidence, every claim cited. Off by default because it costs tokens.
+- **Open interpretation (one model call)** — a button; when pressed, the host makes one direct
+  `llm.stream` call to the **current default model** with a fixed system prompt and a bounded
+  evidence block (incidents + cost + up to 8 verbatim excerpts). No skill, no agent loop, nothing
+  written back to the session; every claim cites `(session, seq@logId)`. Off by default because it
+  costs tokens.
 
 The panel renders one `conversation.view` seat (`id: "analysis"`), next to Conversation and
 Trajectory — no new sidebar, no tools registered, zero bytes in the tool table.
@@ -83,9 +86,9 @@ node analyzers/shape-law.mjs --mutate   # prove the laws bite: reasonable mistak
 Dynamic plugins are session-scoped and vanish on reload; this one is installed into the web profile.
 
 ```text
-1. pnpm pack                      # -> dsh-analysis-view-0.2.2.tgz
+1. pnpm pack                      # -> dsh-analysis-view-0.2.3.tgz
 2. add to ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.2.2.tgz"
+     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.2.3.tgz"
      dsh.profile.bundles: append "dsh-analysis-view"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. rebuild / restart `dsh web`    # so the new client module enters the bundle
@@ -145,7 +148,9 @@ conversation.view  →  [对话] [轨迹] [分析]
 - **工具**:按调用次数排序的调用数、失败数、平均耗时。
 - **Incident 卡片**:只列**有证据**的 incident,每张是一条因果链
   `Cause / Runtime 知道 / Model 收到 / Harness 反应 / 影响`,并带证据 `seq` 徽章。
-- **开放解读(AI skill)**:按钮触发,点了才调用一次模型,每条陈述带引用;默认不调用(会消耗 tokens)。
+- **开放解读(一次模型调用)**:按钮触发,host 用**当前默认模型**直接发一次 `llm.stream`——system prompt
+  固定,证据块是 incident + cost + 最多 8 条逐字片段;不走 agent loop、不加载 skill、不写回会话。
+  每条陈述带引用;默认不调用(会消耗 tokens)。输出触到 token 上限时面板会标"已截断"。
 
 面板只占 `conversation.view` 的一个位置(`id: "analysis"`,与「对话」「轨迹」同一排),不新开侧栏、
 不注册工具,工具表一个字节都不占。
@@ -187,9 +192,9 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 动态插件是会话级、刷新即失;这个是装进 web profile 的常驻插件。
 
 ```text
-1. pnpm pack                      # 生成 dsh-analysis-view-0.2.2.tgz
+1. pnpm pack                      # 生成 dsh-analysis-view-0.2.3.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.2.2.tgz"
+     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.2.3.tgz"
      dsh.profile.bundles 追加 "dsh-analysis-view"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重建/重启 `dsh web`,让新的 client 模块进入前端包

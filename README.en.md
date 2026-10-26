@@ -170,7 +170,7 @@ pnpm pack                                  # in each plugin directory
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: add
 #     "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.4.tgz"
-#     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.2.2.tgz"
+#     "dsh-analysis-view":    "file:<abs path>/dsh-analysis-view-0.2.3.tgz"
 #   dsh.profile.bundles: append "dsh-trajectory-tools" and "dsh-analysis-view"
 pnpm install            # in ~/.dsh/profiles/web
 # restart `dsh web` (host plugins do not hot-reload reliably)
@@ -208,7 +208,7 @@ short message): that turn ends with one extra model message, and the host log ga
 - Without `session`, `view="events"` scans the current session + every live session + a few persisted ones; persisted sessions are ranked by `createdAt` (there is no cheap last-activity signal), so pass `session` explicitly for a long-settled session.
 - `trajectory_graph` is the only one of the three that depends on `ctx.sessionQuery`; search and read need only `sessions` / `sessionPersistence`.
 - Every host/client API these plugins use was checked against DSH 0.2.1-rc.3: the `defineTool` parameter DSL, the `sessionQuery` method set, `SessionHandle`, `skills.register`, `webServer.register`, `llm.stream`, `agent/turn-stopping` + `agent.steer`, the `conversation.view` slot and `uiConversation.views/binding` are unchanged; the only migration needed is the deprecated synchronous read above.
-- Runtime: DSH 0.2.1-rc.3, plugins 0.3.4 / 0.2.2. The three entries cost about 1.3 KB of tool table (down from 5.7 KB with six); the contract is covered by the 176-check and 14-check self-tests and an offline check on real data — the live check is the **Verify** section above.
+- Runtime: DSH 0.2.1-rc.3, plugins 0.3.4 / 0.2.3. The three entries cost about 1.3 KB of tool table (down from 5.7 KB with six); the contract is covered by the 176-check and 14-check self-tests and an offline check on real data — the live check is the **Verify** section above.
 - `trajectory_search(view="cost")` reads `assistant/message.usage` only — no new instrumentation. A request whose adapter reported no usage is `unknown` (never zero), and a single missing field is `null` and stays out of the sums. The DeepSeek adapter usually does not report `cacheWriteTokens`: that means "not reported", not "no cache write".
 - Trap: after the format migration a session directory keeps **both `session.v3.jsonl.zstd` (current) and `session.v2.jsonl.zstd` (pre-migration copy)**. Pass the v3 file to the analyzers by hand, or you will read the stale copy as if it were the newest session. `experiments/corpus/scan-sessions.mjs` now picks the highest version per directory.
 

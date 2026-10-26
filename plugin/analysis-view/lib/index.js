@@ -450,7 +450,7 @@ async function interpret(ctx, sessionId, events, facts, log, cost) {
   const defaultModel = ctx.get("agentDefaultModel");
   const selection = defaultModel && typeof defaultModel.currentSelection === "function" ? defaultModel.currentSelection() : void 0;
   if (!selection || !selection.provider || !selection.model) return { error: "no default model selection" };
-  const system = "你是轨迹分析助手。只依据给定的确定性 incident 事实与逐字证据片段作答;每条事实性陈述必须引用 (session, seq@" + (log ? log.id : "log") + "),不得编造 seq。输出中文,不超过 200 字,分四段:发生了什么 / 原因 / Harness 是否响应 / 影响。";
+  const system = "你是轨迹分析助手。只依据给定的确定性 incident 事实与逐字证据片段作答;每条事实性陈述必须引用 (session, seq@" + (log ? log.id : "log") + "),不得编造 seq。输出中文,四段(发生了什么 / 原因 / Harness 是否响应 / 影响)合计不超过 200 字,写完即停,不要复述证据。";
   const messages = [{
     id: "analysis-view-interpret",
     role: "user",
@@ -462,11 +462,15 @@ async function interpret(ctx, sessionId, events, facts, log, cost) {
   let text = "";
   let usage = null;
   let failure = null;
+  let finish = null;
   try {
-    for await (const chunk of llm.stream({ provider: selection.provider, model: selection.model, messages, system, maxTokens: 600, signal: ctl.signal, sessionId })) {
+    for await (const chunk of llm.stream({ provider: selection.provider, model: selection.model, messages, system, maxTokens: 1000, signal: ctl.signal, sessionId })) {
       if (chunk.type === "text-delta") text += chunk.text;
       else if (chunk.type === "usage") usage = chunk.usage;
-      else if (chunk.type === "finish" && chunk.reason && (chunk.reason.kind === "error" || chunk.reason.kind === "aborted")) failure = chunk.reason;
+      else if (chunk.type === "finish" && chunk.reason) {
+        finish = chunk.reason;
+        if (chunk.reason.kind === "error" || chunk.reason.kind === "aborted") failure = chunk.reason;
+      }
     }
   } catch (error) {
     failure = { kind: "error", message: String((error && error.message) || error) };
@@ -474,7 +478,7 @@ async function interpret(ctx, sessionId, events, facts, log, cost) {
     clearTimeout(timer);
   }
   if (failure !== null) return { error: "model call failed: " + ((failure.failure && failure.failure.message) || failure.message || failure.kind) };
-  return { text, model: { provider: selection.provider, model: selection.model }, usage };
+  return { text, model: { provider: selection.provider, model: selection.model }, usage, ...(finish !== null && finish.kind === "max-tokens" ? { truncated: true } : {}) };
 }
 
 export const inject = ["webServer"];

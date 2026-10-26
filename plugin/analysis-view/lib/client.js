@@ -397,18 +397,18 @@ window.__ModuleLoader__.load({
     }
 
     function Interpret(props) {
-      const [state, setState] = React.useState({ status: "idle", text: null, error: null });
+      const [state, setState] = React.useState({ status: "idle", text: null, error: null, truncated: false });
       const sessionId = props.sessionId;
       const run = () => {
         if (!sessionId) return;
-        setState({ status: "loading", text: null, error: null });
+        setState({ status: "loading", text: null, error: null, truncated: false });
         fetch("/analysis-view/interpret?session=" + encodeURIComponent(sessionId), { cache: "no-store" })
           .then((r) => r.json())
           .then((json) => {
-            if (json && json.error) setState({ status: "error", text: null, error: String(json.error) });
-            else setState({ status: "ready", text: String((json && json.text) || ""), error: null });
+            if (json && json.error) setState({ status: "error", text: null, error: String(json.error), truncated: false });
+            else setState({ status: "ready", text: String((json && json.text) || ""), error: null, truncated: Boolean(json && json.truncated) });
           })
-          .catch((error) => setState({ status: "error", text: null, error: String((error && error.message) || error) }));
+          .catch((error) => setState({ status: "error", text: null, error: String((error && error.message) || error), truncated: false }));
       };
       return h("div", { className: "av-section" }, [
         h("div", { key: "h", className: "av-section-head" }, [
@@ -421,6 +421,7 @@ window.__ModuleLoader__.load({
         state.status === "loading" ? h("div", { key: "l" }, [h("div", { className: "av-skel line", style: { width: "92%" } }), h("div", { className: "av-skel line", style: { width: "70%", marginBottom: 0 } })]) : null,
         state.status === "error" ? h(Notice, { key: "e", text: "解读失败:" + state.error, action: { label: "重试", onClick: run } }) : null,
         state.status === "ready" ? h("div", { key: "r", className: "av-interp" }, state.text) : null,
+        state.status === "ready" && state.truncated ? h("div", { key: "t", className: "av-hint" }, "输出触到 token 上限,已截断") : null,
       ]);
     }
 
