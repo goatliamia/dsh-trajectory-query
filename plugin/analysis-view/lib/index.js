@@ -121,6 +121,69 @@ export function deriveHarnessResponse(kinds) {
  * A request whose adapter reported no usage is `unknown`, never zero; a single missing
  * field is null and is excluded from the sums.
  */
+/** DeepSeek 官方 API 价目(元 / 百万 tokens):[空闲时段, 高峰时段],见 api-docs.deepseek.com 的模型与价格页。 */
+const DEEPSEEK_PRICES = {
+  "deepseek-flash": { cacheHit: [0.02, 0.04], cacheMiss: [1, 2], output: [4, 8] },
+  "deepseek-v4-pro": { cacheHit: [0.15, 0.3], cacheMiss: [4.5, 9], output: [13.5, 27] },
+};
+
+/** 高峰是北京时间周一至周五 9:00–12:00、14:00–18:00;其余(含周末)按空闲时段算。 */
+function isPeakTime(time) {
+  if (typeof time !== "number") return false;
+  const beijing = new Date(time + 8 * 3600 * 1000);
+  const day = beijing.getUTCDay();
+  const hour = beijing.getUTCHours();
+  return day >= 1 && day <= 5 && ((hour >= 9 && hour < 12) || (hour >= 14 && hour < 18));
+}
+
+/** 只给"官方 API + 已知模型"的请求计价,其余计数不猜价。 */
+function computePricing(requests) {
+  const models = new Set();
+  const cost = { miss: 0, hit: 0, output: 0 };
+  const tokens = { miss: 0, hit: 0, output: 0 };
+  let priced = 0;
+  let unpriced = 0;
+  let peakRequests = 0;
+  for (const row of requests) {
+    const provider = typeof row.provider === "string" ? row.provider : null;
+    const model = typeof row.model === "string" ? row.model : null;
+    if (provider === null || model === null || !provider.startsWith("deepseek")) {
+      unpriced += 1;
+      continue;
+    }
+    models.add(model);
+    const table = DEEPSEEK_PRICES[model];
+    if (table === undefined) {
+      unpriced += 1;
+      continue;
+    }
+    const peak = isPeakTime(row.time);
+    if (peak) peakRequests += 1;
+    const slot = peak ? 1 : 0;
+    const miss = row.input || 0;
+    const hit = row.cacheRead || 0;
+    const out = row.output || 0;
+    cost.miss += (miss / 1e6) * table.cacheMiss[slot];
+    cost.hit += (hit / 1e6) * table.cacheHit[slot];
+    cost.output += (out / 1e6) * table.output[slot];
+    tokens.miss += miss;
+    tokens.hit += hit;
+    tokens.output += out;
+    priced += 1;
+  }
+  const perM = (value, count) => (count === 0 ? null : (value / count) * 1e6);
+  return {
+    currency: "CNY",
+    models: [...models],
+    priced,
+    unpriced,
+    peakRequests,
+    total: cost.miss + cost.hit + cost.output,
+    cost,
+    perM: { miss: perM(cost.miss, tokens.miss), hit: perM(cost.hit, tokens.hit), output: perM(cost.output, tokens.output) },
+  };
+}
+
 export function computeCost(events) {
   const requests = [];
   for (const e of events || []) {
@@ -129,9 +192,13 @@ export function computeCost(events) {
     const u = d.usage;
     const unknown = u === undefined || u === null || typeof u !== "object";
     const pick = (field) => (unknown || typeof u[field] !== "number" ? null : u[field]);
+    const source = d.message && d.message.source;
     const row = {
       seq: e.seq,
+      time: typeof e.time === "number" ? e.time : null,
       turn: typeof d.turn === "number" ? d.turn : null,
+      model: source && typeof source.model === "string" ? source.model : null,
+      provider: source && typeof source.provider === "string" ? source.provider : null,
       unknown,
       input: pick("inputTokens"),
       cacheRead: pick("cacheReadTokens"),
@@ -179,8 +246,13 @@ export function computeCost(events) {
     reasoning: sum("reasoning"),
     total: sum("total"),
     cacheEfficiency: cacheRead === null || input === null || cacheRead + input === 0 ? null : cacheRead / (cacheRead + input),
+    pricing: priced(requests) ? computePricing(requests) : null,
     byTurn,
   };
+}
+
+function priced(requests) {
+  return requests.some((row) => typeof row.provider === "string" && row.provider.startsWith("deepseek") && DEEPSEEK_PRICES[row.model] !== undefined);
 }
 
 export const TOOL_CATEGORY_LABELS = Object.freeze({ file: "文件", run: "执行", web: "网络", context: "上下文", coop: "协作", plugin: "插件", other: "其他" });

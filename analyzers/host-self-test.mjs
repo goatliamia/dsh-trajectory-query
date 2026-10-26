@@ -1,6 +1,6 @@
 // Host-half mechanical self-test: the host incident computation must obey the same pinned semantics.
 // Usage: node analyzers/host-self-test.mjs   (failure exits 1)
-import { classifyTool, computeIncidents, computeWorkPath, deriveHarnessResponse } from '../plugin/analysis-view/lib/index.js';
+import { classifyTool, computeCost, computeIncidents, computeWorkPath, deriveHarnessResponse } from '../plugin/analysis-view/lib/index.js';
 
 let failed = 0;
 const check = (name, cond, extra) => {
@@ -65,6 +65,27 @@ check('work: 工具带按轮分布', (() => {
   const tool = work.tools.find((t) => t.name === 'read') || {};
   return Array.isArray(tool.byTurn) && tool.byTurn.length === 1 && tool.byTurn[0].turn === 1 && tool.byTurn[0].calls === 1;
 })(), (work.tools.find((t) => t.name === 'read') || {}).byTurn);
+
+/* 9) 官方价目:按峰谷时段计价,非官方 API 不出价格 */
+const official = (seq, time, input, cacheRead, output) => ({
+  type: 'assistant/message',
+  seq,
+  time,
+  data: {
+    usage: { inputTokens: input, cacheReadTokens: cacheRead, outputTokens: output },
+    message: { source: { kind: 'model', provider: 'deepseek-account', model: 'deepseek-flash' } },
+  },
+});
+const priced = computeCost([
+  official(1, Date.UTC(2026, 0, 5, 2, 0), 1000000, 1000000, 1000000), // 北京周一 10:00 → 高峰
+  official(2, Date.UTC(2026, 0, 5, 14, 0), 1000000, 0, 0), // 北京周一 22:00 → 空闲
+]);
+check('cost: 峰谷价目', priced.pricing !== null && priced.pricing.priced === 2 && priced.pricing.peakRequests === 1 && Math.abs(priced.pricing.total - 11.04) < 1e-9, priced.pricing);
+const foreign = computeCost([{
+  type: 'assistant/message', seq: 1, time: Date.UTC(2026, 0, 5, 2, 0),
+  data: { usage: { inputTokens: 1000, cacheReadTokens: 0, outputTokens: 10 }, message: { source: { kind: 'model', provider: 'openai', model: 'gpt-5' } } },
+}]);
+check('cost: 非官方 API 不产出价格', foreign.pricing === null, foreign.pricing);
 check('work: endReason 记录', work.turns[1].endReason === 'error', work.turns[1].endReason);
 const timed = computeWorkPath([
   { type: 'turn/start', seq: 0, time: 1000, data: {} },

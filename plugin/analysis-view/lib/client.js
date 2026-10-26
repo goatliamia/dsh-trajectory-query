@@ -46,9 +46,12 @@ window.__ModuleLoader__.load({
 .av-legend{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap}
 .av-legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dsw-alias-label-secondary)}
 .av-swatch{width:8px;height:8px;border-radius:2px;flex:none}
-.av-cost-head{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px}
+.av-cost-head{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-start}
 .av-cost-num{font-size:14px;font-weight:500;font-variant-numeric:tabular-nums}
 .av-cost-label{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.av-price{margin-left:auto;text-align:right;font-size:11px;color:var(--dsw-alias-label-secondary);line-height:1.5}
+.av-price-total{font-size:15px;font-weight:500;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
+.av-price-units{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;font-variant-numeric:tabular-nums}
 .av-cost-rows{max-height:240px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
 .av-cost-row{display:grid;grid-template-columns:34px minmax(0,1fr) minmax(52px,.42fr) 44px;align-items:center;gap:8px;margin-bottom:4px;border-radius:4px;cursor:pointer}
 .av-cost-row:hover{background:var(--dsw-alias-bg-layer-2)}
@@ -84,7 +87,7 @@ window.__ModuleLoader__.load({
 .av-flow-head{display:flex;align-items:baseline;gap:8px;min-width:0;height:18px}
 .av-flow-title{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .av-flow-meta{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;white-space:nowrap}
-.av-flow-body{display:flex;gap:14px;align-items:flex-start;min-width:0}
+.av-flow-body{display:flex;gap:14px;align-items:flex-start;min-width:0;padding:4px 0}
 .av-donut-sm{width:96px;height:96px;flex:none}
 .av-donut-sm .av-donut-num{font-size:14px}
 .av-leg-static{cursor:default}
@@ -191,6 +194,13 @@ window.__ModuleLoader__.load({
       return String(value);
     };
     const pct = (value) => (value === null || value === undefined ? "—" : (value * 100).toFixed(value >= 0.9995 ? 0 : 1) + "%");
+    const money = (value) => {
+      if (value === null || value === undefined) return "—";
+      if (value === 0) return "0";
+      if (value >= 1) return value.toFixed(2);
+      if (value >= 0.01) return value.toFixed(3);
+      return value.toFixed(4);
+    };
     const ms = (value) => {
       if (value === null || value === undefined) return "—";
       if (value < 1000) return Math.round(value) + "ms";
@@ -470,6 +480,15 @@ window.__ModuleLoader__.load({
           h("div", { key: "cr" }, [h("div", { className: "av-cost-num" }, fmt(cost.cacheRead)), h("div", { className: "av-cost-label" }, "命中")]),
           h("div", { key: "out" }, [h("div", { className: "av-cost-num" }, fmt(cost.output)), h("div", { className: "av-cost-label" }, "输出")]),
           h("div", { key: "eff" }, [h("div", { className: "av-cost-num" }, pct(cost.cacheEfficiency)), h("div", { className: "av-cost-label" }, "命中率")]),
+          cost.pricing === null || cost.pricing === undefined || cost.pricing.priced === 0 ? null : h("div", { key: "price", className: "av-price" }, [
+            h("div", { key: "t", className: "av-price-total", title: "官方 API 价目 · 峰谷时段已计入" }, "≈ ¥" + money(cost.pricing.total)),
+            h("div", { key: "m", className: "av-price-meta" }, "官方 API · " + cost.pricing.models.join(" / ")),
+            h("div", { key: "u", className: "av-price-units" }, [
+              h("span", { key: "a" }, "未命中 ¥" + money(cost.pricing.perM.miss) + "/M"),
+              h("span", { key: "b" }, "命中 ¥" + money(cost.pricing.perM.hit) + "/M"),
+              h("span", { key: "c" }, "输出 ¥" + money(cost.pricing.perM.output) + "/M"),
+            ]),
+          ]),
         ]),
         cost.cacheEfficiency === null ? null : h("div", { key: "note", className: "av-hint", style: { marginBottom: 8 } },
           "缓存承担了 " + pct(cost.cacheEfficiency) + " 的输入处理,实际新处理 " + fmt(cost.input)),

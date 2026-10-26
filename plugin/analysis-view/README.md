@@ -30,7 +30,10 @@ no separate data source — and renders a **deterministic, evidence-cited** view
   The legend is printed; no unlabeled colours.
 - **Spend** — per turn, two bars: the reused prefix (cache hit) beside what was actually processed
   fresh (miss), with output on its own bar; each turn's hit rate sits on the right and turns amber
-  below 90%. The list scrolls and starts at the newest turn.
+  below 90%. The list scrolls and starts at the newest turn. When every request came from the official
+  DeepSeek API (`deepseek-flash` / `deepseek-v4-pro`), the right side of the summary shows the official
+  unit prices for miss / hit / output plus a total, with the peak/off-peak schedule already applied;
+  anything else shows no price at all.
 - **Tools** — three rings side by side: categories → that category's tools → the selected tool's calls
   per turn. All three are visible by default (largest category and its top tool); picking a category or
   a tool only changes the other two. Category colours avoid red, which stays reserved for errors. The
@@ -94,9 +97,9 @@ node analyzers/shape-law.mjs --mutate   # prove the laws bite: reasonable mistak
 Dynamic plugins are session-scoped and vanish on reload; this one is installed into the web profile.
 
 ```text
-1. pnpm pack                      # -> dsh-analysis-view-0.3.13.tgz
+1. pnpm pack                      # -> dsh-analysis-view-0.3.14.tgz
 2. add to ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.3.13.tgz"
+     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.3.14.tgz"
      dsh.profile.bundles: append "dsh-analysis-view"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. rebuild / restart `dsh web`    # so the new client module enters the bundle
@@ -152,7 +155,7 @@ conversation.view  →  [对话] [轨迹] [分析]
 - **轮次地图**:一条按时长分宽的比例带(颜色按该轮失败数);有失败的轮次点击切到「轨迹」
   (`openView("trajectory", callId)`);图例直接写在界面上。
 - **花费**:每轮两条——命中(复用的前缀)与未命中(真正新处理)并排画,输出单独一条;右侧是这一轮的
-  命中率,低于 90% 标警示色;列表可滚动,默认停在最新。
+  命中率,低于 90% 标警示色;列表可滚动,默认停在最新。走官方 API(deepseek-flash / deepseek-v4-pro)时,右边按官方价目给未命中 / 命中 / 输出的单价与总价,峰谷已计入;不是官方 API 就不显示价格。
 - **工具**:三个环并排——类别 → 该类工具 → 这个工具用在哪些轮;三张默认都在(取最大类别与它的第一名工具),
   点类别或工具只切换后两张;类别色不用红,红只留给错误。
 - **Incident 卡片**:只列**有证据**的 incident,每张是一条因果链
@@ -201,9 +204,9 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 动态插件是会话级、刷新即失;这个是装进 web profile 的常驻插件。
 
 ```text
-1. pnpm pack                      # 生成 dsh-analysis-view-0.3.13.tgz
+1. pnpm pack                      # 生成 dsh-analysis-view-0.3.14.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.3.13.tgz"
+     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.3.14.tgz"
      dsh.profile.bundles 追加 "dsh-analysis-view"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重建/重启 `dsh web`,让新的 client 模块进入前端包
