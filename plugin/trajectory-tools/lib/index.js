@@ -1216,13 +1216,12 @@ export function apply(ctx, config = {}) {
 
   register({
     name: "trajectory_search",
-    description:
-      "查会话日志里的事实与数字,不取完整原文。返回位置 (session, seq@logId) 与逐字片段;空结果=日志里没有,不要用常识补。",
+    description: "查会话日志的事实与数字:字面命中、会话清单、token 花费。结果带 (session, seq@logId) 与逐字片段。",
     parameters: {
-      view: { type: "string", required: true, enum: ["events", "catalog", "sessions", "cost"], description: "events=搜事件;catalog=计数与范围;cost=token 成本;sessions=会话列表" },
-      session: { type: "string", description: "会话 id;省略时 events 覆盖当前会话+live+最近若干" },
-      query: { type: "string", description: "字面词(view=events)" },
-      filter: { type: "object", additionalProperties: true, description: "按 view 生效。events: types,from,to,timeFrom,timeTo,sessionCount,normalize,excludeInjected,excludeSelf;catalog: cwd,timeFrom,timeTo,type,tool;cost: from,to,groupBy;sessions: liveOnly" },
+      view: { type: "string", required: true, enum: ["events", "catalog", "sessions", "cost"], description: "events=字面命中;catalog=计数与范围;sessions=有哪些会话;cost=token 与缓存" },
+      session: { type: "string", description: "会话 id;events 省略=当前+live+最近,cost 必填" },
+      query: { type: "string", description: "字面词,events 用" },
+      filter: { type: "object", additionalProperties: true, description: "可选维度;键按 view 不同,传错会列出该 view 的可选键" },
       limit: { type: "integer", description: "行数上限,默认 " + DEFAULT_ROWS },
     },
     output: OUTPUT,
@@ -1231,14 +1230,13 @@ export function apply(ctx, config = {}) {
 
   register({
     name: "trajectory_read",
-    description:
-      "按 (session, seq 区间) 逐字取原文(消息/工具调用/结果),用于核实 search 命中或看上下文。默认只给有正文的事件;窗口上限 " + MAX_WINDOW + " 个事件。",
+    description: "按 seq 区间取逐字原文(消息、工具调用、结果)。",
     parameters: {
       session: { type: "string", required: true, description: "会话 id" },
       seq: { type: "integer", description: "中心 seq,取前后各 5 个" },
-      from: { type: "integer", description: "起始 seq(含)" },
-      to: { type: "integer", description: "结束 seq(含)" },
-      raw: { type: "boolean", description: "true=区间内全部事件" },
+      from: { type: "integer", description: "起点 seq(含)" },
+      to: { type: "integer", description: "终点 seq(含);窗口上限 " + MAX_WINDOW },
+      raw: { type: "boolean", description: "true=连没有正文的事件也给" },
     },
     output: OUTPUT,
     execute: (args) => runRead(args),
@@ -1246,12 +1244,11 @@ export function apply(ctx, config = {}) {
 
   register({
     name: "trajectory_graph",
-    description:
-      "事件或会话之间的关系:给 seq 看该事件的替换/引用/派生链,只给 session 看谱系(祖先/子会话/子代理)。链默认只给计数与首尾,full=true 给完整数组。",
+    description: "关系链:事件的替换/引用/派生,或会话谱系(祖先/子会话/子代理)。",
     parameters: {
       session: { type: "string", required: true, description: "会话 id" },
-      seq: { type: "integer", description: "事件 seq;缺省返回会话谱系" },
-      full: { type: "boolean", description: "true=完整链" },
+      seq: { type: "integer", description: "事件 seq;省略=会话谱系" },
+      full: { type: "boolean", description: "true=给完整数组,默认只给计数与首尾" },
     },
     output: OUTPUT,
     execute: (args) => runGraph(args),
