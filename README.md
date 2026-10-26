@@ -79,7 +79,7 @@ read(session="session-e0636aa9-…", seq=1248)
 
 **3. 两份 Skill** —— `trajectory-query`(随查询插件注册为 runtime skill):先查再答、逐字引用、引用写 `(session, seq@logId)`、空结果就是可验证的"没有";`analysis.md`:把研究问题变成可核验分析(证据纪律、维度发现、分析器契约),规定入口,不规定结论。
 
-**4. 右侧栏的对话搜索** —— 与「工作区文件」「终端」同一排的「对话搜索」tab:在当前会话的日志里做字面检索(大小写不敏感),结果按轮次列出并高亮命中词,点一条滚到「对话」里对应的那一轮。检索走只读路由 `GET /conversation-search/search?session=<id>&q=<词>`,不新增工具、不改对话内容;跳转复用对话自己的行锚点(先按 `seq` 加载到那一页,再滚到视口中间)。
+**4. 右侧栏的对话搜索** —— 与「工作区文件」「终端」同一排的「对话搜索」tab:按关键词找聊过的内容,结果**按轮次分组**(第几轮、你问了什么、命中的那句话),默认只搜人和助手说过的话,要连工具一起搜就勾「也搜工具」;点一条滚到「对话」里对应的那一轮。检索走只读路由 `GET /conversation-search/search?session=<id>&q=<词>&scope=chat|all`,不新增工具、不改对话内容;跳转复用对话自己的行锚点(先按 `seq` 加载到那一页,再滚到视口中间)。
 
 ## 怎么用
 
@@ -117,8 +117,8 @@ pnpm pack                                  # 在各自的 plugin 目录里执行
 # ~/.dsh/profiles/web/package.json:
 #   dependencies: 增加
 #     "dsh-trajectory-tools":   "file:<绝对路径>/dsh-trajectory-tools-0.3.4.tgz"
-#     "dsh-analysis-view":      "file:<绝对路径>/dsh-analysis-view-0.2.3.tgz"
-#     "dsh-conversation-search":"file:<绝对路径>/dsh-conversation-search-0.1.2.tgz"
+#     "dsh-analysis-view":      "file:<绝对路径>/dsh-analysis-view-0.2.4.tgz"
+#     "dsh-conversation-search":"file:<绝对路径>/dsh-conversation-search-0.2.0.tgz"
 #   dsh.profile.bundles: 追加 "dsh-trajectory-tools"、"dsh-analysis-view"、"dsh-conversation-search"
 pnpm install            # 在 ~/.dsh/profiles/web
 # 重启 dsh web(host 插件不会可靠热更新)
@@ -150,7 +150,7 @@ node plugin/conversation-search/self-test.mjs # 对话搜索:大小写 / 轮次 
 - 不给 `session` 时,`view="events"` 的默认扫描集是「当前会话 + 所有 live 会话 + 最近若干已持久化会话」;已持久化会话按 `createdAt` 排序(没有便宜的"最近活动"信号),很久以前的会话请显式传 session。
 - `trajectory_graph` 是三个入口里唯一依赖 `ctx.sessionQuery` 的;search / read 只依赖 `sessions` / `sessionPersistence`。
 - 面向 DSH 0.2.1-rc.3 重新核对过全部用到的 host/客户端 API:`defineTool` 参数 DSL、`sessionQuery` 方法表、`SessionHandle`、`skills.register`、`webServer.register`、`llm.stream`、`conversation.view` slot 与 `uiConversation.views/binding` 均未变;迁移过的有两处:上面那条同步读取弃用,以及消息来源不再有共享的 `plugin` kind(0.2.x 起按 `plugin:<包名>` 声明,检索侧两种都认)。
-- 运行环境:DSH 0.2.1-rc.3,插件 0.3.4 / 0.2.3。三个入口的工具表占用约 1.3 KB(合并成三个之前是 5.7 KB);契约由自检(176 + 14 项)与真实语料离线核对覆盖,实机对照见上面「验证」。
+- 运行环境:DSH 0.2.1-rc.3,插件 0.3.4 / 0.2.4。三个入口的工具表占用约 1.3 KB(合并成三个之前是 5.7 KB);契约由自检(176 + 14 项)与真实语料离线核对覆盖,实机对照见上面「验证」。
 - `trajectory_search(view="cost")` 只读 `assistant/message.usage`,不新增埋点:适配器没上报 usage 的请求记 `unknown`(不是 0),单字段缺失记 `null` 且不进求和。DeepSeek 适配器基本不报 `cacheWriteTokens`,那是"没上报",不是"没写缓存";
 - 陷阱:会话格式迁移后,同一个会话目录里**同时留着 `session.v3.jsonl.zstd`(当前)与 `session.v2.jsonl.zstd`(迁移前旧副本)**。手动跑分析器要取 v3,否则会把旧副本当成"最近的会话"。`experiments/corpus/scan-sessions.mjs` 已按目录取版本号最高的一份。
 

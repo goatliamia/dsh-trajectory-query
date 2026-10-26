@@ -1,6 +1,6 @@
 {
   "name": "dsh-conversation-search",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "右侧栏的对话搜索:在当前会话的事件日志里搜关键词,点结果跳到对话里对应的轮次",

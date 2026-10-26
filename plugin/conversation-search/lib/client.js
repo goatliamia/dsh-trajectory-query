@@ -1,5 +1,5 @@
 // dsh-conversation-search client half — 右侧栏的「对话搜索」tab。
-// 输入关键词 → host 在当前会话的日志里做字面检索 → 点结果滚到对话里对应的那一轮。
+// 一次搜索按"轮次"给结果:第几轮、你问了什么、命中的那句话;点一轮滚到对话里对应的位置。
 window.__ModuleLoader__.load({
   id: "dsh-conversation-search",
   factory: (require) => {
@@ -8,21 +8,27 @@ window.__ModuleLoader__.load({
 
     const STYLE_ID = "dsh-conversation-search-style";
     const CSS = `
-.cs-root{display:flex;flex-direction:column;height:100%;min-height:0;gap:8px;padding:10px;font-size:13px;color:var(--dsw-alias-label-primary)}
-.cs-input{width:100%;box-sizing:border-box;height:30px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;padding:0 8px;outline:none}
+.cs-root{display:flex;flex-direction:column;height:100%;min-height:0;padding:10px;font-size:13px;color:var(--dsw-alias-label-primary)}
+.cs-bar{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.cs-input{flex:1;min-width:0;box-sizing:border-box;height:30px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:inherit;font:inherit;padding:0 8px;outline:none}
 .cs-input::placeholder{color:var(--dsw-alias-label-secondary)}
 .cs-input:focus{border-color:var(--dsw-alias-brand-primary)}
-.cs-meta{font-size:11px;color:var(--dsw-alias-label-secondary);min-height:14px;font-variant-numeric:tabular-nums}
-.cs-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:4px}
-.cs-hit{text-align:left;border:1px solid var(--dsw-alias-border-l1);border-radius:6px;background:var(--dsw-alias-bg-layer-1);padding:6px 8px;cursor:pointer;font:inherit;color:inherit}
-.cs-hit:hover{background:var(--dsw-alias-bg-layer-2)}
-.cs-hit:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
-.cs-head{display:flex;gap:6px;align-items:baseline;font-size:11px;color:var(--dsw-alias-label-secondary);margin-bottom:3px}
-.cs-seq{font-variant-numeric:tabular-nums}
-.cs-snip{font-size:12px;line-height:1.5;word-break:break-word}
-.cs-snip mark{background:transparent;color:var(--dsw-alias-brand-primary)}
+.cs-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dsw-alias-label-secondary);margin-bottom:6px;min-height:14px}
+.cs-scope{margin-left:auto;display:flex;align-items:center;gap:4px;cursor:pointer;user-select:none}
+.cs-scope input{margin:0}
+.cs-list{flex:1;min-height:0;overflow:auto;border-top:1px solid var(--dsw-alias-border-l1)}
+.cs-turn{display:block;width:100%;text-align:left;background:transparent;border:0;border-bottom:1px solid var(--dsw-alias-border-l1);padding:8px 6px;cursor:pointer;font:inherit;color:inherit}
+.cs-turn:hover{background:var(--dsw-alias-bg-layer-2)}
+.cs-turn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}
+.cs-turn-head{display:flex;align-items:baseline;gap:6px;font-size:11px;color:var(--dsw-alias-label-secondary);margin-bottom:3px}
+.cs-count{margin-left:auto;font-variant-numeric:tabular-nums}
+.cs-prompt{font-size:12px;color:var(--dsw-alias-label-secondary);margin-bottom:4px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.cs-match{display:flex;gap:6px;font-size:12px;line-height:1.5;margin-top:2px}
+.cs-role{flex:none;color:var(--dsw-alias-label-secondary);font-size:11px;padding-top:1px}
+.cs-text{flex:1;min-width:0;word-break:break-word}
+.cs-text mark{background:transparent;color:var(--dsw-alias-brand-primary)}
 .cs-empty{padding:24px 8px;text-align:center;color:var(--dsw-alias-label-secondary);font-size:12px}
-.cs-hint{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.cs-hint{font-size:11px;color:var(--dsw-alias-label-secondary);padding:2px 0}
 `;
 
     const ensureStyle = () => {
@@ -35,14 +41,14 @@ window.__ModuleLoader__.load({
     };
 
     const h = React.createElement;
-    const TYPE_LABEL = {
-      "user/message": "用户",
-      "assistant/message": "助手",
-      "tool/call": "工具调用",
-      "tool/result": "工具结果",
-      "turn/end": "轮次结束",
-      "session/title": "标题",
-    };
+
+    function Mark(props) {
+      const at = props.matchAt;
+      const length = props.query.length;
+      const text = props.text;
+      if (at < 0 || at + length > text.length) return h(React.Fragment, null, text);
+      return h(React.Fragment, null, [text.slice(0, at), h("mark", { key: "m" }, text.slice(at, at + length)), text.slice(at + length)]);
+    }
 
     function waitForRow(turn, ms) {
       const selector = '[data-chat-turn="' + turn + '"]';
@@ -77,19 +83,19 @@ window.__ModuleLoader__.load({
     }
 
     /** 滚到对话里的那一轮;对话没开着时返回 false,由调用方给一句提示。 */
-    async function reveal(sessionId, hit) {
+    async function reveal(sessionId, group) {
       const sessions = clientCtx && typeof clientCtx.get === "function" ? clientCtx.get("sessions") : undefined;
       const binding = sessions && typeof sessions.binding === "function" ? sessions.binding(sessionId) : undefined;
       const session = binding && binding.session;
-      const selector = '[data-chat-turn="' + hit.turn + '"]';
-      let row = document.querySelector(selector);
-      if (row === null && session && typeof session.loadThrough === "function") {
+      const seq = group.matches.length > 0 ? group.matches[0].seq : group.promptSeq;
+      let row = document.querySelector('[data-chat-turn="' + group.turn + '"]');
+      if (row === null && seq !== null && seq !== undefined && session && typeof session.loadThrough === "function") {
         try {
-          await session.loadThrough(hit.seq);
+          await session.loadThrough(seq);
         } catch {
           /* 分页失败就按当前已加载的找 */
         }
-        row = await waitForRow(hit.turn, 1500);
+        row = await waitForRow(group.turn, 1500);
       }
       if (row === null) return false;
       row.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -97,22 +103,11 @@ window.__ModuleLoader__.load({
       return true;
     }
 
-    function Snippet(props) {
-      const text = props.text;
-      const at = props.matchAt;
-      const length = props.query.length;
-      if (at < 0 || at + length > text.length) return h("div", { className: "cs-snip" }, text);
-      return h("div", { className: "cs-snip" }, [
-        text.slice(0, at),
-        h("mark", { key: "m" }, text.slice(at, at + length)),
-        text.slice(at + length),
-      ]);
-    }
-
     function SearchPane(props) {
       React.useEffect(() => ensureStyle(), []);
       const sessionId = props.sessionId;
       const [query, setQuery] = React.useState("");
+      const [scope, setScope] = React.useState("chat");
       const [state, setState] = React.useState({ status: "idle", data: null, error: null });
       const [notice, setNotice] = React.useState("");
       const runId = React.useRef(0);
@@ -127,9 +122,9 @@ window.__ModuleLoader__.load({
         setNotice("");
         const timer = setTimeout(() => {
           setState((previous) => ({ status: "loading", data: previous.data, error: null }));
-          const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
-          const url = "/conversation-search/search?session=" + encodeURIComponent(sessionId) + "&q=" + encodeURIComponent(needle);
-          fetch(url, ctl ? { signal: ctl.signal, cache: "no-store" } : { cache: "no-store" })
+          const url = "/conversation-search/search?session=" + encodeURIComponent(sessionId) +
+            "&q=" + encodeURIComponent(needle) + "&scope=" + scope;
+          fetch(url, { cache: "no-store" })
             .then((response) => {
               if (!response.ok) throw new Error("HTTP " + response.status);
               return response.json();
@@ -141,62 +136,82 @@ window.__ModuleLoader__.load({
             })
             .catch((error) => {
               if (id !== runId.current) return;
-              if (error && error.name === "AbortError") return;
               setState({ status: "error", data: null, error: String((error && error.message) || error) });
             });
         }, 280);
         return () => clearTimeout(timer);
-      }, [sessionId, query]);
+      }, [sessionId, query, scope]);
 
-      const open = (hit) => async () => {
+      const open = (group) => async () => {
         if (!sessionId) return;
         setNotice("");
-        const ok = await reveal(sessionId, hit);
+        const ok = await reveal(sessionId, group);
         if (!ok) setNotice("没找到「对话」里的这一轮;切到「对话」再点一次");
       };
 
       const data = state.data;
-      const hits = data && Array.isArray(data.hits) ? data.hits : [];
+      const groups = data && Array.isArray(data.turns) ? data.turns : [];
       const meta = state.status === "error"
         ? "搜索失败:" + state.error
-        : state.status === "loading"
-          ? "搜索中…"
-          : data
-            ? data.total + " 条命中" + (data.truncated ? "(显示前 " + data.returned + " 条)" : "") + " · " + (data.log ? data.log.id : "")
-            : "";
+        : data
+          ? data.matchedTurns + " 轮 · " + data.totalMatches + " 处" + (data.truncated ? "(显示前 " + data.returnedTurns + " 轮)" : "")
+          : state.status === "loading" ? "搜索中…" : "";
 
-      const rows = hits.map((hit) => h("button", {
-        key: hit.seq,
-        className: "cs-hit",
-        onClick: open(hit),
-        title: "跳到第 " + hit.turn + " 轮(seq " + hit.seq + ")",
-      }, [
-        h("div", { key: "head", className: "cs-head" }, [
-          h("span", { key: "turn" }, "T" + hit.turn),
-          h("span", { key: "type" }, TYPE_LABEL[hit.type] || hit.type),
-          h("span", { key: "seq", className: "cs-seq" }, "seq " + hit.seq),
-        ]),
-        h(Snippet, { key: "snip", text: hit.text, matchAt: hit.matchAt, query: data.query }),
-      ]));
+      const cards = groups.map((group) => {
+        const promptIsMatch = group.matches.some((match) => match.seq === group.promptSeq);
+        return h("button", {
+          key: group.turn,
+          className: "cs-turn",
+          onClick: open(group),
+          title: "跳到第 " + group.turn + " 轮",
+        }, [
+          h("div", { key: "head", className: "cs-turn-head" }, [
+            h("span", { key: "t" }, "第 " + group.turn + " 轮"),
+            h("span", { key: "c", className: "cs-count" }, group.count + " 处"),
+          ]),
+          group.prompt !== "" && !promptIsMatch
+            ? h("div", { key: "prompt", className: "cs-prompt" }, "你:" + group.prompt)
+            : null,
+          group.matches.map((match) => h("div", { key: match.seq, className: "cs-match" }, [
+            h("span", { key: "r", className: "cs-role" }, match.role),
+            h("span", { key: "t", className: "cs-text" }, h(Mark, { text: match.text, matchAt: match.matchAt, query: data.query })),
+          ])),
+        ]);
+      });
 
       return h("div", { className: "cs-root" }, [
-        h("input", {
-          key: "input",
-          className: "cs-input",
-          type: "search",
-          value: query,
-          autoFocus: true,
-          placeholder: "在对话里搜关键词",
-          "aria-label": "在对话里搜关键词",
-          onChange: (event) => setQuery(event.target.value),
-        }),
-        sessionId ? h("div", { key: "meta", className: "cs-meta" }, meta) : h("div", { key: "meta", className: "cs-meta" }, "还没有选中会话"),
+        h("div", { key: "bar", className: "cs-bar" }, [
+          h("input", {
+            key: "input",
+            className: "cs-input",
+            type: "search",
+            value: query,
+            autoFocus: true,
+            placeholder: "在对话里搜关键词",
+            "aria-label": "在对话里搜关键词",
+            onChange: (event) => setQuery(event.target.value),
+            onKeyDown: (event) => {
+              if (event.key === "Escape") setQuery("");
+            },
+          }),
+        ]),
+        h("div", { key: "meta", className: "cs-meta" }, [
+          h("span", { key: "m" }, sessionId ? meta : "还没有选中会话"),
+          h("label", { key: "scope", className: "cs-scope", title: "默认只搜你和助手说过的话" }, [
+            h("input", {
+              type: "checkbox",
+              checked: scope === "all",
+              onChange: (event) => setScope(event.target.checked ? "all" : "chat"),
+            }),
+            "也搜工具",
+          ]),
+        ]),
         notice !== "" ? h("div", { key: "notice", className: "cs-hint" }, notice) : null,
         h("div", { key: "list", className: "cs-list" }, [
-          rows.length > 0
-            ? rows
+          cards.length > 0
+            ? cards
             : h("div", { key: "empty", className: "cs-empty" },
-              state.status === "ready" ? "没有匹配的内容" : "输入关键词,回车或停顿即搜索"),
+              state.status === "ready" ? "没有匹配的内容" : "输入关键词,停顿即搜索"),
         ]),
       ]);
     }
@@ -220,7 +235,7 @@ window.__ModuleLoader__.load({
         if (!slots) return;
         slots.inject("sidebar.right.pane.tab", () => slots.register({
           name: "sidebar.right.pane.tab",
-          id: "dsh-conversation-search",
+          key: "dsh-conversation-search",
         }, SearchPane));
       },
     };

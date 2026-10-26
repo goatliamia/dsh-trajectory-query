@@ -1,6 +1,6 @@
-// Host-half self-test: 字面检索的语义(大小写、轮次归属、片段的 matchAt、上限与总数)+ 路由形状。
+// Host-half self-test: 按轮次分组的检索语义(大小写、轮次、prompt、scope、上限)+ 路由形状。
 // 用法:node plugin/conversation-search/self-test.mjs
-import { apply, eventText, logIdentity, searchEvents } from "./lib/index.js";
+import { apply, eventText, logIdentity, searchTurns } from "./lib/index.js";
 
 let failed = 0;
 const results = [];
@@ -28,20 +28,34 @@ check("eventText: 用户消息取正文", eventText(events[1]).includes("package
 check("eventText: 无文字事件返回空", eventText(events[0]) === "", eventText(events[0]));
 check("eventText: 工具错误带码", eventText(events[8]).includes("FsError:FS_NOT_OBSERVED"), eventText(events[8]));
 
-const broad = searchEvents(events, "package.json", 20);
-check("search: 大小写不敏感", searchEvents(events, "PACKAGE.JSON", 20).total === broad.total, broad.total);
-check("search: 命中总数", broad.total === 3, broad.total);
-check("search: 轮次归属", broad.hits.every((hit) => hit.turn === 1), broad.hits.map((hit) => hit.turn));
-check("search: 片段 matchAt 指向命中词", broad.hits.every((hit) => hit.text.slice(hit.matchAt, hit.matchAt + 12).toLowerCase() === "package.json"), broad.hits.map((hit) => hit.text.slice(hit.matchAt, hit.matchAt + 12)));
+// 默认 scope=chat:只搜人和助手
+const chat = searchTurns(events, "package.json");
+check("chat: 只有一轮命中", chat.matchedTurns === 1 && chat.turns.length === 1, chat);
+check("chat: 轮内两处(你说的 + 助手说的)", chat.turns[0].count === 2 && chat.turns[0].matches.length === 2, chat.turns[0]);
+check("chat: 轮次编号与 prompt", chat.turns[0].turn === 1 && chat.turns[0].prompt.startsWith("帮我看一下"), chat.turns[0]);
+check("chat: 大小写不敏感", searchTurns(events, "PACKAGE.JSON").totalMatches === 2, chat.totalMatches);
 
-const second = searchEvents(events, "README.md", 20);
-check("search: 第二个 turn 的命中", second.total === 1 && second.hits[0].turn === 2, second.hits);
+// scope=all:工具也搜
+const all = searchTurns(events, "package.json", { scope: "all" });
+check("all: 工具调用也算一处", all.totalMatches === 3 && all.turns[0].matches.length === 3, all.turns[0]);
+check("all: 命中角色带工具", all.turns[0].matches.some((match) => match.role === "工具"), all.turns[0].matches);
 
-const capped = searchEvents(events, "package.json", 2);
-check("search: limit 截断但 total 照算", capped.hits.length === 2 && capped.total === 3, { hits: capped.hits.length, total: capped.total });
+// 只有工具命中的那轮
+check("chat: 工具里的词不算对话", searchTurns(events, "README.md").matchedTurns === 0, "README.md");
+const toolOnly = searchTurns(events, "README.md", { scope: "all" });
+check("all: 第二轮只剩工具命中", toolOnly.matchedTurns === 1 && toolOnly.turns[0].turn === 2, toolOnly.turns);
 
-const errorHit = searchEvents(events, "fs_not_observed", 5);
-check("search: 能搜到错误码", errorHit.total === 1 && errorHit.hits[0].seq === 8, errorHit.hits);
+// prompt 不因命中与否而丢
+const assistantOnly = searchTurns(events, "scripts.build");
+check("chat: 只命中助手那轮也带 prompt", assistantOnly.turns[0].prompt.startsWith("帮我看一下") && assistantOnly.turns[0].promptSeq === 1, assistantOnly.turns[0]);
+
+// 上限按轮
+const capped = searchTurns(events, "e", { scope: "all", limit: 1 });
+check("limit: 只回一轮但 matchedTurns 照算", capped.turns.length === 1 && capped.matchedTurns >= 2, { turns: capped.turns.length, matched: capped.matchedTurns });
+
+// 片段
+const hit = searchTurns(events, "package.json").turns[0].matches[0];
+check("片段: matchAt 指向命中词", hit.text.slice(hit.matchAt, hit.matchAt + 12).toLowerCase() === "package.json", hit);
 
 const log = logIdentity("session-x", events);
 check("logIdentity: 12 位 id 与事件数", log.id.length === 12 && log.events === events.length, log);
@@ -74,8 +88,10 @@ const call = async (url) => {
 };
 
 const found = await call("/conversation-search/search?session=s1&q=package.json&limit=2");
-check("route: 200 且有 total/returned", found.status === 200 && found.json.total === 3 && found.json.returned === 2, found.json);
-check("route: 命中带 seq/turn/text/matchAt", found.json.hits.every((hit) => typeof hit.seq === "number" && typeof hit.turn === "number" && typeof hit.text === "string" && typeof hit.matchAt === "number"), found.json.hits);
+check("route: 200 且按轮返回", found.status === 200 && found.json.matchedTurns === 1 && found.json.turns.length === 1, found.json);
+check("route: 轮里带 matches", found.json.turns[0].matches.every((match) => typeof match.seq === "number" && typeof match.text === "string" && typeof match.matchAt === "number"), found.json.turns[0].matches);
+const tools = await call("/conversation-search/search?session=s1&q=package.json&scope=all");
+check("route: scope=all 多一处", tools.json.totalMatches === 3, tools.json.totalMatches);
 const missing = await call("/conversation-search/search?q=x");
 check("route: 缺 session 返回 400", missing.status === 400, missing.json);
 const noQuery = await call("/conversation-search/search?session=s1");

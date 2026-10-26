@@ -1,15 +1,27 @@
-// dsh-conversation-search host half — 在当前会话的事件日志里做字面检索,只回位置与片段。
-// 客户端半边把它画成右侧栏的一个 tab;点击后的跳转是客户端的事(DOM 锚点在 chat 那边)。
+// dsh-conversation-search host half — 在当前会话的事件日志里做字面检索,按"轮次"汇总。
+// 默认只搜人和助手说过的话;工具调用/结果要显式带上(scope=all)。只回位置与片段,不写任何东西。
 
 import { createHash } from "node:crypto";
 
 const ROUTE_PATH = "/conversation-search";
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 50;
-const SNIPPET_BEFORE = 60;
-const SNIPPET_AFTER = 140;
+const DEFAULT_LIMIT = 10;
+const MAX_LIMIT = 30;
+const MATCHES_PER_TURN = 3;
+const PROMPT_CHARS = 120;
+const SNIPPET_BEFORE = 24;
+const SNIPPET_AFTER = 120;
 
-/** 一段 content 里的可见文字(工具调用/结果也算,因为用户常搜的是路径或命令)。 */
+const CHAT_TYPES = new Set(["user/message", "assistant/message"]);
+
+const ROLE = {
+  "user/message": "你",
+  "assistant/message": "助手",
+  "tool/call": "工具",
+  "tool/result": "工具结果",
+  "turn/end": "轮次",
+  "session/title": "标题",
+};
+
 function blocksText(content) {
   if (!Array.isArray(content)) return "";
   const out = [];
@@ -49,43 +61,67 @@ export function eventText(event) {
   }
 }
 
+function snippet(text, at, needleLength) {
+  const start = Math.max(0, at - SNIPPET_BEFORE);
+  const end = Math.min(text.length, at + needleLength + SNIPPET_AFTER);
+  const lead = start > 0 ? 1 : 0;
+  return {
+    text: (lead ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : ""),
+    matchAt: at - start + lead,
+  };
+}
+
 /**
- * 字面检索(大小写不敏感),返回片段与命中位置。
+ * 按轮次分组的字面检索(大小写不敏感)。
  * @param events - SessionEvent[]
  * @param needle - 非空查询词
- * @param limit - 最多返回多少条
+ * @param options - { limit: 最多返回几轮, scope: "chat" | "all" }
+ * @returns {{ turns: object[], totalMatches: number, matchedTurns: number }}
  */
-export function searchEvents(events, needle, limit) {
+export function searchTurns(events, needle, options = {}) {
+  const limit = options.limit === undefined ? DEFAULT_LIMIT : options.limit;
+  const includeTools = options.scope === "all";
   const lower = needle.toLowerCase();
-  const hits = [];
-  let turn = 0;
-  let total = 0;
+  const groups = [];
+  let current = null;
+  let totalMatches = 0;
+  let matchedTurns = 0;
+
   for (const event of events || []) {
     if (!event || typeof event.seq !== "number") continue;
     if (event.type === "turn/start") {
-      turn += 1;
+      current = { turn: groups.length + 1, prompt: "", promptSeq: null, count: 0, matches: [] };
+      groups.push(current);
       continue;
     }
+    if (current === null) continue;
     const text = eventText(event);
     if (text === "") continue;
+    const isChat = CHAT_TYPES.has(event.type);
+    if (!isChat && !includeTools) continue;
+    if (event.type === "user/message" && current.prompt === "") {
+      current.prompt = text.length <= PROMPT_CHARS ? text : text.slice(0, PROMPT_CHARS) + "…";
+      current.promptSeq = event.seq;
+    }
     const at = text.toLowerCase().indexOf(lower);
     if (at < 0) continue;
-    total += 1;
-    if (hits.length >= limit) continue;
-    const start = Math.max(0, at - SNIPPET_BEFORE);
-    const end = Math.min(text.length, at + needle.length + SNIPPET_AFTER);
-    const lead = start > 0 ? 1 : 0;
-    const data = event.data || {};
-    hits.push({
+    if (current.count === 0) matchedTurns += 1;
+    current.count += 1;
+    totalMatches += 1;
+    if (current.matches.length >= MATCHES_PER_TURN) continue;
+    const piece = snippet(text, at, needle.length);
+    current.matches.push({
       seq: event.seq,
-      turn: typeof data.turn === "number" ? data.turn : turn,
       type: event.type,
+      role: ROLE[event.type] || event.type,
       time: event.time,
-      text: (lead ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : ""),
-      matchAt: at - start + lead,
+      text: piece.text,
+      matchAt: piece.matchAt,
     });
   }
-  return { total, hits };
+
+  const matched = groups.filter((group) => group.count > 0);
+  return { turns: matched.slice(0, limit), totalMatches, matchedTurns };
 }
 
 export function logIdentity(sessionId, events) {
@@ -105,7 +141,6 @@ function disposeObservation(observation) {
   }
 }
 
-/** 读会话事件:observeSession → 内存快照 → persistence handle。 */
 async function loadEvents(ctx, sessionId) {
   const query = ctx.get("sessionQuery");
   if (query && typeof query.observeSession === "function") {
@@ -169,19 +204,22 @@ export function apply(ctx) {
         if (!sessionId) return send(400, { error: "missing session" });
         const query = (url.searchParams.get("q") || "").trim();
         if (query === "") return send(400, { error: "missing q" });
+        const scope = url.searchParams.get("scope") === "all" ? "all" : "chat";
         const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || DEFAULT_LIMIT), 1), MAX_LIMIT);
         const events = await withTimeout(loadEvents(ctx, sessionId), 5000, "conversation-search");
         const log = logIdentity(sessionId, events);
-        const found = searchEvents(events, query, limit);
+        const found = searchTurns(events, query, { limit, scope });
         return send(200, {
           ok: true,
           session: sessionId,
           log,
           query,
-          total: found.total,
-          returned: found.hits.length,
-          truncated: found.total > found.hits.length,
-          hits: found.hits,
+          scope,
+          totalMatches: found.totalMatches,
+          matchedTurns: found.matchedTurns,
+          returnedTurns: found.turns.length,
+          truncated: found.matchedTurns > found.turns.length,
+          turns: found.turns,
         });
       } catch (error) {
         return send(500, { error: String((error && error.message) || error) });
