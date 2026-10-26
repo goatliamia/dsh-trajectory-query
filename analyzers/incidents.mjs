@@ -32,7 +32,7 @@ export const incidents = {
         turnTools.set(currentTurn, (turnTools.get(currentTurn) || 0) + 1);
       } else if (e.type === 'tool/result') {
         const d = e.data;
-        const err = d && (d.error || (d.message && d.message.content && d.message.content[0] && d.message.content[0].isError));
+        const err = d && (d.error || (d.message && d.message.isError) || (d.message && d.message.content && d.message.content[0] && d.message.content[0].isError));
         if (err) {
           errors++;
           errorSeqs.add(e.seq);
