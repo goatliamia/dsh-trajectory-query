@@ -35,7 +35,7 @@ export function computeIncidents(events) {
     } else if (e.type === "tool/result") {
       const d = e.data || {};
       const content = d.message && d.message.content;
-      const err = d.error || (Array.isArray(content) && content[0] && content[0].isError);
+      const err = d.error || (d.message && d.message.isError) || (Array.isArray(content) && content[0] && content[0].isError);
       if (err) {
         errors++;
         const er = d.error; const kind = er ? (er.name && er.code ? er.name + ":" + er.code : (er.name || er.code || "error")) : "error";
@@ -186,6 +186,130 @@ export function computeCost(events) {
     cacheEfficiency: cacheRead === null || input === null || cacheRead + input === 0 ? null : cacheRead / (cacheRead + input),
     byTurn,
   };
+}
+
+/**
+ * 一次遍历算出"工作路径":每个 turn 的起止、耗时、调用与 token,以及按工具名汇总的调用/失败/耗时。
+ * 只做投影,不判断好坏 —— 面板负责画,归因留给 incident。
+ * @param events - SessionEvent[]
+ * @returns {{turns: object[], tools: object[], eventCount: number}}
+ */
+export function computeWorkPath(events) {
+  const turns = [];
+  const tools = new Map();
+  const calls = new Map();
+  let current = null;
+
+  const bucket = (name) => {
+    let tool = tools.get(name);
+    if (tool === undefined) {
+      tool = { name, calls: 0, errors: 0, totalMs: 0, timed: 0, maxMs: 0, lastSeq: 0 };
+      tools.set(name, tool);
+    }
+    return tool;
+  };
+  const addUsage = (turn, usage) => {
+    if (!usage || typeof usage !== "object") return;
+    const add = (field, value) => {
+      if (typeof value !== "number") return;
+      turn[field] = (turn[field] === null ? 0 : turn[field]) + value;
+    };
+    add("input", usage.inputTokens);
+    add("cacheRead", usage.cacheReadTokens);
+    add("output", usage.outputTokens);
+  };
+
+  for (const e of events || []) {
+    if (!e || typeof e.seq !== "number") continue;
+    const d = e.data || {};
+    if (e.type === "turn/start") {
+      current = {
+        turn: turns.length + 1,
+        startSeq: e.seq,
+        endSeq: null,
+        startTime: typeof e.time === "number" ? e.time : null,
+        endTime: null,
+        durationMs: null,
+        endReason: null,
+        toolCalls: 0,
+        errors: 0,
+        requests: 0,
+        input: null,
+        cacheRead: null,
+        output: null,
+        firstErrorSeq: null,
+      };
+      turns.push(current);
+      continue;
+    }
+    if (e.type === "tool/call") {
+      const name = d.name || "(tool)";
+      const tool = bucket(name);
+      tool.calls += 1;
+      tool.lastSeq = e.seq;
+      if (d.callId !== undefined) calls.set(String(d.callId), { name, time: e.time });
+      if (current !== null) current.toolCalls += 1;
+      continue;
+    }
+    if (e.type === "tool/result") {
+      const content = d.message && d.message.content;
+      const failed = Boolean(d.error) || Boolean(d.message && d.message.isError) || Boolean(Array.isArray(content) && content[0] && content[0].isError);
+      // v4 把 callId 放在 message 上(toolCallId / source.callId),v3 放在 data.callId;两种都认。
+      const message = d.message;
+      const callId = d.callId !== undefined
+        ? d.callId
+        : message && message.toolCallId !== undefined
+          ? message.toolCallId
+          : message && message.source
+            ? message.source.callId
+            : undefined;
+      const call = callId === undefined || callId === null ? undefined : calls.get(String(callId));
+      const tool = call === undefined ? undefined : bucket(call.name);
+      if (failed) {
+        if (tool !== undefined) tool.errors += 1;
+        if (current !== null) {
+          current.errors += 1;
+          if (current.firstErrorSeq === null) current.firstErrorSeq = e.seq;
+        }
+      }
+      if (tool !== undefined && typeof call.time === "number" && typeof e.time === "number") {
+        const ms = Math.max(0, e.time - call.time);
+        tool.totalMs += ms;
+        tool.timed += 1;
+        if (ms > tool.maxMs) tool.maxMs = ms;
+      }
+      continue;
+    }
+    if (e.type === "assistant/message") {
+      if (current !== null) {
+        current.requests += 1;
+        addUsage(current, d.usage);
+      }
+      continue;
+    }
+    if (e.type === "turn/end") {
+      if (current !== null) {
+        current.endSeq = e.seq;
+        current.endTime = typeof e.time === "number" ? e.time : null;
+        current.durationMs = current.startTime !== null && current.endTime !== null ? Math.max(0, current.endTime - current.startTime) : null;
+        current.endReason = d.reason && d.reason.kind ? String(d.reason.kind) : null;
+      }
+      current = null;
+    }
+  }
+
+  const toolStats = [...tools.values()]
+    .map((tool) => ({
+      name: tool.name,
+      calls: tool.calls,
+      errors: tool.errors,
+      avgMs: tool.timed === 0 ? null : Math.round(tool.totalMs / tool.timed),
+      maxMs: tool.timed === 0 ? null : Math.round(tool.maxMs),
+      lastSeq: tool.lastSeq,
+    }))
+    .sort((a, b) => (b.calls - a.calls) || a.name.localeCompare(b.name));
+
+  return { turns, tools: toolStats, eventCount: (events || []).length };
 }
 
 /** Bounded one-line cost evidence for the interpretation prompt. */
@@ -361,9 +485,23 @@ async function interpret(ctx, sessionId, events, facts, log, cost) {
 
 export const inject = ["webServer"];
 
+/** 面板要的全部事实,一次算齐(同一份 events 上三次线性遍历)。 */
+export function buildDigest(sessionId, events) {
+  const facts = computeIncidents(events);
+  const cost = computeCost(events);
+  const work = computeWorkPath(events);
+  const log = logIdentity(sessionId, events);
+  return { sessionId, log, ...facts, cost, turnStats: work.turns, toolStats: work.tools, eventCount: work.eventCount };
+}
+
 export function apply(ctx) {
   const webServer = ctx.get("webServer");
   if (webServer === undefined) return;
+  // 面板每次切回「分析」都会拉一次;同一会话 2 秒内的重复请求直接复用上一次的结果。
+  // 活跃会话的数据本来就在变,超过这个窗口就重算,不做更细的失效判断。
+  const digestCache = new Map();
+  const DIGEST_TTL_MS = 2000;
+  const CACHE_MAX = 32;
   ctx.effect(() => webServer.register({
     kind: "prefix",
     path: ROUTE_PATH,
@@ -377,12 +515,24 @@ export function apply(ctx) {
         if (req.method !== "GET") return send(404, { error: "not found" });
         const sessionId = url.searchParams.get("session");
         if (!sessionId) return send(400, { error: "missing session" });
-        const events = await withTimeout(loadEvents(ctx, sessionId), 5000);
-        const facts = computeIncidents(events);
-        const cost = computeCost(events);
-        const log = logIdentity(sessionId, events);
-        if (url.pathname === ROUTE_PATH + "/digest") return send(200, { sessionId, log, ...facts, cost });
-        if (url.pathname === ROUTE_PATH + "/interpret") return send(200, { sessionId, log, ...(await interpret(ctx, sessionId, events, facts, log, cost)) });
+        if (url.pathname === ROUTE_PATH + "/digest") {
+          const fresh = url.searchParams.get("fresh") === "1";
+          const hit = digestCache.get(sessionId);
+          if (!fresh && hit !== undefined && Date.now() - hit.at < DIGEST_TTL_MS) return send(200, hit.payload);
+          const events = await withTimeout(loadEvents(ctx, sessionId), 5000);
+          const payload = buildDigest(sessionId, events);
+          digestCache.delete(sessionId);
+          digestCache.set(sessionId, { at: Date.now(), payload });
+          if (digestCache.size > CACHE_MAX) digestCache.delete(digestCache.keys().next().value);
+          return send(200, payload);
+        }
+        if (url.pathname === ROUTE_PATH + "/interpret") {
+          const events = await withTimeout(loadEvents(ctx, sessionId), 5000);
+          const facts = computeIncidents(events);
+          const cost = computeCost(events);
+          const log = logIdentity(sessionId, events);
+          return send(200, { sessionId, log, ...(await interpret(ctx, sessionId, events, facts, log, cost)) });
+        }
         return send(404, { error: "not found" });
       } catch (error) {
         return send(500, { error: String((error && error.message) || error) });
