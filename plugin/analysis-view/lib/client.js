@@ -59,18 +59,21 @@ window.__ModuleLoader__.load({
 .av-fill.out{background:var(--dsw-alias-brand-primary);opacity:.75}
 .av-rate{font-size:11px;text-align:right;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-rate.warn{color:var(--dsw-alias-state-warn-primary)}
-.av-groups{display:flex;flex-direction:column;gap:2px;max-height:320px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
-.av-group{margin-bottom:8px}
-.av-group-head{display:flex;align-items:center;gap:8px;margin-bottom:3px}
-.av-group-name{font-size:12px;min-width:32px}
-.av-group-bar{flex:1;height:8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;min-width:40px}
-.av-group-fill{height:100%;background:var(--dsw-alias-brand-primary);opacity:.55}
-.av-group-count{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
-.av-tool-row{display:grid;grid-template-columns:112px minmax(0,1fr) 40px 34px 52px;align-items:center;gap:8px;font-size:12px;padding:1px 0 1px 8px}
+.av-donut-wrap{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.av-donut{position:relative;width:112px;height:112px;flex:none}
+.av-donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--dsw-alias-label-secondary);pointer-events:none}
+.av-donut-num{font-size:16px;font-weight:500;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
+.av-legend-col{flex:1;min-width:180px;display:flex;flex-direction:column;gap:2px}
+.av-leg{display:flex;align-items:center;gap:8px;background:transparent;border:0;border-radius:6px;padding:3px 5px;font:inherit;color:inherit;cursor:pointer;text-align:left}
+.av-leg:hover{background:var(--dsw-alias-bg-layer-2)}
+.av-leg[aria-pressed="true"]{background:var(--dsw-alias-bg-layer-2);outline:1px solid var(--dsw-alias-border-l1);outline-offset:-1px}
+.av-leg-name{font-size:12px}
+.av-leg-num{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.av-leg-err{font-size:11px;color:var(--dsw-alias-state-error-primary)}
+.av-tools-detail{max-height:160px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;margin-top:8px;padding-right:4px}
+.av-tool-line{display:grid;grid-template-columns:minmax(0,1fr) 48px 34px 52px;align-items:center;gap:8px;font-size:12px;padding:2px 0}
 .av-num{font-variant-numeric:tabular-nums;text-align:right}
 .av-tool-name{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.av-share{flex:1;height:4px;border-radius:2px;background:var(--dsw-alias-bg-layer-2);min-width:24px;display:block}
-.av-share-fill{height:100%;border-radius:2px;background:var(--dsw-alias-brand-primary);opacity:.55}
 .av-bad{color:var(--dsw-alias-state-error-primary)}
 .av-warn{color:var(--dsw-alias-state-warn-primary)}
 .av-incident-list{max-height:360px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
@@ -395,78 +398,102 @@ window.__ModuleLoader__.load({
       ]);
     }
 
-    // 工具按"它在干什么"归类:一眼能看出这次会话主要在读文件、跑命令,还是查轨迹。
-    const TOOL_GROUPS = [
-      { id: "file", label: "文件", pattern: /^(read|edit|write|glob|grep)$/ },
-      { id: "shell", label: "命令", pattern: /^(pwsh|bash|terminal_.*)$/ },
-      { id: "trace", label: "轨迹", pattern: /^(trajectory_|session_)/ },
-      { id: "web", label: "网络", pattern: /^(web_search|web_fetch)$/ },
-      { id: "agent", label: "代理", pattern: /^(subagent.*|send_message|wait_agent|list_agents|interrupt_agent)$/ },
-      { id: "plugin", label: "插件", pattern: /^(cordis_.*|plugin_manager|mcp_.*)$/ },
-      { id: "flow", label: "流程", pattern: /^(todo_write|create_goal|update_goal|get_goal|schedule_.*|skill|present|read_image|ask_user_question|workflow|ralph)$/ },
+    // 工具按"在干什么"归类:读 / 写 / 执行 / 查询 / 协作,其余归其他。
+    const ACTION_GROUPS = [
+      { id: "read", label: "读", pattern: /^(read|glob|grep|read_image)$/, color: "var(--dsw-alias-brand-primary)" },
+      { id: "write", label: "写", pattern: /^(edit|write)$/, color: "color-mix(in srgb, var(--dsw-alias-brand-primary) 50%, var(--dsw-alias-bg-layer-2))" },
+      { id: "run", label: "执行", pattern: /^(pwsh|bash|terminal_.*)$/, color: "var(--dsw-alias-state-warn-primary)" },
+      { id: "query", label: "查询", pattern: /^(web_search|web_fetch|trajectory_.*|session_.*|cordis_.*)$/, color: "var(--dsw-alias-state-success-primary)" },
+      { id: "coop", label: "协作", pattern: /^(subagent.*|send_message|wait_agent|list_agents|interrupt_agent|todo_write|create_goal|update_goal|get_goal|schedule_.*|skill|present|workflow|ralph|ask_user_question)$/, color: "var(--dsw-alias-state-idle-primary)" },
     ];
-    const TOOLS_PER_GROUP = 4;
+    const OTHER_GROUP = { id: "other", label: "其他", color: "var(--dsw-alias-border-l2)" };
 
-    function toolGroup(name) {
-      for (const group of TOOL_GROUPS) if (group.pattern.test(name)) return group;
-      return { id: "other", label: "其他" };
+    function actionGroup(name) {
+      for (const group of ACTION_GROUPS) if (group.pattern.test(name)) return group;
+      return OTHER_GROUP;
     }
 
     function Tools(props) {
       const tools = (props.tools || []).filter((tool) => tool.calls > 0);
+      const [picked, setPicked] = React.useState(null);
       if (tools.length === 0) return null;
-      const groups = new Map();
+      const buckets = new Map();
       let totalCalls = 0;
       let totalErrors = 0;
       for (const tool of tools) {
-        const group = toolGroup(tool.name);
-        if (!groups.has(group.id)) groups.set(group.id, { id: group.id, label: group.label, calls: 0, errors: 0, tools: [] });
-        const bucket = groups.get(group.id);
+        const group = actionGroup(tool.name);
+        if (!buckets.has(group.id)) buckets.set(group.id, { ...group, calls: 0, errors: 0, tools: [] });
+        const bucket = buckets.get(group.id);
         bucket.calls += tool.calls;
         bucket.errors += tool.errors;
         bucket.tools.push(tool);
         totalCalls += tool.calls;
         totalErrors += tool.errors;
       }
-      const ordered = [...groups.values()].sort((a, b) => b.calls - a.calls);
-      const maxGroup = ordered.reduce((acc, group) => Math.max(acc, group.calls), 0);
-      const rows = [];
-      for (const group of ordered) {
-        const maxTool = group.tools.reduce((acc, tool) => Math.max(acc, tool.calls), 0);
-        rows.push(h("div", { key: "g-" + group.id, className: "av-group" }, [
-          h("div", { key: "h", className: "av-group-head" }, [
-            h("span", { key: "l", className: "av-group-name" }, group.label),
-            h("span", { key: "b", className: "av-group-bar" }, h("span", {
-              className: "av-group-fill",
-              style: { width: (maxGroup === 0 ? 0 : (group.calls / maxGroup) * 100) + "%", display: "block" },
-            })),
-            h("span", { key: "c", className: "av-group-count" }, group.calls + " 次" + (group.errors > 0 ? " · " + group.errors + " 失败" : "")),
-          ]),
-          group.tools.slice(0, TOOLS_PER_GROUP).map((tool) => h("div", {
-            key: tool.name,
-            className: "av-tool-row",
-            title: tool.name + " · " + tool.calls + " 次" + (tool.errors > 0 ? " · " + tool.errors + " 次失败" : "") + (tool.maxMs !== null ? " · 最慢 " + ms(tool.maxMs) : ""),
-          }, [
-            h("span", { key: "n", className: "av-tool-name" }, tool.name),
-            h("span", { key: "b", className: "av-share" }, h("span", {
-              className: "av-share-fill",
-              style: { width: (maxTool === 0 ? 0 : (tool.calls / maxTool) * 100) + "%", display: "block" },
-            })),
-            h("span", { key: "c", className: "av-num" }, String(tool.calls)),
-            h("span", { key: "e", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? "×" + tool.errors : ""),
-            h("span", { key: "m", className: "av-num" }, ms(tool.avgMs)),
-          ])),
-          group.tools.length > TOOLS_PER_GROUP
-            ? h("div", { key: "more", className: "av-hint", style: { paddingLeft: 8 } }, "还有 " + (group.tools.length - TOOLS_PER_GROUP) + " 种")
-            : null,
-        ]));
-      }
+      const slices = [...buckets.values()].sort((a, b) => b.calls - a.calls);
+      const radius = 40;
+      const circumference = 2 * Math.PI * radius;
+      let consumed = 0;
+      const arcs = slices.map((slice) => {
+        const length = totalCalls === 0 ? 0 : (slice.calls / totalCalls) * circumference;
+        const arc = h("circle", {
+          key: slice.id,
+          cx: 50,
+          cy: 50,
+          r: radius,
+          fill: "none",
+          stroke: slice.color,
+          strokeWidth: 14,
+          strokeDasharray: length + " " + (circumference - length),
+          strokeDashoffset: String(-consumed),
+          transform: "rotate(-90 50 50)",
+        });
+        consumed += length;
+        return arc;
+      });
+      const legend = slices.map((slice) => h("button", {
+        key: slice.id,
+        className: "av-leg",
+        "aria-pressed": picked === slice.id,
+        onClick: () => setPicked((current) => (current === slice.id ? null : slice.id)),
+        title: "只看「" + slice.label + "」的工具",
+      }, [
+        h("span", { key: "s", className: "av-swatch", style: { background: slice.color } }),
+        h("span", { key: "n", className: "av-leg-name" }, slice.label),
+        h("span", { key: "c", className: "av-leg-num" }, slice.calls + " 次 · " + Math.round((slice.calls / totalCalls) * 100) + "%"),
+        slice.errors > 0 ? h("span", { key: "e", className: "av-leg-err" }, "×" + slice.errors) : null,
+      ]));
+      const detail = picked === null ? [] : (buckets.get(picked) || { tools: [] }).tools;
       return h("div", { className: "av-section" }, [
         h("div", { key: "h", className: "av-section-head" }, [
           h("h3", { key: "t", className: "av-section-title" }, "工具"),
-          h("span", { key: "n", className: "av-hint" }, tools.length + " 种 · " + totalCalls + " 次" + (totalErrors > 0 ? " · " + totalErrors + " 失败" : "") + " · 按类别"),
+          h("span", { key: "n", className: "av-hint" }, tools.length + " 种 · " + totalCalls + " 次" + (totalErrors > 0 ? " · " + totalErrors + " 失败" : "")),
         ]),
-        h("div", { key: "g", className: "av-groups" }, rows),
+        h("div", { key: "d", className: "av-donut-wrap" }, [
+          h("div", { key: "chart", className: "av-donut" }, [
+            h("svg", { key: "s", viewBox: "0 0 100 100", width: "112", height: "112", role: "img", "aria-label": "工具调用占比" }, arcs),
+            h("div", { key: "c", className: "av-donut-center" }, [
+              h("span", { key: "n", className: "av-donut-num" }, String(totalCalls)),
+              h("span", { key: "l" }, "次调用"),
+            ]),
+          ]),
+          h("div", { key: "legend", className: "av-legend-col" }, legend),
+        ]),
+        picked === null
+          ? h("div", { key: "hint", className: "av-hint" }, "点左侧图例看某一类的工具明细")
+          : h("div", { key: "detail", className: "av-tools-detail" }, detail
+            .slice()
+            .sort((a, b) => b.calls - a.calls)
+            .map((tool) => h("div", {
+              key: tool.name,
+              className: "av-tool-line",
+              title: tool.name + " · " + tool.calls + " 次" + (tool.errors > 0 ? " · " + tool.errors + " 次失败" : "") + (tool.maxMs !== null ? " · 最慢 " + ms(tool.maxMs) : ""),
+            }, [
+              h("span", { key: "n", className: "av-tool-name" }, tool.name),
+              h("span", { key: "c", className: "av-num" }, String(tool.calls)),
+              h("span", { key: "e", className: "av-num" + (tool.errors > 0 ? " av-bad" : "") }, tool.errors > 0 ? "×" + tool.errors : ""),
+              h("span", { key: "m", className: "av-num" }, ms(tool.avgMs)),
+            ]))),
       ]);
     }
 
