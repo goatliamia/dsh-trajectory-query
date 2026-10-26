@@ -64,7 +64,8 @@ window.__ModuleLoader__.load({
 .av-donut{position:relative;width:112px;height:112px;flex:none}
 .av-donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;color:var(--dsw-alias-label-secondary);pointer-events:none}
 .av-donut-num{font-size:16px;font-weight:500;color:var(--dsw-alias-label-primary);font-variant-numeric:tabular-nums}
-.av-legend-col{flex:1;min-width:180px;display:flex;flex-direction:column;gap:2px}
+.av-legend-col{flex:1;min-width:0;max-height:84px;overflow-y:auto;scrollbar-width:thin;overscroll-behavior:contain;display:flex;flex-direction:column;gap:2px}
+.av-flow-side{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .av-leg{display:flex;align-items:center;gap:8px;background:transparent;border:0;border-radius:6px;padding:3px 5px;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .av-leg:hover{background:var(--dsw-alias-bg-layer-2)}
 .av-leg[aria-pressed="true"]{background:var(--dsw-alias-bg-layer-2);outline:1px solid var(--dsw-alias-border-l1);outline-offset:-1px}
@@ -625,12 +626,12 @@ window.__ModuleLoader__.load({
                   h("span", { key: "l" }, "次"),
                 ]),
               ]),
-              h("div", { key: "l", className: "av-legend-col" }, [
-                ...turnSlices.map((item) => h("div", { key: item.id, className: "av-leg av-leg-static", title: "第 " + item.turn + " 轮 · " + item.calls + " 次" }, [
+              h("div", { key: "l", className: "av-flow-side" }, [
+                h("div", { key: "legend", className: "av-legend-col" }, turnSlices.map((item) => h("div", { key: item.id, className: "av-leg av-leg-static", title: "第 " + item.turn + " 轮 · " + item.calls + " 次" }, [
                   h("span", { key: "s", className: "av-swatch", style: { background: item.color } }),
                   h("span", { key: "n", className: "av-leg-name" }, item.label),
                   h("span", { key: "c", className: "av-leg-num" }, item.calls + " 次"),
-                ])),
+                ]))),
                 h("div", { key: "stats", className: "av-stat-line" }, [
                   h("span", { key: "e", className: tool.errors > 0 ? "av-bad" : "" }, "失败 " + (tool.errors > 0 ? tool.errors : "—")),
                   h("span", { key: "a" }, "平均 " + ms(tool.avgMs)),
