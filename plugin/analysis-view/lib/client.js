@@ -28,8 +28,8 @@ window.__ModuleLoader__.load({
 .av-kpi-num.bad{color:var(--dsw-alias-state-error-primary)}
 .av-kpi-label{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:760px){.av-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.av-kpi:nth-child(4){border-left:0}.av-kpi:nth-child(n+4){border-top:1px solid var(--dsw-alias-border-l1)}}
-.av-section{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);padding:12px;margin-bottom:12px}
-.av-section-head{display:flex;align-items:baseline;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.av-section{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1);padding:14px;margin-bottom:16px}
+.av-section-head{display:flex;align-items:baseline;gap:8px;margin-bottom:12px;flex-wrap:wrap}
 .av-section-title{font-size:13px;font-weight:500;margin:0}
 .av-hint{font-size:11px;color:var(--dsw-alias-label-secondary)}
 .av-strip{display:flex;align-items:stretch;gap:2px;height:28px}
@@ -57,7 +57,7 @@ window.__ModuleLoader__.load({
 .av-track{display:flex;height:8px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}
 .av-fill{height:100%}
 .av-fill.hit{background:var(--dsw-alias-state-success-primary);opacity:.55}
-.av-fill.miss{background:var(--dsw-alias-state-warn-primary);opacity:.85}
+.av-fill.miss{background:var(--dsw-alias-state-error-primary);opacity:.8}
 .av-fill.out{background:var(--av-accent);opacity:.75}
 .av-rate{font-size:11px;text-align:right;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-rate.warn{color:var(--dsw-alias-state-warn-primary)}
@@ -81,7 +81,7 @@ window.__ModuleLoader__.load({
 .av-leg-num{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-leg-err{font-size:11px;color:var(--dsw-alias-state-error-primary)}
 .av-tool-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:start}
-.av-flow-card{min-width:0;display:flex;flex-direction:column;gap:8px}
+.av-flow-card{min-width:0;display:flex;flex-direction:column;gap:10px}
 .av-flow-head{display:flex;align-items:baseline;gap:8px;min-width:0;height:18px}
 .av-flow-title{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .av-flow-meta{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -467,7 +467,7 @@ window.__ModuleLoader__.load({
           h("span", { key: "n", className: "av-hint" }, cost.requestCount + " 次请求 · " + turns.length + " 轮" + (cost.unknownRequests > 0 ? " · " + cost.unknownRequests + " 次未上报" : "")),
         ]),
         h("div", { key: "sum", className: "av-cost-head" }, [
-          h("div", { key: "in" }, [h("div", { className: "av-cost-num" }, fmt(cost.input)), h("div", { className: "av-cost-label" }, "未命中")]),
+          h("div", { key: "in" }, [h("div", { className: "av-cost-num av-bad" }, fmt(cost.input)), h("div", { className: "av-cost-label av-bad" }, "未命中")]),
           h("div", { key: "cr" }, [h("div", { className: "av-cost-num" }, fmt(cost.cacheRead)), h("div", { className: "av-cost-label" }, "命中")]),
           h("div", { key: "out" }, [h("div", { className: "av-cost-num" }, fmt(cost.output)), h("div", { className: "av-cost-label" }, "输出")]),
           h("div", { key: "eff" }, [h("div", { className: "av-cost-num" }, pct(cost.cacheEfficiency)), h("div", { className: "av-cost-label" }, "命中率")]),
@@ -481,7 +481,7 @@ window.__ModuleLoader__.load({
           : null,
         h("div", { key: "l", className: "av-legend" }, [
           h("span", { key: "h", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-state-success-primary)", opacity: 0.55 } }), "命中"]),
-          h("span", { key: "m", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-state-warn-primary)", opacity: 0.85 } }), "未命中"]),
+          h("span", { key: "m", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--dsw-alias-state-error-primary)", opacity: 0.8 } }), "未命中"]),
           h("span", { key: "o", className: "av-legend-item" }, [h("span", { className: "av-swatch", style: { background: "var(--av-accent)", opacity: 0.75 } }), "输出"]),
           turns.length > COST_ROWS_MAX ? h("span", { key: "more", className: "av-legend-item" }, "只画最近 " + COST_ROWS_MAX + " 轮") : null,
         ]),
