@@ -250,10 +250,14 @@ window.__ModuleLoader__.load({
       };
       const segments = turns.map((turn) => {
         const tone = turnTone(turn);
-        const callId = turn.firstErrorCallId !== undefined && turn.firstErrorCallId !== null
+        // 优先用 host 给的 callId(失败那条→这轮第一条),都没有才退到投影索引。
+        const known = turn.firstErrorCallId !== undefined && turn.firstErrorCallId !== null
           ? turn.firstErrorCallId
-          : turn.firstErrorSeq === null ? undefined : index.get(turn.firstErrorSeq);
-        const clickable = callId !== undefined && props.openView !== undefined;
+          : turn.firstCallId !== undefined && turn.firstCallId !== null
+            ? turn.firstCallId
+            : turn.firstErrorSeq !== null ? index.get(turn.firstErrorSeq) : undefined;
+        const callable = known !== undefined;
+        const clickable = callable && props.openView !== undefined;
         const title = "第 " + turn.turn + " 轮 · " + turn.toolCalls + " 次调用" + (turn.errors > 0 ? " · " + turn.errors + " 次失败" : "") +
           (turn.durationMs !== null ? " · " + ms(turn.durationMs) : "") + (clickable ? " · 点击跳到轨迹" : "");
         return h("button", {
@@ -263,7 +267,7 @@ window.__ModuleLoader__.load({
           title,
           "aria-label": title,
           tabIndex: clickable ? 0 : -1,
-          onClick: clickable ? () => props.openView("trajectory", callId) : undefined,
+          onClick: clickable ? () => props.openView("trajectory", known) : undefined,
         }, turns.length <= 20 ? h("span", { className: "av-seg-label" }, String(turn.turn)) : null);
       });
       const startDrag = (event) => {
@@ -315,8 +319,9 @@ window.__ModuleLoader__.load({
 
     function clickableHint(turns, index) {
       const any = turns.some((turn) => (turn.firstErrorCallId !== undefined && turn.firstErrorCallId !== null) ||
+        (turn.firstCallId !== undefined && turn.firstCallId !== null) ||
         (turn.firstErrorSeq !== null && index.get(turn.firstErrorSeq) !== undefined));
-      return any ? "有失败的轮次可点,跳到轨迹里对应调用" : "轨迹视图里没有对应调用时不可跳转";
+      return any ? "点一轮跳到轨迹里对应的调用" : "这一轮没有可定位的调用";
     }
 
     const COST_ROWS_MAX = 120;

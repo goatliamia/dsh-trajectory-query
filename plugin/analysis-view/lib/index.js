@@ -233,6 +233,7 @@ export function computeWorkPath(events) {
         output: null,
         firstErrorSeq: null,
         firstErrorCallId: null,
+        firstCallId: null,
       };
       turns.push(current);
       continue;
@@ -243,7 +244,11 @@ export function computeWorkPath(events) {
       tool.calls += 1;
       tool.lastSeq = e.seq;
       if (d.callId !== undefined) calls.set(String(d.callId), { name, time: e.time });
-      if (current !== null) current.toolCalls += 1;
+      if (current !== null) {
+        current.toolCalls += 1;
+        // 这一轮的第一条调用:任何一轮都能在轨迹里定位,不用等失败。
+        if (current.firstCallId === null && d.callId !== undefined) current.firstCallId = String(d.callId);
+      }
       continue;
     }
     if (e.type === "tool/result") {

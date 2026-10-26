@@ -178,8 +178,8 @@ const digest = {
     ],
   },
   turnStats: [
-    { turn: 1, startSeq: 0, endSeq: 40, startTime: 1000, endTime: 10000, durationMs: 9000, endReason: "end-turn", toolCalls: 3, errors: 0, requests: 1, input: 60, cacheRead: 600, output: 30, firstErrorSeq: null, firstErrorCallId: null },
-    { turn: 2, startSeq: 41, endSeq: 99, startTime: 10001, endTime: 15000, durationMs: 4999, endReason: "end-turn", toolCalls: 2, errors: 1, requests: 1, input: 40, cacheRead: 300, output: 20, firstErrorSeq: 70, firstErrorCallId: "call-err" },
+    { turn: 1, startSeq: 0, endSeq: 40, startTime: 1000, endTime: 10000, durationMs: 9000, endReason: "end-turn", toolCalls: 3, errors: 0, requests: 1, input: 60, cacheRead: 600, output: 30, firstErrorSeq: null, firstErrorCallId: null, firstCallId: "call-1" },
+    { turn: 2, startSeq: 41, endSeq: 99, startTime: 10001, endTime: 15000, durationMs: 4999, endReason: "end-turn", toolCalls: 2, errors: 1, requests: 1, input: 40, cacheRead: 300, output: 20, firstErrorSeq: 70, firstErrorCallId: "call-err", firstCallId: "call-2" },
   ],
   toolStats: [
     { name: "read", calls: 3, errors: 0, avgMs: 120, maxMs: 300, lastSeq: 30 },

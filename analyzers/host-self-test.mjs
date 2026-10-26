@@ -58,6 +58,7 @@ check('work: 两个 turn', work.turns.length === 2, work.turns);
 check('work: turn1 一次调用零失败', work.turns[0].toolCalls === 1 && work.turns[0].errors === 0, work.turns[0]);
 check('work: turn2 记失败与首错 seq', work.turns[1].errors === 1 && work.turns[1].firstErrorSeq === 7, work.turns[1]);
 check('work: 首错带 callId(面板跳转不靠投影)', work.turns[1].firstErrorCallId === 'c2', work.turns[1].firstErrorCallId);
+check('work: 每轮带第一条调用的 callId', work.turns[0].firstCallId === 'c1' && work.turns[1].firstCallId === 'c2', work.turns.map((t) => t.firstCallId));
 check('work: usage 按 turn 汇总', work.turns[0].input === 100 && work.turns[0].cacheRead === 400 && work.turns[0].output === 50, work.turns[0]);
 check('work: bash 记一次失败', (work.tools.find((t) => t.name === 'bash') || {}).errors === 1, work.tools);
 check('work: endReason 记录', work.turns[1].endReason === 'error', work.turns[1].endReason);
