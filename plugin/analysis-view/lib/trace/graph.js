@@ -168,7 +168,7 @@
     let html=`<title>从行动理解第 ${t.number} 轮的执行过程</title><desc>节点表示连续行动。受阻片段展开为首次尝试、补充读取、再次修改；点击节点查看真实事件。节点位置表示先后，下方时间带按真实时间等比例。</desc><defs><marker id="action-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7" fill="var(--unknown)"/></marker><marker id="recovery-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7" fill="var(--tool)"/></marker></defs>`;
     layout.forEach((g,i)=>{
       const next=layout[i+1],nodeMid=g.x+g.width/2;
-      if(next)html+=`<path d="M${g.x+g.width+4} ${mainY} H${next.x-7}" fill="none" stroke="var(--ink)" stroke-width="1.5" marker-end="url(#action-arrow)"/>`;
+      if(next)html+=`<path d="M${g.x+g.width+4} ${mainY} H${next.x-7}" fill="none" stroke="var(--ink)" stroke-width="3" marker-end="url(#action-arrow)"/>`;
       html+=`<g class="action-group" data-group="${i}" role="button" tabindex="0" aria-label="${esc(g.title+'，'+dur(g.end-g.start)+'，查看真实记录')}"><title>${esc(g.title)} · ${stepName(g)} · ${dur(g.end-g.start)}</title>`;
       if(g.episode){
         const panelTop=mainY-103,panelHeight=187,padding=14,innerGap=10,innerWidth=(g.width-padding*2-innerGap*2)/3,cy=mainY+14;
