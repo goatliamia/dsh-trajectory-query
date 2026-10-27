@@ -72,7 +72,7 @@
     if(e.readSeqs.length)html+='<h3>补充读取 · 原始记录</h3>'+e.readSeqs.map(find).filter(Boolean).map(callEntry).join('');
     if(e.pairs.length)html+='<h3>对应成功 · 原始记录</h3>'+[...new Set(e.pairs.map(p=>p.successSeq))].map(find).filter(Boolean).map(callEntry).join('');
     openDrawer(`第 ${e.turn} 轮 · ${e.reason}`,`第 ${e.steps.join('、')} 步 · ${e.summary}`,html);
-    $('episode-round').onclick=()=>selectTurn(session.turns.indexOf(t));
+    $('episode-round').onclick=()=>{const i=session.turns.findIndex(r=>r.number===e.turn);selectTurn(i<0?0:i);};
   }
   function openOverviewRound(number,focus='failures'){
     const f=overviewFact(number),t=overviewTurn(number),episodes=session.overview.episodes.filter(e=>e.turn===number);

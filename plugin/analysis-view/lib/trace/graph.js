@@ -190,10 +190,11 @@
       const a=x(g.start),b=Math.max(x(g.end),a+5),bad=g.calls.filter(c=>c.status==='error').length>0;
       const tone=KIND[g.kind]||KIND.other;
       const title=g.title+' · '+g.note;
-      html+=`<g class="action-block" data-group="${i}" role="button" tabindex="0" aria-label="${esc(title)}"><title>${esc(title)}</title><rect x="${a.toFixed(1)}" y="${top}" width="${(b-a).toFixed(1)}" height="${barH}" rx="4" fill="${tone}" fill-opacity="${bad?.2:.13}" stroke="${bad?'var(--error)':tone}" stroke-opacity="${bad?.85:.5}" stroke-width="${bad?1.6:1}"/>`;
+      const hitX=Math.max(0,a-4),hitW=Math.max(10,b-a+8);
+      html+=`<g class="action-block" data-group="${i}" role="button" tabindex="0" aria-label="${esc(title)}"><title>${esc(title)}</title><rect x="${hitX.toFixed(1)}" y="${top-10}" width="${hitW.toFixed(1)}" height="${barH+34}" fill="transparent" pointer-events="all"/><rect x="${a.toFixed(1)}" y="${top}" width="${(b-a).toFixed(1)}" height="${barH}" rx="4" fill="${tone}" fill-opacity="${bad?.2:.13}" stroke="${bad?'var(--error)':tone}" stroke-opacity="${bad?.85:.5}" stroke-width="${bad?1.6:1}"/>`;
       if(b-a>44)html+=svgText((a+b)/2,top+17,kindLabel(g.kind),'action-title','middle');
-      html+='</g>';
       if(b-a>62)html+=svgText((a+b)/2,top+barH+15,g.note,'action-small','middle');
+      html+='</g>';
     });
     for(const g of groups){for(const c of g.calls){if(c.status!=='error')continue;const xx=x(c.start);html+=`<path d="M${xx} ${top-6} v6" stroke="var(--error)" stroke-width="2"/>`;}}
     const tick=[5,10,15,30,60,120,300,600].find(n=>n>=duration/1000/6)||900;
