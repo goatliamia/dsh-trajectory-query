@@ -150,7 +150,26 @@
     }
     return list.map(b=>{
       const failures=b.calls.filter(c=>c.status==='error').length;
-      return {...b,title:behaviorTitle(b.kind,b.subject),note:`${b.steps.length} 步 · ${b.calls.length} 次调用${failures?' · '+failures+' 次失败':''}`};
+      const stages=[];
+      for(const s of b.steps){
+        const kind=kindOfStep(s);
+        const last=stages.at(-1);
+        if(last&&last.kind===kind){last.steps.push(s);last.end=s.end;continue;}
+        stages.push({kind,title:kindLabel(kind),steps:[s],start:s.start,end:s.end});
+      }
+      for(const stage of stages){
+        stage.count=stage.steps.reduce((n,s)=>n+(s.calls||[]).length,0);
+        stage.failed=stage.steps.reduce((n,s)=>n+(s.calls||[]).filter(c=>c.status==='error').length,0);
+        stage.note=`${stage.steps.length} 步 · ${stage.count} 次${stage.failed?' · '+stage.failed+' 次失败':''}`;
+      }
+      const firstBad=stages.findIndex(stage=>stage.failed>0);
+      if(firstBad>=0){
+        stages[firstBad].state='blocked';
+        const back=stages.slice(firstBad+1).findIndex(stage=>stage.kind===stages[firstBad].kind&&stage.failed===0);
+        if(back>=0)stages[firstBad+1+back].state='recovered';
+      }
+      const episode=failures>0&&stages.length>1;
+      return {...b,stages,episode,title:behaviorTitle(b.kind,b.subject),note:`${b.steps.length} 步 · ${b.calls.length} 次调用${failures?' · '+failures+' 次失败':''}`};
     });
   }
 
@@ -171,17 +190,17 @@
       if(next)html+=`<path d="M${g.x+g.width+4} ${mainY} H${next.x-7}" fill="none" stroke="var(--ink)" stroke-width="3" marker-end="url(#action-arrow)"/>`;
       html+=`<g class="action-group" data-group="${i}" role="button" tabindex="0" aria-label="${esc(g.title+'，'+dur(g.end-g.start)+'，查看真实记录')}"><title>${esc(g.title)} · ${stepName(g)} · ${dur(g.end-g.start)}</title>`;
       if(g.episode){
-        const panelTop=mainY-103,panelHeight=187,padding=14,innerGap=10,innerWidth=(g.width-padding*2-innerGap*2)/3,cy=mainY+14;
-        html+=`<rect class="action-panel" x="${g.x}" y="${panelTop}" width="${g.width}" height="${panelHeight}" rx="12" fill="var(--surface)" stroke="var(--line)"/>${svgText(g.x+17,panelTop+26,g.title,'action-title')}${svgText(g.x+17,panelTop+47,g.note,'action-note')}${svgText(g.x+g.width-16,panelTop+26,dur(g.end-g.start),'action-note','end')}`;
-        const stages=[{number:26,title:'首次修改受阻',note:'需先读取目标文件',state:'blocked',count:'7 处修改'},{number:27,title:'补充读取',note:'读取 2 个目标文件',state:'normal',count:'6 次读取'},{number:28,title:'再次修改完成',note:'7 处均已返回',state:'recovered',count:'7 处修改'}];
+        const stages=(g.stages||[]).slice(0,3);
+        const panelTop=mainY-103,panelHeight=187,padding=14,innerGap=10,innerWidth=(g.width-padding*2-innerGap*2)/Math.max(1,stages.length),cy=mainY+14;
+        html+=`<rect class="action-panel" x="${g.x}" y="${panelTop}" width="${g.width}" height="${panelHeight}" rx="12" fill="var(--surface)" stroke="var(--line)"/>`+svgText(g.x+17,panelTop+26,g.title,'action-title');
         stages.forEach((stage,j)=>{
-          const step=g.steps.find(s=>s.number===stage.number),nx=g.x+padding+j*(innerWidth+innerGap),y=cy-30;
+          const nx=g.x+padding+j*(innerWidth+innerGap),y=cy-30;
           const tone=stage.state==='blocked'?'var(--error)':stage.state==='recovered'?'var(--tool)':'var(--unknown)';
           const fill=stage.state==='blocked'?'var(--error-bg)':stage.state==='recovered'?'var(--tool-soft)':'var(--bg)';
-          html+=`<rect x="${nx}" y="${y}" width="${innerWidth}" height="67" rx="8" fill="${fill}" stroke="${tone}" stroke-opacity=".28"/><text x="${nx+innerWidth/2}" y="${y+23}" class="action-stage-title" text-anchor="middle" style="fill:${tone}">${stage.title}</text>${svgText(nx+innerWidth/2,y+43,stage.count,'action-note','middle')}${svgText(nx+innerWidth/2,y+59,dur(step.end-step.start),'action-small','middle')}`;
-          if(j<2)html+=`<path d="M${nx+innerWidth+1} ${cy+3} H${nx+innerWidth+innerGap-2}" stroke="${j===1?'var(--tool)':'var(--unknown)'}" stroke-width="1.3" fill="none" marker-end="url(#${j===1?'recovery-arrow':'action-arrow'})"/>`;
+          html+=`<rect x="${nx}" y="${y}" width="${innerWidth}" height="67" rx="8" fill="${fill}" stroke="${tone}" stroke-opacity=".28"/><text x="${nx+innerWidth/2}" y="${y+23}" class="action-stage-title" text-anchor="middle">${esc(stage.title)}</text><text x="${nx+innerWidth/2}" y="${y+41}" class="action-small" text-anchor="middle">${esc(stage.note)}</text>`;
+          if(j<stages.length-1)html+=`<path d="M${nx+innerWidth+1} ${cy+3} H${nx+innerWidth+innerGap-2}" stroke="${stages[j+1].state==='blocked'?'var(--error)':'var(--unknown)'}" stroke-width="1.3" fill="none" marker-end="url(#action-arrow)"/>`;
         });
-        html+=svgText(nodeMid,cy+61,'补齐读取条件后，原来的 7 处修改继续完成','action-small','middle');
+        html+=svgText(nodeMid,cy+61,g.note||'','action-small','middle');
       }else{
         const y=mainY-cardH/2;
         html+=`<rect class="action-panel" x="${g.x}" y="${y}" width="${g.width}" height="${cardH}" rx="11" fill="var(--surface)" stroke="var(--line)"/><rect x="${g.x+14}" y="${y+17}" width="5" height="5" rx="1" fill="var(--unknown)"/>${svgText(g.x+28,y+24,g.title,'action-title')}${svgText(g.x+14,y+47,shorten(g.note,Math.max(10,Math.floor((g.width-26)/11))),'action-note')}${svgText(g.x+14,y+65,dur(g.end-g.start),'action-small')}`;
@@ -193,7 +212,6 @@
     layout.forEach((g,i)=>{
       const a=barLeft+(g.start-t.start)/selectedDuration*(barRight-barLeft),b=barLeft+(g.end-t.start)/selectedDuration*(barRight-barLeft);
       html+=`<g data-group="${i}" role="button" tabindex="0" aria-label="${esc(g.title+'的时间范围')}" style="cursor:pointer"><rect x="${a}" y="${barY}" width="${Math.max(2,b-a-2)}" height="12" rx="3" fill="var(--unknown)" opacity="${g.episode?.65:.34}"/><title>${esc(g.title)} · ${clock(g.start)} → ${clock(g.end)} · ${dur(g.end-g.start)}</title></g>`;
-      if(g.episode)for(const [number,color]of[[26,'var(--error)'],[28,'var(--tool)']]){const s=g.steps.find(s=>s.number===number),a=barLeft+(s.start-t.start)/selectedDuration*(barRight-barLeft),b=barLeft+(s.end-t.start)/selectedDuration*(barRight-barLeft);html+=`<rect x="${a}" y="${barY}" width="${Math.max(2,b-a)}" height="12" rx="2" fill="${color}"/>`;}
     });
     for(let seconds=0;seconds<selectedDuration/1000;seconds+=60){const xx=barLeft+seconds*1000/selectedDuration*(barRight-barLeft);html+=svgText(xx,barY+31,elapsed(seconds*1000),'graph-axis',seconds?'middle':'start')}
     html+=svgText(barRight,barY+31,elapsed(selectedDuration),'graph-axis','end');
