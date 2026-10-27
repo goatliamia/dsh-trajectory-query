@@ -67,8 +67,9 @@
       html+=brGroup(`class="br-round" data-br-round="${t.number}"`,part,`第 ${t.number} 轮 · ${dur(endOf(t)-t.start)} · ${t.steps.length} 步 · ${t.calls} 次调用`);
       const next=layout[l.index+1];if(next&&visible(l.end,next.x)){const x=(l.end+next.x)/2;html+=brGroup(`class="br-gap" data-br-gap="${l.index}"`,`<rect x="${l.end}" y="${base-5}" width="${gap}" height="10" fill="var(--surface)"/><path d="M${x-2.5} ${base+3} l2 -6 M${x+.5} ${base+3} l2 -6" class="br-glyph"/>`,`轮间等待 ${dur(next.turn.start-endOf(t))}，已折叠`);}
       if(showInterrupt){
-        const retries=t.steps.reduce((n,s)=>n+s.retries.length,0);
-        if(retries){const x=l.x+8;html+=brGroup(`class="br-marker" data-br-round="${t.number}"`,`<rect x="${x-12}" y="${base-48}" width="28" height="18" fill="transparent"/>`+brText(x,base-36,'↻'+retries,'br-label'),`本轮共 ${retries} 次模型请求重试`);}
+        const retryTimes=t.steps.flatMap(s=>s.retries.map(r=>r.time));
+        const retries=retryTimes.length;
+        if(retries){const x=mapTime(Math.min(...retryTimes));html+=brGroup(`class="br-marker" data-br-round="${t.number}"`,`<rect x="${x-12}" y="${base-48}" width="28" height="18" fill="transparent"/>`+brText(x,base-36,'↻'+retries,'br-label'),`本轮共 ${retries} 次模型请求重试`);}
         if(stopLabel(t.reason?.kind)){const x=l.end;html+=brGroup(`class="br-marker" data-br-stop="${t.number}"`,`<path d="M${x-2} ${base-6} v12 M${x+2} ${base-6} v12" class="br-glyph"/>`,stopLabel(t.reason.kind));}
         for(const m of t.markers.filter(m=>m.type==='compaction/start')){const x=mapTime(m.time);if(visible(x))html+=brGroup(`class="br-marker" data-br-round="${t.number}"`,brText(x,base-34,'≋','br-label'),'上下文压缩开始');}
       }
