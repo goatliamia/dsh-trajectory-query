@@ -888,7 +888,7 @@ window.__ModuleLoader__.load({
                 return;
               }
               setState({ status: "ready", data });
-              if (data.status === "scanning") timer = setTimeout(tick, 1200);
+              if (data.status === "scanning") timer = setTimeout(tick, 2000);
             })
             .catch((error) => {
               if (alive) setState({ status: "error", error: String((error && error.message) || error) });

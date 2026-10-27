@@ -706,7 +706,7 @@ function summarizeSession(events) {
 
 const CONTEXT_SCAN_TTL_MS = 30 * 60 * 1000;
 const CONTEXT_SESSION_CAP = 80;
-const CONTEXT_CONCURRENCY = 6;
+const CONTEXT_CONCURRENCY = 3;
 const contextScans = new Map();
 
 function emptyContextScan() {
@@ -813,6 +813,28 @@ function buildContextSessions(ctx) {
 const ANALYSIS_CONTEXT_KEY = "analysisContext";
 const analysisContextSchema = { parse: (value) => value };
 const analysisBackfill = new Map();
+const analysisBackfillQueue = [];
+let analysisBackfillRunning = 0;
+const ANALYSIS_BACKFILL_CONCURRENCY = 2;
+const ANALYSIS_BACKFILL_PER_REQUEST = 3;
+
+function pumpAnalysisBackfill(ctx) {
+  while (analysisBackfillRunning < ANALYSIS_BACKFILL_CONCURRENCY && analysisBackfillQueue.length > 0) {
+    const header = analysisBackfillQueue.shift();
+    analysisBackfillRunning += 1;
+    fillAnalysisContext(ctx, header).finally(() => {
+      analysisBackfillRunning -= 1;
+      analysisBackfill.delete(header.id);
+      setTimeout(() => pumpAnalysisBackfill(ctx), 200);
+    });
+  }
+}
+
+function enqueueAnalysisBackfill(ctx, header) {
+  if (analysisBackfill.has(header.id)) return;
+  analysisBackfill.set(header.id, true);
+  analysisBackfillQueue.push(header);
+}
 
 function emptyAnalysisContext() {
   return {
@@ -928,6 +950,7 @@ async function buildContextFromProjections(ctx) {
   const records = await sessionQuery.listSessions();
   const sessions = [];
   let missing = 0;
+  let queued = 0;
   for (const record of records) {
     let value;
     try {
@@ -941,11 +964,12 @@ async function buildContextFromProjections(ctx) {
       continue;
     }
     missing += 1;
-    if (!analysisBackfill.has(record.header.id)) {
-      analysisBackfill.set(record.header.id, true);
-      fillAnalysisContext(ctx, record.header).finally(() => analysisBackfill.delete(record.header.id));
+    if (queued < ANALYSIS_BACKFILL_PER_REQUEST && !analysisBackfill.has(record.header.id)) {
+      queued += 1;
+      enqueueAnalysisBackfill(ctx, record.header);
     }
   }
+  pumpAnalysisBackfill(ctx);
   return { ok: true, status: missing > 0 ? "scanning" : "done", missing, total: records.length, sessions };
 }
 
