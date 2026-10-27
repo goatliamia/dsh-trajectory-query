@@ -47,7 +47,7 @@ export function projectSession(rows, source = {}) {
       const text = textOf(d.content).trim();
       if (text) turn.prompts.push({ seq: e.seq, time: e.time, ...excerpt(text, 2600) });
     } else if (e.type === 'step/start') {
-      const step = { number: d.step, seq: e.seq, start: e.time, end: null, endSeq: null, assistantSeq: null, assistantTime: null, reply: null, calls: [], retries: [], markers: [] };
+      const step = { number: d.step, seq: e.seq, start: e.time, end: null, endSeq: null, assistantSeq: null, assistantTime: null, reply: null, calls: [], retries: [], markers: [], inTok: null, cacheTok: null, outTok: null };
       turn.steps.push(step); steps.set(key(d.turn, d.step, 'step'), step);
     } else if (e.type === 'step/end') {
       const step = getStep(d.turn, d.step);
@@ -56,6 +56,11 @@ export function projectSession(rows, source = {}) {
       const step = getStep(d.turn, d.step);
       if (step) {
         step.assistantSeq = e.seq; step.assistantTime = e.time;
+        if (d.usage && typeof d.usage === 'object') {
+          if (typeof d.usage.inputTokens === 'number') step.inTok = (step.inTok || 0) + d.usage.inputTokens;
+          if (typeof d.usage.cacheReadTokens === 'number') step.cacheTok = d.usage.cacheReadTokens;
+          if (typeof d.usage.outputTokens === 'number') step.outTok = (step.outTok || 0) + d.usage.outputTokens;
+        }
         const text = textOf(d.message?.content).trim();
         if (text) step.reply = excerpt(text, 2000);
       }
