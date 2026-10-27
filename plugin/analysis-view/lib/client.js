@@ -878,11 +878,8 @@ window.__ModuleLoader__.load({
       React.useEffect(() => {
         let alive = true;
         let timer = null;
-        const preset = CM_RANGES.find((item) => item.id === range) || CM_RANGES[2];
-        const to = Date.now();
-        const from = preset.ms === null ? 0 : to - preset.ms;
         const tick = () => {
-          fetch("/analysis-view/context-summary?from=" + from + "&to=" + to)
+          fetch("/analysis-view/context-summary")
             .then((response) => response.json())
             .then((data) => {
               if (!alive) return;
@@ -891,25 +888,46 @@ window.__ModuleLoader__.load({
                 return;
               }
               setState({ status: "ready", data });
-              if (data.status === "scanning") timer = setTimeout(tick, 1500);
+              if (data.status === "scanning") timer = setTimeout(tick, 1200);
             })
             .catch((error) => {
               if (alive) setState({ status: "error", error: String((error && error.message) || error) });
             });
         };
-        setState({ status: "loading" });
         tick();
         return () => { alive = false; if (timer !== null) clearTimeout(timer); };
-      }, [range]);
+      }, []);
 
       const body = [];
-      const data = state.status === "ready" ? state.data : null;
+      const payload = state.status === "ready" ? state.data : null;
+      const preset = CM_RANGES.find((item) => item.id === range) || CM_RANGES[2];
+      const from = preset.ms === null ? 0 : Date.now() - preset.ms;
+      const sessions = payload ? payload.sessions.filter((item) => (item.createdAt || 0) >= from) : [];
+      const totals = { sessions: sessions.length, turns: 0, calls: 0, errors: 0, toolMs: 0, retryMs: 0, spanMs: 0, input: 0, cacheRead: 0, output: 0, byDay: {} };
+      for (const item of sessions) {
+        totals.turns += item.turns || 0;
+        totals.calls += item.calls || 0;
+        totals.errors += item.errors || 0;
+        totals.toolMs += item.toolMs || 0;
+        totals.retryMs += item.retryMs || 0;
+        totals.spanMs += item.spanMs || 0;
+        totals.input += item.input || 0;
+        totals.cacheRead += item.cacheRead || 0;
+        totals.output += item.output || 0;
+        for (const [day, bucket] of Object.entries(item.byDay || {})) {
+          if (new Date(day + "T00:00:00").getTime() < from) continue;
+          const target = totals.byDay[day] || (totals.byDay[day] = { input: 0, cacheRead: 0, output: 0, calls: 0 });
+          target.input += bucket.input || 0;
+          target.cacheRead += bucket.cacheRead || 0;
+          target.output += bucket.output || 0;
+          target.calls += bucket.calls || 0;
+        }
+      }
+
       body.push(h("div", { key: "head", className: "cm-head" }, [
         h("h2", { key: "t", className: "cm-title" }, "上下文管理"),
-        h("span", { key: "s", className: "cm-sub" }, data
-          ? (CM_RANGES.find((item) => item.id === range) || CM_RANGES[2]).label + " · " + data.scanned + " 个会话"
-            + (data.status === "scanning" ? " · 统计中" : "")
-            + (data.failed ? " · " + data.failed + " 个读取失败" : "")
+        h("span", { key: "s", className: "cm-sub" }, payload
+          ? preset.label + " · " + totals.sessions + " 个会话" + (payload.status === "scanning" ? " · 统计中" : "") + (payload.failed ? " · " + payload.failed + " 个读取失败" : "")
           : "统计中"),
         h("div", { key: "r", className: "cm-ranges" }, CM_RANGES.map((item) =>
           h("button", {
@@ -924,27 +942,25 @@ window.__ModuleLoader__.load({
         body.push(h("div", { key: "err", className: "cm-bad" }, "读取失败:" + state.error));
         return h("div", { className: "cm-root" }, body);
       }
-      if (data === null) {
+      if (payload === null) {
         body.push(h("div", { key: "load", className: "cm-note" }, "正在准备…"));
         return h("div", { className: "cm-root" }, body);
       }
+      if (payload.status === "scanning") body.push(h(CmProgress, { key: "p", scanned: payload.scanned, total: payload.total }));
 
-      const totals = data.totals || {};
-      const tokens = (totals.input || 0) + (totals.cacheRead || 0) + (totals.output || 0);
-      const contextTotal = (totals.input || 0) + (totals.cacheRead || 0);
-      const hitRate = contextTotal > 0 ? Math.round(((totals.cacheRead || 0) / contextTotal) * 100) : 0;
-
-      if (data.status === "scanning") body.push(h(CmProgress, { key: "p", scanned: data.scanned, total: data.total }));
+      const tokens = totals.input + totals.cacheRead + totals.output;
+      const contextTotal = totals.input + totals.cacheRead;
+      const hitRate = contextTotal > 0 ? Math.round((totals.cacheRead / contextTotal) * 100) : 0;
 
       body.push(h("div", { key: "kpis", className: "cm-kpis" }, [
-        h("div", { key: "s", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, String(totals.sessions || 0)), h("div", { key: "l", className: "cm-kpi-label" }, "会话")]),
+        h("div", { key: "s", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, String(totals.sessions)), h("div", { key: "l", className: "cm-kpi-label" }, "会话")]),
         h("div", { key: "t", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, cmTokens(tokens)), h("div", { key: "l", className: "cm-kpi-label" }, "token 总量")]),
         h("div", { key: "h", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, hitRate + "%"), h("div", { key: "l", className: "cm-kpi-label" }, "缓存命中率")]),
-        h("div", { key: "c", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, String(totals.calls || 0)), h("div", { key: "l", className: "cm-kpi-label" }, "工具调用")]),
+        h("div", { key: "c", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, String(totals.calls)), h("div", { key: "l", className: "cm-kpi-label" }, "工具调用")]),
       ]));
 
-      const otherMs = Math.max(0, (totals.spanMs || 0) - (totals.toolMs || 0) - (totals.retryMs || 0));
-      const timeTotal = Math.max(1, (totals.toolMs || 0) + (totals.retryMs || 0) + otherMs);
+      const otherMs = Math.max(0, totals.spanMs - totals.toolMs - totals.retryMs);
+      const timeTotal = Math.max(1, totals.toolMs + totals.retryMs + otherMs);
       body.push(h("div", { key: "charts", className: "cm-grid" }, [
         h("div", { key: "tok", className: "cm-card" }, [
           h("h3", { key: "t", className: "cm-card-title" }, "token 构成"),
@@ -952,9 +968,9 @@ window.__ModuleLoader__.load({
             key: "d",
             center: cmTokens(tokens),
             segments: [
-              { label: "未命中", value: totals.input || 0, color: "#3b6ea5", text: cmTokens(totals.input), pct: tokens ? Math.round((totals.input || 0) / tokens * 100) + "%" : "" },
-              { label: "命中", value: totals.cacheRead || 0, color: "#2f7d5f", text: cmTokens(totals.cacheRead), pct: tokens ? Math.round((totals.cacheRead || 0) / tokens * 100) + "%" : "" },
-              { label: "输出", value: totals.output || 0, color: "#b06a2c", text: cmTokens(totals.output), pct: tokens ? Math.round((totals.output || 0) / tokens * 100) + "%" : "" },
+              { label: "未命中", value: totals.input, color: "#3b6ea5", text: cmTokens(totals.input), pct: tokens ? Math.round(totals.input / tokens * 100) + "%" : "" },
+              { label: "命中", value: totals.cacheRead, color: "#2f7d5f", text: cmTokens(totals.cacheRead), pct: tokens ? Math.round(totals.cacheRead / tokens * 100) + "%" : "" },
+              { label: "输出", value: totals.output, color: "#b06a2c", text: cmTokens(totals.output), pct: tokens ? Math.round(totals.output / tokens * 100) + "%" : "" },
             ],
           }),
         ]),
@@ -964,15 +980,15 @@ window.__ModuleLoader__.load({
             key: "d",
             center: cmDuration(timeTotal),
             segments: [
-              { label: "工具执行", value: totals.toolMs || 0, color: "#2f7d5f", text: cmDuration(totals.toolMs), pct: Math.round((totals.toolMs || 0) / timeTotal * 100) + "%" },
-              { label: "重试等待", value: totals.retryMs || 0, color: "#8e2f28", text: cmDuration(totals.retryMs), pct: Math.round((totals.retryMs || 0) / timeTotal * 100) + "%" },
+              { label: "工具执行", value: totals.toolMs, color: "#2f7d5f", text: cmDuration(totals.toolMs), pct: Math.round(totals.toolMs / timeTotal * 100) + "%" },
+              { label: "重试等待", value: totals.retryMs, color: "#8e2f28", text: cmDuration(totals.retryMs), pct: Math.round(totals.retryMs / timeTotal * 100) + "%" },
               { label: "模型与其它", value: otherMs, color: "#6b4fa0", text: cmDuration(otherMs), pct: Math.round(otherMs / timeTotal * 100) + "%" },
             ],
           }),
         ]),
       ]));
 
-      const days = Object.entries(totals.byDay || {}).sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-30);
+      const days = Object.entries(totals.byDay).sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-30);
       const dayTotals = days.map(([day, value]) => ({ day, total: (value.input || 0) + (value.cacheRead || 0) + (value.output || 0) }));
       const maxDay = Math.max(1, ...dayTotals.map((item) => item.total));
       body.push(h("div", { key: "days", className: "cm-card" }, [
