@@ -135,24 +135,30 @@ body{margin:0;background:var(--bg)}
     return `<details class="entry" ${c.status==='error'?'open':''}><summary><div class="entry-top"><span class="entry-name">${esc(c.name)}</span><span class="entry-status ${c.status==='error'?'bad':''}">${c.status==='error'?'工具报错':c.status==='returned'?'已返回':'尚无结果记录'}</span><span class="spacer"></span><span class="mono muted" style="font-size:10px">${c.end===null?'—':dur(c.end-c.start)}</span></div><div class="entry-time">${clock(c.start)}${c.end===null?'':` → ${clock(c.end)}`} · seq ${c.seq}${c.resultSeq===null?'':` → ${c.resultSeq}`}</div></summary>${c.error?`<span class="code-label">错误类型</span><div class="mono" style="font-size:11px;color:var(--error)">${esc(c.error.code||c.error.name||'')}</div>`:''}<span class="code-label">调用参数</span>${block(c.args)}<span class="code-label">返回原文</span>${block(c.result)}</details>`;
   }
   function showGroup(index) {
-    activeGroup=index;const g=groups[index];const calls=allCalls(g);
-    $('graph').querySelectorAll('[data-group]').forEach(el=>el.classList.toggle('active',Number(el.dataset.group)===index));
-    let html=g.steps.length>1?'<div class="drawer-actions"><button class="action-button primary" id="zoom-group">展开这段路径 ↗</button></div>':'';
-    for(const s of g.steps){
-      html+=`<h3>第 ${s.number} 步 · ${clock(s.start)} → ${clock(s.end)}${s.endObserved?'':' · 无结束事件'}</h3>`;
-      for(const m of s.markers){
-        const child=data.sessions.find(c=>c.id===m.childId);
-        html+=`<div class="source-row"><span>${clock(m.time)} · seq ${m.seq}</span>${m.type==='subagent/catalog'?`子任务：${esc(m.label||m.childId)}${child?`<br><button class="back-link child-link" data-child="${esc(child.id)}">查看子任务路径 · ${child.totals.steps} 步 ↗</button>`:''}`:m.type==='compaction/start'?'历史压缩开始':'历史压缩结束'}</div>`;
+    try {
+      activeGroup=index;const g=groups[index];const calls=allCalls(g);
+      $('graph').querySelectorAll('[data-group]').forEach(el=>el.classList.toggle('active',Number(el.dataset.group)===index));
+      let html=g.steps.length>1?'<div class="drawer-actions"><button class="action-button primary" id="zoom-group">展开这段路径 ↗</button></div>':'';
+      for(const s of g.steps){
+        html+=`<h3>第 ${s.number} 步 · ${clock(s.start)} → ${clock(s.end)}${s.endObserved?'':' · 无结束事件'}</h3>`;
+        for(const m of s.markers){
+          const child=data.sessions.find(c=>c.id===m.childId);
+          html+=`<div class="source-row"><span>${clock(m.time)} · seq ${m.seq}</span>${m.type==='subagent/catalog'?`子任务：${esc(m.label||m.childId)}${child?`<br><button class="back-link child-link" data-child="${esc(child.id)}">查看子任务路径 · ${child.totals.steps} 步 ↗</button>`:''}`:m.type==='compaction/start'?'历史压缩开始':'历史压缩结束'}</div>`;
+        }
+        for(const retry of s.retries)html+=`<div class="source-row"><span>模型请求重试 · seq ${retry.seq}</span>${esc(retry.failure?.code||'请求失败')} · 等待 ${dur(retry.delayMs)}</div>`;
+        html+=s.calls.map(callEntry).join('');
+        if(s.reply)html+=`<span class="code-label">助手原文 · seq ${s.assistantSeq}</span>${block(s.reply)}`;
       }
-      for(const retry of s.retries)html+=`<div class="source-row"><span>模型请求重试 · seq ${retry.seq}</span>${esc(retry.failure?.code||'请求失败')} · 等待 ${dur(retry.delayMs)}</div>`;
-      html+=s.calls.map(callEntry).join('');
-      if(s.reply)html+=`<span class="code-label">助手原文 · seq ${s.assistantSeq}</span>${block(s.reply)}`;
+      openDrawer(g.title||stepName(g),`${clock(g.start)} → ${clock(g.end)} · ${calls.length} 次工具调用`,html);
+      if($('zoom-group'))$('zoom-group').onclick=()=>{zoom=[g.steps[0].number,g.steps.at(-1).number];activeGroup=null;closeDrawer();render();$('graph-scroll').scrollTop=0;};
+      $('drawer-body').querySelectorAll('[data-child]').forEach(b=>b.onclick=()=>openChild(b.dataset.child));
+      $('live-status').textContent=`已打开第${turn().number}轮，${stepName(g)}的原始记录`;
+    } catch (error) {
+      const group=groups[index]||{};
+      openDrawer(group.title||'记录','打开记录时出错',`<div class="source-row">${esc(String(error&&error.message||error))}</div>`+((group.steps||[]).map((s)=>`<h3>第 ${s.number} 步</h3>`).join('')));
     }
-    openDrawer(g.title||stepName(g),`${clock(g.start)} → ${clock(g.end)} · ${calls.length} 次工具调用`,html);
-    if($('zoom-group'))$('zoom-group').onclick=()=>{zoom=[g.steps[0].number,g.steps.at(-1).number];activeGroup=null;closeDrawer();render();$('graph-scroll').scrollTop=0;};
-    $('drawer-body').querySelectorAll('[data-child]').forEach(b=>b.onclick=()=>openChild(b.dataset.child));
-    $('live-status').textContent=`已打开第${turn().number}轮，${stepName(g)}的原始记录`;
   }
+
   function showPrompts(){openDrawer(`第 ${turn().number} 轮对话`,'用户输入原文，按发生顺序排列',turn().prompts.length?turn().prompts.map(p=>`<h3>${clock(p.time)} · seq ${p.seq}</h3><div class="original-prompt">${esc(p.text)}</div>${p.omitted?`<span class="truncated">节选 · 另有 ${p.omitted} 个字符</span>`:''}`).join(''):'<div class="muted">本轮没有新的用户文本。</div>');}
   function showSource(){
     const s=session,d=s.diagnostics;

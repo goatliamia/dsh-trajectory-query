@@ -201,6 +201,14 @@
     html+=svgText(right,top-10,'回答','action-small','end');
     $('graph').setAttribute('viewBox',`0 0 ${w} ${h}`);$('graph').setAttribute('height',h);$('graph').style.width=w+'px';$('graph').innerHTML=html;
     attachGraphActions();
+    const graphEl=$('graph');
+    if(!graphEl.__blockClick){
+      graphEl.__blockClick=true;
+      graphEl.addEventListener('click',(event)=>{
+        const el=event.target&&event.target.closest?event.target.closest('[data-group]'):null;
+        if(el)showGroup(Number(el.dataset.group));
+      });
+    }
   }
 
   function renderPath(){
