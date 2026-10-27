@@ -8,6 +8,33 @@ window.__ModuleLoader__.load({
     /* 样式 */
     const STYLE_ID = "dsh-analysis-view-style";
     const CSS = `
+.cm-root{padding:18px 20px;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:14px;color:var(--dsw-alias-label-primary)}
+.cm-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.cm-title{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em}
+.cm-sub{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.cm-ranges{display:flex;gap:2px;margin-left:auto;border:1px solid var(--dsw-alias-border-l1);border-radius:7px;padding:2px}
+.cm-range{font:inherit;font-size:11px;padding:4px 9px;border:0;border-radius:5px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.cm-range.on{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.cm-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--dsw-alias-border-l1);border-radius:8px}
+.cm-kpi{padding:11px 14px;min-width:0;border-left:1px solid var(--dsw-alias-border-l1)}
+.cm-kpi:first-child{border-left:0}
+.cm-kpi-num{font-size:21px;font-weight:550;font-variant-numeric:tabular-nums;line-height:1.15}
+.cm-kpi-label{font-size:11px;color:var(--dsw-alias-label-secondary);margin-top:3px}
+.cm-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.cm-card{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;padding:12px 14px;min-width:0}
+.cm-card-title{margin:0 0 10px;font-size:12px;font-weight:500;color:var(--dsw-alias-label-secondary);letter-spacing:.02em}
+.cm-donut{display:flex;align-items:center;gap:16px}
+.cm-legend{display:flex;flex-direction:column;gap:5px;font-size:11px;min-width:0}
+.cm-legend-row{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.cm-legend-row i{width:8px;height:8px;border-radius:2px;flex:none}
+.cm-legend-row b{margin-left:auto;font-weight:500;font-variant-numeric:tabular-nums}
+.cm-bars{display:flex;align-items:flex-end;gap:4px;height:120px}
+.cm-bar{flex:1;min-width:3px;background:var(--dsw-alias-state-success-primary);border-radius:2px 2px 0 0;opacity:.75}
+.cm-bar.empty{opacity:.18}
+.cm-axis{display:flex;justify-content:space-between;font-size:10px;color:var(--dsw-alias-label-secondary);margin-top:6px}
+.cm-note{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.cm-bad{color:var(--dsw-alias-state-error-primary);font-size:12px}
+\n
 .av-root{--av-accent:color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, var(--dsw-alias-state-success-primary));padding:16px;overflow:auto;min-height:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5}
 .av-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .av-trace-frame{width:100%;height:calc(100vh - 210px);min-height:420px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
@@ -772,6 +799,167 @@ window.__ModuleLoader__.load({
       ]);
     }
 
+
+    /* ---------------- 上下文管理 ---------------- */
+    const CM_RANGES = [
+      { id: "today", label: "今天", ms: 24 * 3600 * 1000 },
+      { id: "7d", label: "近 7 天", ms: 7 * 24 * 3600 * 1000 },
+      { id: "30d", label: "近 30 天", ms: 30 * 24 * 3600 * 1000 },
+      { id: "all", label: "全部", ms: null },
+    ];
+
+    function cmTokens(value) {
+      if (!value) return "0";
+      if (value >= 1e9) return (value / 1e9).toFixed(2) + "B";
+      if (value >= 1e6) return (value / 1e6).toFixed(2) + "M";
+      if (value >= 1e3) return (value / 1e3).toFixed(1) + "k";
+      return String(value);
+    }
+
+    function cmDuration(ms) {
+      const seconds = Math.max(0, Math.round((ms || 0) / 1000));
+      if (seconds < 60) return seconds + " 秒";
+      const minutes = Math.round(seconds / 60);
+      if (minutes < 60) return minutes + " 分";
+      const hours = Math.floor(minutes / 60);
+      return hours + " 时 " + (minutes % 60) + " 分";
+    }
+
+    function CmDonut(props) {
+      const total = props.segments.reduce((sum, item) => sum + item.value, 0) || 1;
+      const radius = 52;
+      const circumference = 2 * Math.PI * radius;
+      let offset = 0;
+      const arcs = props.segments.map((item, index) => {
+        const length = (item.value / total) * circumference;
+        const arc = h("circle", {
+          key: index,
+          cx: 70,
+          cy: 70,
+          r: radius,
+          fill: "none",
+          stroke: item.color,
+          strokeWidth: 16,
+          strokeDasharray: length + " " + (circumference - length),
+          strokeDashoffset: -offset,
+          transform: "rotate(-90 70 70)",
+          strokeLinecap: "butt",
+        });
+        offset += length;
+        return arc;
+      });
+      return h("div", { className: "cm-donut" }, [
+        h("svg", { key: "s", viewBox: "0 0 140 140", width: 132, height: 132, "aria-hidden": true }, [
+          h("circle", { key: "bg", cx: 70, cy: 70, r: radius, fill: "none", stroke: "var(--dsw-alias-bg-layer-2)", strokeWidth: 16 }),
+          ...arcs,
+        ]),
+        h("div", { key: "l", className: "cm-legend" }, props.segments.map((item, index) =>
+          h("div", { key: index, className: "cm-legend-row" }, [
+            h("i", { key: "i", style: { background: item.color } }),
+            h("span", { key: "t" }, item.label),
+            h("b", { key: "v" }, item.text),
+          ]))),
+      ]);
+    }
+
+    function ContextManagerPanel() {
+      React.useEffect(() => ensureStyle(), []);
+      const [range, setRange] = React.useState("30d");
+      const [state, setState] = React.useState({ status: "loading" });
+      React.useEffect(() => {
+        let alive = true;
+        const preset = CM_RANGES.find((item) => item.id === range) || CM_RANGES[2];
+        const to = Date.now();
+        const from = preset.ms === null ? 0 : to - preset.ms;
+        setState({ status: "loading" });
+        fetch("/analysis-view/context-summary?from=" + from + "&to=" + to)
+          .then((response) => response.json())
+          .then((data) => {
+            if (!alive) return;
+            if (!data || data.ok !== true) {
+              setState({ status: "error", error: (data && data.error) || "统计失败" });
+              return;
+            }
+            setState({ status: "ready", data });
+          })
+          .catch((error) => {
+            if (alive) setState({ status: "error", error: String(error && error.message || error) });
+          });
+        return () => { alive = false; };
+      }, [range]);
+
+      const body = [];
+      body.push(h("div", { key: "head", className: "cm-head" }, [
+        h("h2", { key: "t", className: "cm-title" }, "上下文管理"),
+        h("span", { key: "s", className: "cm-sub" }, state.status === "ready" ? "最近扫描 " + state.data.scanned + " 个会话" + (state.data.partial ? " · 还有 " + (state.data.total - state.data.scanned) + " 个未扫" : "") : "统计中"),
+        h("div", { key: "r", className: "cm-ranges" }, CM_RANGES.map((item) =>
+          h("button", { key: item.id, type: "button", className: "cm-range" + (item.id === range ? " on" : ""), onClick: () => setRange(item.id) }, item.label))),
+      ]));
+
+      if (state.status === "error") {
+        body.push(h("div", { key: "err", className: "cm-bad" }, "读取失败:" + state.error));
+        return h("div", { className: "cm-root" }, body);
+      }
+      if (state.status !== "ready") {
+        body.push(h("div", { key: "load", className: "cm-note" }, "正在聚合会话事件…第一次会慢一点,之后走缓存。"));
+        return h("div", { className: "cm-root" }, body);
+      }
+
+      const data = state.data;
+      const totals = data.totals || {};
+      const tokens = (totals.input || 0) + (totals.cacheRead || 0) + (totals.output || 0);
+      const hitRate = totals.input || totals.cacheRead ? Math.round(((totals.cacheRead || 0) / ((totals.input || 0) + (totals.cacheRead || 0))) * 100) : 0;
+      body.push(h("div", { key: "kpis", className: "cm-kpis" }, [
+        h("div", { key: "s", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, String(totals.sessions || 0)), h("div", { key: "l", className: "cm-kpi-label" }, "会话")]),
+        h("div", { key: "t", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, cmTokens(tokens)), h("div", { key: "l", className: "cm-kpi-label" }, "token 总量")]),
+        h("div", { key: "h", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, hitRate + "%"), h("div", { key: "l", className: "cm-kpi-label" }, "缓存命中率")]),
+        h("div", { key: "c", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, String(totals.calls || 0)), h("div", { key: "l", className: "cm-kpi-label" }, "工具调用")]),
+      ]));
+
+      const otherMs = Math.max(0, (totals.spanMs || 0) - (totals.toolMs || 0) - (totals.retryMs || 0));
+      body.push(h("div", { key: "charts", className: "cm-grid" }, [
+        h("div", { key: "tok", className: "cm-card" }, [
+          h("h3", { key: "t", className: "cm-card-title" }, "token 构成"),
+          h(CmDonut, { key: "d", segments: [
+            { label: "未命中", value: totals.input || 0, color: "#3b6ea5", text: cmTokens(totals.input) },
+            { label: "命中", value: totals.cacheRead || 0, color: "#2f7d5f", text: cmTokens(totals.cacheRead) },
+            { label: "输出", value: totals.output || 0, color: "#b06a2c", text: cmTokens(totals.output) },
+          ] }),
+        ]),
+        h("div", { key: "time", className: "cm-card" }, [
+          h("h3", { key: "t", className: "cm-card-title" }, "耗时构成"),
+          h(CmDonut, { key: "d", segments: [
+            { label: "工具执行", value: totals.toolMs || 0, color: "#2f7d5f", text: cmDuration(totals.toolMs) },
+            { label: "重试等待", value: totals.retryMs || 0, color: "#8e2f28", text: cmDuration(totals.retryMs) },
+            { label: "模型与其它", value: otherMs, color: "#6b4fa0", text: cmDuration(otherMs) },
+          ] }),
+        ]),
+      ]));
+
+      const days = Object.entries(totals.byDay || {}).sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-30);
+      const maxDay = Math.max(1, ...days.map(([, value]) => (value.input || 0) + (value.cacheRead || 0) + (value.output || 0)));
+      body.push(h("div", { key: "days", className: "cm-card" }, [
+        h("h3", { key: "t", className: "cm-card-title" }, "按天用量"),
+        days.length === 0 ? h("div", { key: "e", className: "cm-note" }, "这个范围内没有记录") : h("div", { key: "b", className: "cm-bars" }, days.map(([day, value]) => {
+          const total = (value.input || 0) + (value.cacheRead || 0) + (value.output || 0);
+          return h("div", { key: day, className: "cm-bar" + (total ? "" : " empty"), style: { height: Math.max(2, Math.round((total / maxDay) * 118)) + "px" }, title: day + " · " + cmTokens(total) });
+        })),
+        h("div", { key: "a", className: "cm-axis" }, days.length ? [h("span", { key: "f" }, days[0][0]), h("span", { key: "l" }, days[days.length - 1][0])] : []),
+      ]));
+
+      return h("div", { className: "cm-root" }, body);
+    }
+
+    function ContextManagerIcon(props) {
+      const size = props && props.size || 18;
+      const color = props && props.active ? "var(--dsw-alias-brand-primary)" : "currentColor";
+      return h("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", "aria-hidden": true }, [
+        h("circle", { key: "a", cx: 12, cy: 12, r: 9, stroke: color, strokeWidth: 1.6, opacity: .55 }),
+        h("path", { key: "b", d: "M12 3 a9 9 0 0 1 9 9", stroke: color, strokeWidth: 2.6, strokeLinecap: "round" }),
+        h("circle", { key: "c", cx: 12, cy: 12, r: 2.4, fill: color }),
+      ]);
+    }
+
     /* ---------------- 面板 ---------------- */
     // 独立的一页:执行路径图,数据由 /analysis-view/trace 现场生成。
     function PathView(props) {
@@ -885,6 +1073,9 @@ window.__ModuleLoader__.load({
         ctx.uiConversation.views.register({ target: "analysis", create: () => new AnalysisSnapshotBuilder(), isActive: () => true });
         const slots = ctx.slots;
         if (!slots) return;
+        slots.register({ name: "sidebar.panellist", id: "context-manager", order: 30, label: () => "上下文管理" }, ContextManagerIcon);
+        slots.register({ name: "main", key: "context-manager" }, ContextManagerPanel);
+
         ctx.uiConversation.views.register({ target: "path", create: () => new AnalysisSnapshotBuilder(), isActive: () => true });
         slots.inject("conversation.view", () => slots.register({
           name: "conversation.view",

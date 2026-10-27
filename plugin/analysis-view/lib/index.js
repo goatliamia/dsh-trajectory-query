@@ -640,6 +640,138 @@ function classifyByName(ctx) {
   };
 }
 
+
+const CONTEXT_CACHE_TTL_MS = 5 * 60 * 1000;
+const CONTEXT_SESSION_CAP = 150;
+const contextSummaryCache = new Map();
+
+function summarizeSession(events) {
+  let turns = 0;
+  let calls = 0;
+  let errors = 0;
+  let toolMs = 0;
+  let retryMs = 0;
+  let first = null;
+  let last = null;
+  const requests = [];
+  const byDay = new Map();
+  const openCalls = new Map();
+  for (const event of events) {
+    if (!event || typeof event.type !== 'string') continue;
+    const time = typeof event.time === 'number' ? event.time : null;
+    if (time !== null) {
+      if (first === null || time < first) first = time;
+      if (last === null || time > last) last = time;
+    }
+    const data = event.data && typeof event.data === 'object' ? event.data : {};
+    if (event.type === 'turn/start') { turns += 1; continue; }
+    if (event.type === 'llm/retry') { if (typeof data.delayMs === 'number') retryMs += data.delayMs; continue; }
+    if (event.type === 'tool/call') {
+      calls += 1;
+      if (data.callId !== undefined && time !== null) openCalls.set(data.callId, time);
+      continue;
+    }
+    if (event.type === 'tool/result') {
+      const message = data.message && typeof data.message === 'object' ? data.message : {};
+      if (data.error || message.isError) errors += 1;
+      const callId = data.callId ?? message.toolCallId;
+      const started = openCalls.get(callId);
+      if (typeof started === 'number' && time !== null) {
+        toolMs += Math.max(0, time - started);
+        openCalls.delete(callId);
+      }
+      continue;
+    }
+    if (event.type === 'assistant/message') {
+      const usage = data.usage;
+      if (!usage || typeof usage !== 'object') continue;
+      const source = (data.message && data.message.source) || {};
+      const row = {
+        provider: typeof source.provider === 'string' ? source.provider : null,
+        model: typeof source.model === 'string' ? source.model : null,
+        time: time ?? Date.now(),
+        input: usage.inputTokens || 0,
+        cacheRead: usage.cacheReadTokens || 0,
+        output: usage.outputTokens || 0,
+      };
+      requests.push(row);
+      const day = new Date(row.time).toISOString().slice(0, 10);
+      const bucket = byDay.get(day) || { input: 0, cacheRead: 0, output: 0, calls: 0 };
+      bucket.input += row.input;
+      bucket.cacheRead += row.cacheRead;
+      bucket.output += row.output;
+      bucket.calls += 1;
+      byDay.set(day, bucket);
+    }
+  }
+  return { turns, calls, errors, toolMs, retryMs, spanMs: first !== null && last !== null ? Math.max(0, last - first) : 0, requests, byDay };
+}
+
+async function buildContextSummary(ctx, { from, to }) {
+  const sessionQuery = ctx.get('sessionQuery');
+  if (!sessionQuery || typeof sessionQuery.listSessions !== 'function') return { ok: false, error: 'sessionQuery unavailable' };
+  const records = await sessionQuery.listSessions();
+  const inRange = records.filter((record) => record && record.header && record.header.createdAt >= from && record.header.createdAt <= to);
+  const capped = inRange.slice(0, CONTEXT_SESSION_CAP);
+  const totals = { sessions: 0, turns: 0, calls: 0, errors: 0, toolMs: 0, retryMs: 0, spanMs: 0, input: 0, cacheRead: 0, output: 0 };
+  const requests = [];
+  const byDay = {};
+  let scanned = 0;
+  let failed = 0;
+  const startedAt = Date.now();
+  for (const record of capped) {
+    const id = record.header.id;
+    const hit = contextSummaryCache.get(id);
+    let per = hit && Date.now() - hit.at < CONTEXT_CACHE_TTL_MS ? hit.per : null;
+    if (per === null) {
+      try {
+        const snapshot = await sessionQuery.readSession(id);
+        per = summarizeSession(snapshot && Array.isArray(snapshot.events) ? snapshot.events : []);
+      } catch {
+        per = null;
+      }
+      if (per !== null) contextSummaryCache.set(id, { at: Date.now(), per });
+    }
+    if (per === null) { failed += 1; continue; }
+    scanned += 1;
+    totals.sessions += 1;
+    totals.turns += per.turns;
+    totals.calls += per.calls;
+    totals.errors += per.errors;
+    totals.toolMs += per.toolMs;
+    totals.retryMs += per.retryMs;
+    totals.spanMs += per.spanMs;
+    for (const row of per.requests) requests.push(row);
+    for (const [day, bucket] of per.byDay) {
+      const target = byDay[day] || (byDay[day] = { input: 0, cacheRead: 0, output: 0, calls: 0 });
+      target.input += bucket.input;
+      target.cacheRead += bucket.cacheRead;
+      target.output += bucket.output;
+      target.calls += bucket.calls;
+    }
+    if (Date.now() - startedAt > 15000) break;
+  }
+  const pricing = computePricing(requests);
+  const costTotal = pricing && pricing.cost ? (pricing.cost.miss || 0) + (pricing.cost.hit || 0) + (pricing.cost.output || 0) : null;
+  return {
+    ok: true,
+    range: { from, to },
+    scanned,
+    failed,
+    total: inRange.length,
+    partial: scanned < inRange.length,
+    tookMs: Date.now() - startedAt,
+    totals: {
+      ...totals,
+      input: requests.reduce((n, row) => n + row.input, 0),
+      cacheRead: requests.reduce((n, row) => n + row.cacheRead, 0),
+      output: requests.reduce((n, row) => n + row.output, 0),
+      byDay,
+    },
+    cost: pricing && pricing.priced > 0 && pricing.unpriced === 0 ? { currency: pricing.currency, total: costTotal } : null,
+  };
+}
+
 export function apply(ctx) {
   const webServer = ctx.get("webServer");
   if (webServer === undefined) return;
@@ -658,6 +790,13 @@ export function apply(ctx) {
       try {
         const url = new URL(req.url || "/", "http://localhost");
         if (req.method !== "GET") return send(404, { error: "not found" });
+        if (url.pathname === ROUTE_PATH + "/context-summary") {
+          const now = Date.now();
+          const to = Number(url.searchParams.get("to")) || now;
+          const from = Number(url.searchParams.get("from")) || 0;
+          const payload = await buildContextSummary(ctx, { from, to });
+          return send(200, payload);
+        }
         const sessionId = url.searchParams.get("session");
         if (!sessionId) return send(400, { error: "missing session" });
         if (url.pathname === ROUTE_PATH + "/trace") {
