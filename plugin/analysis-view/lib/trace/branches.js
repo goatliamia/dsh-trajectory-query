@@ -70,7 +70,10 @@
         for(const s of t.steps){
           for(const r of s.retries){
             const a=mapTime(r.time),b=mapTime(r.time+(r.delayMs||0));if(!visible(a,b))continue;const wdt=Math.max(3,b-a);
-            html+=brGroup(`class="br-retry" data-br-round="${t.number}"`,`<rect x="${a}" y="${base-4}" width="${wdt}" height="8" rx="2" fill="var(--warm)" fill-opacity=".26"/><rect x="${a}" y="${base-4}" width="${wdt}" height="8" rx="2" fill="none" stroke="var(--warm)" stroke-opacity=".6" stroke-dasharray="2 2"/>`+brText(a+5,base-10,`↻`,`br-label`),`请求重试 · 等待 ${dur(r.delayMs||0)} · seq ${r.seq}`);
+            const arrow = wdt > 10
+              ? `<path d="M${a + 3} ${base} H${b - 4}" stroke="var(--warm)" stroke-width="1.3" fill="none"/><path d="M${b - 6} ${base - 2.4} L${b - 3} ${base} L${b - 6} ${base + 2.4}" stroke="var(--warm)" stroke-width="1.3" fill="none"/>`
+              : '';
+            html+=brGroup(`class="br-retry" data-br-round="${t.number}"`,`<rect x="${a}" y="${base-4}" width="${wdt}" height="8" rx="2" fill="var(--warm)" fill-opacity=".26"/><rect x="${a}" y="${base-4}" width="${wdt}" height="8" rx="2" fill="none" stroke="var(--warm)" stroke-opacity=".6" stroke-dasharray="2 2"/>`+arrow,`请求重试 · 等待 ${dur(r.delayMs||0)} · seq ${r.seq}`);
           }
         }
         if(stopLabel(t.reason?.kind)){const x=l.end;html+=brGroup(`class="br-marker" data-br-stop="${t.number}"`,`<path d="M${x-2} ${base-6} v12 M${x+2} ${base-6} v12" class="br-glyph"/>`,stopLabel(t.reason.kind));}
