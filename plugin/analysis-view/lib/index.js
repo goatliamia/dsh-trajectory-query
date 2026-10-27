@@ -809,9 +809,162 @@ function buildContextSessions(ctx) {
   };
 }
 
+
+const ANALYSIS_CONTEXT_KEY = "analysisContext";
+const analysisContextSchema = { parse: (value) => value };
+const analysisBackfill = new Map();
+
+function emptyAnalysisContext() {
+  return {
+    turns: 0,
+    calls: 0,
+    errors: 0,
+    toolMs: 0,
+    retryMs: 0,
+    first: null,
+    last: null,
+    input: 0,
+    cacheRead: 0,
+    output: 0,
+    open: {},
+    byDay: {},
+  };
+}
+
+function applyAnalysisContext(state, event) {
+  const data = event && event.data && typeof event.data === "object" ? event.data : {};
+  const time = typeof event.time === "number" ? event.time : null;
+  const next = { ...state };
+  if (time !== null) {
+    next.first = next.first === null || time < next.first ? time : next.first;
+    next.last = next.last === null || time > next.last ? time : next.last;
+  }
+  if (event.type === "turn/start") {
+    next.turns += 1;
+    return next;
+  }
+  if (event.type === "llm/retry") {
+    if (typeof data.delayMs === "number") next.retryMs += data.delayMs;
+    return next;
+  }
+  if (event.type === "tool/call") {
+    next.calls += 1;
+    if (data.callId !== undefined && time !== null) next.open = { ...next.open, [data.callId]: time };
+    return next;
+  }
+  if (event.type === "tool/result") {
+    const message = data.message && typeof data.message === "object" ? data.message : {};
+    if (data.error || message.isError) next.errors += 1;
+    const callId = data.callId ?? message.toolCallId;
+    const started = next.open[callId];
+    if (typeof started === "number" && time !== null) {
+      next.toolMs += Math.max(0, time - started);
+      const open = { ...next.open };
+      delete open[callId];
+      next.open = open;
+    }
+    return next;
+  }
+  if (event.type === "assistant/message") {
+    const usage = data.usage;
+    if (!usage || typeof usage !== "object") return next;
+    const input = usage.inputTokens || 0;
+    const cacheRead = usage.cacheReadTokens || 0;
+    const output = usage.outputTokens || 0;
+    next.input += input;
+    next.cacheRead += cacheRead;
+    next.output += output;
+    const stamp = time ?? Date.now();
+    const day = new Date(stamp).toISOString().slice(0, 10);
+    const bucket = next.byDay[day] || { input: 0, cacheRead: 0, output: 0, calls: 0 };
+    next.byDay = {
+      ...next.byDay,
+      [day]: { input: bucket.input + input, cacheRead: bucket.cacheRead + cacheRead, output: bucket.output + output, calls: bucket.calls + 1 },
+    };
+    return next;
+  }
+  return next;
+}
+
+function analysisView(state) {
+  return {
+    turns: state.turns,
+    calls: state.calls,
+    errors: state.errors,
+    toolMs: state.toolMs,
+    retryMs: state.retryMs,
+    spanMs: state.first !== null && state.last !== null ? Math.max(0, state.last - state.first) : 0,
+    input: state.input,
+    cacheRead: state.cacheRead,
+    output: state.output,
+    byDay: state.byDay,
+  };
+}
+
+function registerAnalysisContext(ctx) {
+  const projections = ctx.get("sessionProjections");
+  if (!projections || typeof projections.register !== "function") return false;
+  try {
+    projections.register({
+      key: ANALYSIS_CONTEXT_KEY,
+      stateSchema: analysisContextSchema,
+      init: () => emptyAnalysisContext(),
+      apply: applyAnalysisContext,
+      wire: { viewSchema: analysisContextSchema, view: analysisView },
+      stateVersion: 1,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function buildContextFromProjections(ctx) {
+  const sessionQuery = ctx.get("sessionQuery");
+  const cache = ctx.get("sessionProjectionCache");
+  if (!sessionQuery || typeof sessionQuery.listSessions !== "function" || !cache || typeof cache.cachedSnapshot !== "function") {
+    return null;
+  }
+  const records = await sessionQuery.listSessions();
+  const sessions = [];
+  let missing = 0;
+  for (const record of records) {
+    let value;
+    try {
+      const snapshot = cache.cachedSnapshot(record.header, [ANALYSIS_CONTEXT_KEY]);
+      value = snapshot && snapshot.values ? snapshot.values[ANALYSIS_CONTEXT_KEY] : undefined;
+    } catch {
+      value = undefined;
+    }
+    if (value !== undefined) {
+      sessions.push({ id: record.header.id, createdAt: record.header.createdAt, ...value });
+      continue;
+    }
+    missing += 1;
+    if (!analysisBackfill.has(record.header.id)) {
+      analysisBackfill.set(record.header.id, true);
+      fillAnalysisContext(ctx, record.header).finally(() => analysisBackfill.delete(record.header.id));
+    }
+  }
+  return { ok: true, status: missing > 0 ? "scanning" : "done", missing, total: records.length, sessions };
+}
+
+async function fillAnalysisContext(ctx, header) {
+  const sessionQuery = ctx.get("sessionQuery");
+  const cache = ctx.get("sessionProjectionCache");
+  if (!sessionQuery || typeof sessionQuery.readSession !== "function" || !cache || typeof cache.coldSnapshot !== "function") return;
+  try {
+    const snapshot = await sessionQuery.readSession(header.id);
+    cache.coldSnapshot(snapshot.session || header, snapshot.inheritedEventCount ?? 0, snapshot.events || []);
+  } catch {
+    /* 回填失败下次再试 */
+  }
+}
+
 export function apply(ctx) {
   const webServer = ctx.get("webServer");
   if (webServer === undefined) return;
+  registerAnalysisContext(ctx);
   // 面板每次切回「分析」都会拉一次;同一会话 2 秒内的重复请求复用上一次结果。
   const digestCache = new Map();
   const DIGEST_TTL_MS = 2000;
@@ -828,7 +981,8 @@ export function apply(ctx) {
         const url = new URL(req.url || "/", "http://localhost");
         if (req.method !== "GET") return send(404, { error: "not found" });
         if (url.pathname === ROUTE_PATH + "/context-summary") {
-          return send(200, buildContextSessions(ctx));
+          const fromProjections = await buildContextFromProjections(ctx);
+          return send(200, fromProjections !== null ? fromProjections : buildContextSessions(ctx));
         }
         const sessionId = url.searchParams.get("session");
         if (!sessionId) return send(400, { error: "missing session" });

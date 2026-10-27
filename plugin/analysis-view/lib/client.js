@@ -927,7 +927,7 @@ window.__ModuleLoader__.load({
       body.push(h("div", { key: "head", className: "cm-head" }, [
         h("h2", { key: "t", className: "cm-title" }, "上下文管理"),
         h("span", { key: "s", className: "cm-sub" }, payload
-          ? preset.label + " · " + totals.sessions + " 个会话" + (payload.status === "scanning" ? " · 统计中" : "") + (payload.failed ? " · " + payload.failed + " 个读取失败" : "")
+          ? preset.label + " · " + totals.sessions + " 个会话" + (payload.status === "scanning" ? " · 回填中 " + (payload.total - (payload.missing || 0)) + "/" + payload.total : "") + (payload.failed ? " · " + payload.failed + " 个读取失败" : "")
           : "统计中"),
         h("div", { key: "r", className: "cm-ranges" }, CM_RANGES.map((item) =>
           h("button", {
@@ -946,7 +946,7 @@ window.__ModuleLoader__.load({
         body.push(h("div", { key: "load", className: "cm-note" }, "正在准备…"));
         return h("div", { className: "cm-root" }, body);
       }
-      if (payload.status === "scanning") body.push(h(CmProgress, { key: "p", scanned: payload.scanned, total: payload.total }));
+      if (payload.status === "scanning") body.push(h(CmProgress, { key: "p", scanned: payload.total - (payload.missing || 0), total: payload.total }));
 
       const tokens = totals.input + totals.cacheRead + totals.output;
       const contextTotal = totals.input + totals.cacheRead;
