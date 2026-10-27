@@ -50,3 +50,5 @@
 .br-layers{display:flex;gap:12px;align-items:center;font-size:11px;color:var(--ink);opacity:.9}
 .br-layer{display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap}
 .br-layer input{accent-color:var(--branch-bad);margin:0}
+
+.action-block{cursor:pointer;outline:none}

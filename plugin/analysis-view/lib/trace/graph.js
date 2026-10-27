@@ -175,47 +175,32 @@
 
   function renderActionPath() {
     const t=turn();groups=actionPlan(t);
-    $('turn-heading').innerHTML=`<div class="eyebrow"><strong>第 ${t.number} 轮</strong><span>${day(t.start)}</span><span>行动路径</span></div><h2 class="prompt">${esc(t.title)}</h2><div class="turn-subline"><span class="mono">${clock(t.start)} → ${clock(endOf(t))}</span><span>${dur(endOf(t)-t.start)}</span><span class="spacer"></span><button class="back-link" id="prompt-button" aria-label="查看本轮用户原文">查看对话 ↗</button></div>`;
+    $('turn-heading').innerHTML='';
     $('prompt-button').onclick=showPrompts;
-    $('caption-note').textContent='先看行动，再点开记录 · 下方时间带表示真实用时';
-    const available=$('graph-scroll').clientWidth,w=Math.max(1040,available),h=Math.max(318,$('graph-scroll').clientHeight-2);
-    const left=38,right=w-38,gap=30,episode=groups.find(g=>g.episode),normalCount=groups.length-(episode?1:0),specialWidth=episode?Math.max(370,(w-left-38)*.40):0;
-    const normalW=(w-left-38-gap*(groups.length-1)-specialWidth)/Math.max(1,normalCount),mainY=Math.round(h*.43),cardH=76;
-    let cursor=left;
-    const layout=groups.map(g=>{const width=g.episode?specialWidth:normalW;const o={...g,x:cursor,width};cursor+=width+gap;return o});
-    const selectedDuration=endOf(t)-t.start,barLeft=left+60,barRight=right,barY=h-61;
-    let html=`<title>从行动理解第 ${t.number} 轮的执行过程</title><desc>节点表示连续行动。受阻片段展开为首次尝试、补充读取、再次修改；点击节点查看真实事件。节点位置表示先后，下方时间带按真实时间等比例。</desc><defs><marker id="action-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7" fill="var(--unknown)"/></marker><marker id="recovery-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0 L7 3.5 L0 7" fill="var(--tool)"/></marker></defs>`;
-    layout.forEach((g,i)=>{
-      const next=layout[i+1],nodeMid=g.x+g.width/2;
-      if(next)html+=`<path d="M${g.x+g.width+4} ${mainY} H${next.x-7}" fill="none" stroke="var(--ink)" stroke-width="3" marker-end="url(#action-arrow)"/>`;
-      html+=`<g class="action-group" data-group="${i}" role="button" tabindex="0" aria-label="${esc(g.title+'，'+dur(g.end-g.start)+'，查看真实记录')}"><title>${esc(g.title)} · ${stepName(g)} · ${dur(g.end-g.start)}</title>`;
-      if(g.episode){
-        const stages=(g.stages||[]).slice(0,3);
-        const panelTop=mainY-103,panelHeight=187,padding=14,innerGap=10,innerWidth=(g.width-padding*2-innerGap*2)/Math.max(1,stages.length),cy=mainY+14;
-        html+=`<rect class="action-panel" x="${g.x}" y="${panelTop}" width="${g.width}" height="${panelHeight}" rx="12" fill="var(--surface)" stroke="var(--line)"/>`+svgText(g.x+17,panelTop+26,g.title,'action-title');
-        stages.forEach((stage,j)=>{
-          const nx=g.x+padding+j*(innerWidth+innerGap),y=cy-30;
-          const tone=stage.state==='blocked'?'var(--error)':stage.state==='recovered'?'var(--tool)':'var(--unknown)';
-          const fill=stage.state==='blocked'?'var(--error-bg)':stage.state==='recovered'?'var(--tool-soft)':'var(--bg)';
-          html+=`<rect x="${nx}" y="${y}" width="${innerWidth}" height="67" rx="8" fill="${fill}" stroke="${tone}" stroke-opacity=".28"/><text x="${nx+innerWidth/2}" y="${y+23}" class="action-stage-title" text-anchor="middle">${esc(stage.title)}</text><text x="${nx+innerWidth/2}" y="${y+41}" class="action-small" text-anchor="middle">${esc(stage.note)}</text>`;
-          if(j<stages.length-1)html+=`<path d="M${nx+innerWidth+1} ${cy+3} H${nx+innerWidth+innerGap-2}" stroke="${stages[j+1].state==='blocked'?'var(--error)':'var(--unknown)'}" stroke-width="1.3" fill="none" marker-end="url(#action-arrow)"/>`;
-        });
-        html+=svgText(nodeMid,cy+61,g.note||'','action-small','middle');
-      }else{
-        const y=mainY-cardH/2;
-        html+=`<rect class="action-panel" x="${g.x}" y="${y}" width="${g.width}" height="${cardH}" rx="11" fill="var(--surface)" stroke="var(--line)"/><rect x="${g.x+14}" y="${y+17}" width="5" height="5" rx="1" fill="var(--unknown)"/>${svgText(g.x+28,y+24,g.title,'action-title')}${svgText(g.x+14,y+47,shorten(g.note,Math.max(10,Math.floor((g.width-26)/11))),'action-note')}${svgText(g.x+14,y+65,dur(g.end-g.start),'action-small')}`;
-      }
-      html+=svgText(nodeMid,g.episode?mainY+102:mainY+66,`${clock(g.start).slice(0,5)} · ${stepName(g)}`,'action-small','middle');
+    $('caption-note').textContent='横轴是真实时间 · 一块是一段连续动作 · 点一块看记录';
+    const w=Math.max(720,$('graph-scroll').clientWidth),h=Math.max(230,$('graph-scroll').clientHeight-2);
+    const left=44,right=w-44,top=64,barH=26;
+    const start=t.start,end=endOf(t),duration=Math.max(1,end-start);
+    const x=time=>left+Math.max(0,Math.min(1,(time-start)/duration))*(right-left);
+    const KIND={read:'#4f73a0',write:'#a06a35',run:'#2f7d5f',query:'#6d55a3',other:'#5b6a7a'};
+    let html=`<title>第 ${t.number} 轮行动路径</title><desc>横轴是真实时间。每块是一段连续动作,颜色表示动作类型,红框表示其中出现过失败。点击查看原始记录。</desc>`;
+    const prompt=t.prompts&&t.prompts[0]?String(t.prompts[0].text||'').replace(/\s+/g,' ').slice(0,52):'';
+    html+=svgText(left,top-30,'第 '+t.number+' 轮'+(prompt?' · '+prompt+(prompt.length>=52?'…':''):''),'action-small','start');
+    groups.forEach((g,i)=>{
+      const a=x(g.start),b=Math.max(x(g.end),a+5),bad=g.calls.filter(c=>c.status==='error').length>0;
+      const tone=KIND[g.kind]||KIND.other;
+      const title=g.title+' · '+g.note;
+      html+=`<g class="action-block" data-group="${i}" role="button" tabindex="0" aria-label="${esc(title)}"><title>${esc(title)}</title><rect x="${a.toFixed(1)}" y="${top}" width="${(b-a).toFixed(1)}" height="${barH}" rx="4" fill="${tone}" fill-opacity="${bad?.2:.13}" stroke="${bad?'var(--error)':tone}" stroke-opacity="${bad?.85:.5}" stroke-width="${bad?1.6:1}"/>`;
+      if(b-a>44)html+=svgText((a+b)/2,top+17,kindLabel(g.kind),'action-title','middle');
       html+='</g>';
+      if(b-a>62)html+=svgText((a+b)/2,top+barH+15,g.note,'action-small','middle');
     });
-    html+=svgText(left,barY+8,'实际用时','action-small');
-    layout.forEach((g,i)=>{
-      const a=barLeft+(g.start-t.start)/selectedDuration*(barRight-barLeft),b=barLeft+(g.end-t.start)/selectedDuration*(barRight-barLeft);
-      html+=`<g data-group="${i}" role="button" tabindex="0" aria-label="${esc(g.title+'的时间范围')}" style="cursor:pointer"><rect x="${a}" y="${barY}" width="${Math.max(2,b-a-2)}" height="12" rx="3" fill="var(--unknown)" opacity="${g.episode?.65:.34}"/><title>${esc(g.title)} · ${clock(g.start)} → ${clock(g.end)} · ${dur(g.end-g.start)}</title></g>`;
-    });
-    for(let seconds=0;seconds<selectedDuration/1000;seconds+=60){const xx=barLeft+seconds*1000/selectedDuration*(barRight-barLeft);html+=svgText(xx,barY+31,elapsed(seconds*1000),'graph-axis',seconds?'middle':'start')}
-    html+=svgText(barRight,barY+31,elapsed(selectedDuration),'graph-axis','end');
-    $('graph').setAttribute('viewBox',`0 0 ${w} ${h}`);$('graph').setAttribute('height',h);$('graph').style.width=w+'px';$('graph').innerHTML=html;attachGraphActions();
+    for(const g of groups){for(const c of g.calls){if(c.status!=='error')continue;const xx=x(c.start);html+=`<path d="M${xx} ${top-6} v6" stroke="var(--error)" stroke-width="2"/>`;}}
+    const tick=[5,10,15,30,60,120,300,600].find(n=>n>=duration/1000/6)||900;
+    for(let sec=0;sec<=duration/1000;sec+=tick){const xx=x(start+sec*1000);html+=`<line x1="${xx}" x2="${xx}" y1="${top+barH+28}" y2="${top+barH+34}" stroke="var(--grid)"/>`+svgText(xx,h-8,elapsed(sec*1000),'graph-axis','middle');}
+    html+=svgText(right,top-10,'回答','action-small','end');
+    $('graph').setAttribute('viewBox',`0 0 ${w} ${h}`);$('graph').setAttribute('height',h);$('graph').style.width=w+'px';$('graph').innerHTML=html;
+    attachGraphActions();
   }
 
   function renderPath(){
