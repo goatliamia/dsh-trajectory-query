@@ -137,39 +137,21 @@
     attachGraphActions();
   }
 
+  const PHASE={read:'研究',query:'研究',write:'改写',run:'验证',other:'其他'};
   function actionPlan(t) {
     const list=[];let cur=null;
     for(const s of t.steps){
       const calls=s.calls||[];
       if(!calls.length){cur=null;continue;}
-      const primary=calls[0],kind=callKind(primary),subject=callSubject(primary);
+      const primary=calls[0],kind=callKind(primary),subject=callSubject(primary),phase=PHASE[kind]||'其他';
       const gap=s.start-(cur?cur.end:s.start);
-      if(cur&&cur.kind===kind&&cur.subject===subject&&gap<120000){cur.steps.push(s);cur.calls.push(...calls);cur.end=s.end;continue;}
-      cur={kind,subject,steps:[s],calls:[...calls],start:s.start,end:s.end};
+      if(cur&&cur.phase===phase&&gap<20000){cur.steps.push(s);cur.calls.push(...calls);cur.end=s.end;continue;}
+      cur={phase,kind,subject,steps:[s],calls:[...calls],start:s.start,end:s.end};
       list.push(cur);
     }
     return list.map(b=>{
       const failures=b.calls.filter(c=>c.status==='error').length;
-      const stages=[];
-      for(const s of b.steps){
-        const kind=kindOfStep(s);
-        const last=stages.at(-1);
-        if(last&&last.kind===kind){last.steps.push(s);last.end=s.end;continue;}
-        stages.push({kind,title:kindLabel(kind),steps:[s],start:s.start,end:s.end});
-      }
-      for(const stage of stages){
-        stage.count=stage.steps.reduce((n,s)=>n+(s.calls||[]).length,0);
-        stage.failed=stage.steps.reduce((n,s)=>n+(s.calls||[]).filter(c=>c.status==='error').length,0);
-        stage.note=`${stage.steps.length} 步 · ${stage.count} 次${stage.failed?' · '+stage.failed+' 次失败':''}`;
-      }
-      const firstBad=stages.findIndex(stage=>stage.failed>0);
-      if(firstBad>=0){
-        stages[firstBad].state='blocked';
-        const back=stages.slice(firstBad+1).findIndex(stage=>stage.kind===stages[firstBad].kind&&stage.failed===0);
-        if(back>=0)stages[firstBad+1+back].state='recovered';
-      }
-      const episode=failures>0&&stages.length>1;
-      return {...b,stages,episode,title:behaviorTitle(b.kind,b.subject),note:`${b.steps.length} 步 · ${b.calls.length} 次调用${failures?' · '+failures+' 次失败':''}`};
+      return {...b,title:PHASE[b.phase]||'其他',note:`${b.steps.length} 步 · ${b.calls.length} 次${failures?' · '+failures+' 次失败':''}`};
     });
   }
 
@@ -177,30 +159,35 @@
     const t=turn();groups=actionPlan(t);
     $('turn-heading').innerHTML='';
     if($('prompt-button'))$('prompt-button').onclick=showPrompts;
-    $('caption-note').textContent='横轴是真实时间 · 一块是一段连续动作 · 点一块看记录';
-    const w=Math.max(720,$('graph-scroll').clientWidth),h=Math.max(230,$('graph-scroll').clientHeight-2);
-    const left=44,right=w-44,top=64,barH=26;
-    const start=t.start,end=endOf(t),duration=Math.max(1,end-start);
-    const x=time=>left+Math.max(0,Math.min(1,(time-start)/duration))*(right-left);
+    $('caption-note').textContent='一段连续的动作是一块 · 长度是耗时 · 红边表示里面有失败';
+    const w=Math.max(640,$('graph-scroll').clientWidth),h=Math.max(240,$('graph-scroll').clientHeight-2);
+    const left=36,right=w-36,top=74,barH=30,gap=4;
     const KIND={read:'#4f73a0',write:'#a06a35',run:'#2f7d5f',query:'#6d55a3',other:'#5b6a7a'};
-    let html=`<title>第 ${t.number} 轮行动路径</title><desc>横轴是真实时间。每块是一段连续动作,颜色表示动作类型,红框表示其中出现过失败。点击查看原始记录。</desc>`;
-    const prompt=t.prompts&&t.prompts[0]?String(t.prompts[0].text||'').replace(/\s+/g,' ').slice(0,52):'';
-    html+=svgText(left,top-30,'第 '+t.number+' 轮'+(prompt?' · '+prompt+(prompt.length>=52?'…':''):''),'action-small','start');
+    const PHASE_COLOR={'研究':'#4f73a0','改写':'#a06a35','验证':'#2f7d5f','其他':'#5b6a7a'};
+    let html=`<title>第 ${t.number} 轮行动路径</title><desc>横向是这一轮的推进顺序,每块是一段连续动作,长度按耗时分配。红边表示其中出现过失败。</desc>`;
+    const prompt=t.prompts&&t.prompts[0]?String(t.prompts[0].text||'').replace(/\s+/g,' ').slice(0,60):'';
+    html+=svgText(left,26,'第 '+t.number+' 轮'+(prompt?' · '+prompt+(prompt.length>=60?'…':''):''),'action-small','start');
+    const total=groups.reduce((n,g)=>n+Math.max(1,g.end-g.start),0)||1;
+    const available=right-left-gap*Math.max(0,groups.length-1);
+    const minW=14;
+    let widths=groups.map(g=>Math.max(minW,Math.round(available*Math.max(1,g.end-g.start)/total)));
+    const sum=widths.reduce((a,b)=>a+b,0);
+    if(sum>available){const scale=available/sum;widths=widths.map(v=>Math.max(8,Math.floor(v*scale)));}
+    let cursor=left;
     groups.forEach((g,i)=>{
-      const a=x(g.start),b=Math.max(x(g.end),a+5),bad=g.calls.filter(c=>c.status==='error').length>0;
-      const tone=KIND[g.kind]||KIND.other;
+      const bw=widths[i],bad=g.calls.filter(c=>c.status==='error').length;
+      const tone=PHASE_COLOR[g.phase]||KIND[g.kind]||KIND.other;
       const title=g.title+' · '+g.note;
-      const hitX=Math.max(0,a-4),hitW=Math.max(10,b-a+8);
-      html+=`<g class="action-block" data-group="${i}" role="button" tabindex="0" aria-label="${esc(title)}"><title>${esc(title)}</title><rect x="${hitX.toFixed(1)}" y="${top-10}" width="${hitW.toFixed(1)}" height="${barH+34}" fill="transparent" pointer-events="all"/><rect x="${a.toFixed(1)}" y="${top}" width="${(b-a).toFixed(1)}" height="${barH}" rx="4" fill="${tone}" fill-opacity="${bad?.2:.13}" stroke="${bad?'var(--error)':tone}" stroke-opacity="${bad?.85:.5}" stroke-width="${bad?1.6:1}"/>`;
-      if(b-a>44)html+=svgText((a+b)/2,top+17,kindLabel(g.kind),'action-title','middle');
-      if(b-a>62)html+=svgText((a+b)/2,top+barH+15,g.note,'action-small','middle');
+      html+=`<g class="action-block" data-group="${i}" role="button" tabindex="0" aria-label="${esc(title)}"><title>${esc(title)}</title><rect x="${cursor}" y="${top-10}" width="${bw}" height="${barH+36}" fill="transparent" pointer-events="all"/><rect x="${cursor}" y="${top}" width="${bw}" height="${barH}" rx="4" fill="${tone}" fill-opacity="${bad?.22:.16}" stroke="${bad?'var(--error)':tone}" stroke-opacity="${bad?.9:.55}" stroke-width="${bad?1.8:1.1}"/>`;
+      if(bw>=46)html+=svgText(cursor+bw/2,top+19,g.title,'action-title','middle');
+      if(bw>=64)html+=svgText(cursor+bw/2,top+barH+15,g.note,'action-small','middle');
+      if(bad)html+=svgText(cursor+6,top-6,'✗'+bad,'action-small','start');
       html+='</g>';
+      cursor+=bw+gap;
     });
-    for(const g of groups){for(const c of g.calls){if(c.status!=='error')continue;const xx=x(c.start);html+=`<path d="M${xx} ${top-6} v6" stroke="var(--error)" stroke-width="2"/>`;}}
-    const tick=[5,10,15,30,60,120,300,600].find(n=>n>=duration/1000/6)||900;
-    for(let sec=0;sec<=duration/1000;sec+=tick){const xx=x(start+sec*1000);html+=`<line x1="${xx}" x2="${xx}" y1="${top+barH+28}" y2="${top+barH+34}" stroke="var(--grid)"/>`+svgText(xx,h-8,elapsed(sec*1000),'graph-axis','middle');}
-    html+=svgText(right,top-10,'回答','action-small','end');
-    $('graph').setAttribute('viewBox',`0 0 ${w} ${h}`);$('graph').setAttribute('height',h);$('graph').style.width=w+'px';$('graph').innerHTML=html;
+    html+=svgText(left,top+barH+52,clock(t.start).slice(0,5),'graph-axis','start');
+    html+=svgText(right,top+barH+52,clock(endOf(t)).slice(0,5)+' · '+dur(endOf(t)-t.start),'graph-axis','end');
+    $('graph').setAttribute('viewBox',`0 0 ${w} ${h}`);$('graph').setAttribute('height',h);$('graph').style.width='100%';$('graph').innerHTML=html;
     attachGraphActions();
     const graphEl=$('graph');
     if(!graphEl.__blockClick){
