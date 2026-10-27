@@ -70,10 +70,10 @@
         for(const s of t.steps){
           for(const r of s.retries){
             const a=mapTime(r.time),b=mapTime(r.time+(r.delayMs||0));if(!visible(a,b))continue;const wdt=Math.max(3,b-a);
-            const ry = base + 19;const hook = Math.max(4, Math.min(9, wdt * 0.4));
+            const ry = base - 24;const hook = Math.max(5, Math.min(10, wdt * 0.4));
             const bridge =
-              `<path d="M${a} ${base + 2} V${ry} H${b} V${base + 2}" fill="none" stroke="var(--warm)" stroke-opacity=".55" stroke-width="1.1"/>` +
-              `<path d="M${b - hook - 5} ${ry - 3.6} L${b - hook} ${ry} L${b - hook - 5} ${ry + 3.6}" fill="none" stroke="var(--warm)" stroke-opacity=".95" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+              `<path d="M${a} ${base - 2} V${ry} H${b} V${base - 2}" fill="none" stroke="var(--warm)" stroke-opacity=".7" stroke-width="1.6"/>` +
+              `<path d="M${b - hook - 6} ${ry - 4.5} L${b - hook} ${ry} L${b - hook - 6} ${ry + 4.5}" fill="none" stroke="var(--warm)" stroke-opacity=".95" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>`;
             html+=brGroup(`class="br-retry" data-br-round="${t.number}"`,bridge,`请求重试 · 等待 ${dur(r.delayMs || 0)} · seq ${r.seq}`);
           }
         }
