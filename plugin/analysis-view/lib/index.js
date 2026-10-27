@@ -641,9 +641,6 @@ function classifyByName(ctx) {
 }
 
 
-const CONTEXT_CACHE_TTL_MS = 5 * 60 * 1000;
-const CONTEXT_SESSION_CAP = 150;
-const contextSummaryCache = new Map();
 
 function summarizeSession(events) {
   let turns = 0;
@@ -707,68 +704,99 @@ function summarizeSession(events) {
   return { turns, calls, errors, toolMs, retryMs, spanMs: first !== null && last !== null ? Math.max(0, last - first) : 0, requests, byDay };
 }
 
-async function buildContextSummary(ctx, { from, to }) {
+const CONTEXT_SCAN_TTL_MS = 30 * 60 * 1000;
+const CONTEXT_SESSION_CAP = 80;
+const CONTEXT_CONCURRENCY = 6;
+const contextScans = new Map();
+
+function emptyContextScan() {
+  return {
+    status: 'scanning',
+    scanned: 0,
+    total: 0,
+    failed: 0,
+    startedAt: Date.now(),
+    doneAt: null,
+    totals: { sessions: 0, turns: 0, calls: 0, errors: 0, toolMs: 0, retryMs: 0, spanMs: 0, input: 0, cacheRead: 0, output: 0 },
+    requests: [],
+    byDay: {},
+  };
+}
+
+async function runContextScan(ctx, from, to, state) {
   const sessionQuery = ctx.get('sessionQuery');
-  if (!sessionQuery || typeof sessionQuery.listSessions !== 'function') return { ok: false, error: 'sessionQuery unavailable' };
+  if (!sessionQuery || typeof sessionQuery.listSessions !== 'function') {
+    state.status = 'error';
+    return;
+  }
   const records = await sessionQuery.listSessions();
   const inRange = records.filter((record) => record && record.header && record.header.createdAt >= from && record.header.createdAt <= to);
-  const capped = inRange.slice(0, CONTEXT_SESSION_CAP);
-  const totals = { sessions: 0, turns: 0, calls: 0, errors: 0, toolMs: 0, retryMs: 0, spanMs: 0, input: 0, cacheRead: 0, output: 0 };
-  const requests = [];
-  const byDay = {};
-  let scanned = 0;
-  let failed = 0;
-  const startedAt = Date.now();
-  for (const record of capped) {
-    const id = record.header.id;
-    const hit = contextSummaryCache.get(id);
-    let per = hit && Date.now() - hit.at < CONTEXT_CACHE_TTL_MS ? hit.per : null;
-    if (per === null) {
+  const queue = inRange.slice(0, CONTEXT_SESSION_CAP);
+  state.total = queue.length;
+  const worker = async () => {
+    for (;;) {
+      const record = queue.shift();
+      if (record === undefined) return;
       try {
-        const snapshot = await sessionQuery.readSession(id);
-        per = summarizeSession(snapshot && Array.isArray(snapshot.events) ? snapshot.events : []);
+        const snapshot = await sessionQuery.readSession(record.header.id);
+        const per = summarizeSession(snapshot && Array.isArray(snapshot.events) ? snapshot.events : []);
+        const totals = state.totals;
+        totals.sessions += 1;
+        totals.turns += per.turns;
+        totals.calls += per.calls;
+        totals.errors += per.errors;
+        totals.toolMs += per.toolMs;
+        totals.retryMs += per.retryMs;
+        totals.spanMs += per.spanMs;
+        for (const row of per.requests) {
+          state.requests.push(row);
+          totals.input += row.input;
+          totals.cacheRead += row.cacheRead;
+          totals.output += row.output;
+        }
+        for (const [day, bucket] of per.byDay) {
+          const target = state.byDay[day] || (state.byDay[day] = { input: 0, cacheRead: 0, output: 0, calls: 0 });
+          target.input += bucket.input;
+          target.cacheRead += bucket.cacheRead;
+          target.output += bucket.output;
+          target.calls += bucket.calls;
+        }
       } catch {
-        per = null;
+        state.failed += 1;
       }
-      if (per !== null) contextSummaryCache.set(id, { at: Date.now(), per });
+      state.scanned += 1;
     }
-    if (per === null) { failed += 1; continue; }
-    scanned += 1;
-    totals.sessions += 1;
-    totals.turns += per.turns;
-    totals.calls += per.calls;
-    totals.errors += per.errors;
-    totals.toolMs += per.toolMs;
-    totals.retryMs += per.retryMs;
-    totals.spanMs += per.spanMs;
-    for (const row of per.requests) requests.push(row);
-    for (const [day, bucket] of per.byDay) {
-      const target = byDay[day] || (byDay[day] = { input: 0, cacheRead: 0, output: 0, calls: 0 });
-      target.input += bucket.input;
-      target.cacheRead += bucket.cacheRead;
-      target.output += bucket.output;
-      target.calls += bucket.calls;
-    }
-    if (Date.now() - startedAt > 15000) break;
+  };
+  const workers = Math.max(1, Math.min(CONTEXT_CONCURRENCY, queue.length));
+  await Promise.all(Array.from({ length: workers }, worker));
+  state.status = 'done';
+  state.doneAt = Date.now();
+}
+
+async function buildContextSummary(ctx, { from, to }) {
+  const key = from + '|' + to;
+  let state = contextScans.get(key);
+  const now = Date.now();
+  if (state === undefined || (state.status === 'done' && now - state.doneAt > CONTEXT_SCAN_TTL_MS)) {
+    state = emptyContextScan();
+    contextScans.set(key, state);
+    if (contextScans.size > 12) contextScans.delete(contextScans.keys().next().value);
+    runContextScan(ctx, from, to, state).catch(() => {
+      state.status = 'error';
+    });
   }
-  const pricing = computePricing(requests);
-  const costTotal = pricing && pricing.cost ? (pricing.cost.miss || 0) + (pricing.cost.hit || 0) + (pricing.cost.output || 0) : null;
+  const pricing = state.requests.length > 0 ? computePricing(state.requests) : null;
   return {
     ok: true,
-    range: { from, to },
-    scanned,
-    failed,
-    total: inRange.length,
-    partial: scanned < inRange.length,
-    tookMs: Date.now() - startedAt,
-    totals: {
-      ...totals,
-      input: requests.reduce((n, row) => n + row.input, 0),
-      cacheRead: requests.reduce((n, row) => n + row.cacheRead, 0),
-      output: requests.reduce((n, row) => n + row.output, 0),
-      byDay,
-    },
-    cost: pricing && pricing.priced > 0 && pricing.unpriced === 0 ? { currency: pricing.currency, total: costTotal } : null,
+    status: state.status,
+    scanned: state.scanned,
+    total: state.total,
+    failed: state.failed,
+    tookMs: Date.now() - state.startedAt,
+    totals: { ...state.totals, byDay: state.byDay },
+    cost: pricing && pricing.priced > 0 && pricing.unpriced === 0
+      ? { currency: pricing.currency, total: (pricing.cost.miss || 0) + (pricing.cost.hit || 0) + (pricing.cost.output || 0) }
+      : null,
   };
 }
 

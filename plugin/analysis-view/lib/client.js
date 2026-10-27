@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
 .cm-bar{flex:1;min-width:3px;background:var(--dsw-alias-state-success-primary);border-radius:2px 2px 0 0;opacity:.75}
 .cm-bar.empty{opacity:.18}
 .cm-axis{display:flex;justify-content:space-between;font-size:10px;color:var(--dsw-alias-label-secondary);margin-top:6px}
-.cm-note{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.cm-progress{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--dsw-alias-label-secondary)}.cm-progress-bar{flex:1;height:4px;border-radius:2px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}.cm-progress-bar i{display:block;height:100%;background:var(--dsw-alias-state-success-primary);transition:width .3s ease}.cm-note{font-size:11px;color:var(--dsw-alias-label-secondary)}
 .cm-bad{color:var(--dsw-alias-state-error-primary);font-size:12px}
 \n
 .av-root{--av-accent:color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, var(--dsw-alias-state-success-primary));padding:16px;overflow:auto;min-height:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5}
@@ -850,15 +850,24 @@ window.__ModuleLoader__.load({
       });
       return h("div", { className: "cm-donut" }, [
         h("svg", { key: "s", viewBox: "0 0 140 140", width: 132, height: 132, "aria-hidden": true }, [
-          h("circle", { key: "bg", cx: 70, cy: 70, r: radius, fill: "none", stroke: "var(--dsw-alias-bg-layer-2)", strokeWidth: 16 }),
+            h("circle", { key: "bg", cx: 70, cy: 70, r: radius, fill: "none", stroke: "var(--dsw-alias-bg-layer-2)", strokeWidth: 16 }),
           ...arcs,
+          props.center ? h("text", { key: "ct", x: 70, y: 75, textAnchor: "middle", fontSize: 15, fill: "var(--dsw-alias-label-primary)" }, props.center) : null,
         ]),
         h("div", { key: "l", className: "cm-legend" }, props.segments.map((item, index) =>
           h("div", { key: index, className: "cm-legend-row" }, [
             h("i", { key: "i", style: { background: item.color } }),
             h("span", { key: "t" }, item.label),
-            h("b", { key: "v" }, item.text),
+            h("b", { key: "v" }, item.text + (item.pct ? " · " + item.pct : "")),
           ]))),
+      ]);
+    }
+
+    function CmProgress(props) {
+      const ratio = props.total > 0 ? Math.min(1, props.scanned / props.total) : 0;
+      return h("div", { className: "cm-progress" }, [
+        h("div", { key: "bar", className: "cm-progress-bar" }, h("i", { style: { width: Math.round(ratio * 100) + "%" } })),
+        h("span", { key: "text" }, props.total > 0 ? "正在读取会话 " + props.scanned + " / " + props.total : "正在列出会话…"),
       ]);
     }
 
@@ -868,47 +877,65 @@ window.__ModuleLoader__.load({
       const [state, setState] = React.useState({ status: "loading" });
       React.useEffect(() => {
         let alive = true;
+        let timer = null;
         const preset = CM_RANGES.find((item) => item.id === range) || CM_RANGES[2];
         const to = Date.now();
         const from = preset.ms === null ? 0 : to - preset.ms;
+        const tick = () => {
+          fetch("/analysis-view/context-summary?from=" + from + "&to=" + to)
+            .then((response) => response.json())
+            .then((data) => {
+              if (!alive) return;
+              if (!data || data.ok !== true) {
+                setState({ status: "error", error: (data && data.error) || "统计失败" });
+                return;
+              }
+              setState({ status: "ready", data });
+              if (data.status === "scanning") timer = setTimeout(tick, 1500);
+            })
+            .catch((error) => {
+              if (alive) setState({ status: "error", error: String((error && error.message) || error) });
+            });
+        };
         setState({ status: "loading" });
-        fetch("/analysis-view/context-summary?from=" + from + "&to=" + to)
-          .then((response) => response.json())
-          .then((data) => {
-            if (!alive) return;
-            if (!data || data.ok !== true) {
-              setState({ status: "error", error: (data && data.error) || "统计失败" });
-              return;
-            }
-            setState({ status: "ready", data });
-          })
-          .catch((error) => {
-            if (alive) setState({ status: "error", error: String(error && error.message || error) });
-          });
-        return () => { alive = false; };
+        tick();
+        return () => { alive = false; if (timer !== null) clearTimeout(timer); };
       }, [range]);
 
       const body = [];
+      const data = state.status === "ready" ? state.data : null;
       body.push(h("div", { key: "head", className: "cm-head" }, [
         h("h2", { key: "t", className: "cm-title" }, "上下文管理"),
-        h("span", { key: "s", className: "cm-sub" }, state.status === "ready" ? "最近扫描 " + state.data.scanned + " 个会话" + (state.data.partial ? " · 还有 " + (state.data.total - state.data.scanned) + " 个未扫" : "") : "统计中"),
+        h("span", { key: "s", className: "cm-sub" }, data
+          ? (CM_RANGES.find((item) => item.id === range) || CM_RANGES[2]).label + " · " + data.scanned + " 个会话"
+            + (data.status === "scanning" ? " · 统计中" : "")
+            + (data.failed ? " · " + data.failed + " 个读取失败" : "")
+          : "统计中"),
         h("div", { key: "r", className: "cm-ranges" }, CM_RANGES.map((item) =>
-          h("button", { key: item.id, type: "button", className: "cm-range" + (item.id === range ? " on" : ""), onClick: () => setRange(item.id) }, item.label))),
+          h("button", {
+            key: item.id,
+            type: "button",
+            className: "cm-range" + (item.id === range ? " on" : ""),
+            onClick: () => setRange(item.id),
+          }, item.label))),
       ]));
 
       if (state.status === "error") {
         body.push(h("div", { key: "err", className: "cm-bad" }, "读取失败:" + state.error));
         return h("div", { className: "cm-root" }, body);
       }
-      if (state.status !== "ready") {
-        body.push(h("div", { key: "load", className: "cm-note" }, "正在聚合会话事件…第一次会慢一点,之后走缓存。"));
+      if (data === null) {
+        body.push(h("div", { key: "load", className: "cm-note" }, "正在准备…"));
         return h("div", { className: "cm-root" }, body);
       }
 
-      const data = state.data;
       const totals = data.totals || {};
       const tokens = (totals.input || 0) + (totals.cacheRead || 0) + (totals.output || 0);
-      const hitRate = totals.input || totals.cacheRead ? Math.round(((totals.cacheRead || 0) / ((totals.input || 0) + (totals.cacheRead || 0))) * 100) : 0;
+      const contextTotal = (totals.input || 0) + (totals.cacheRead || 0);
+      const hitRate = contextTotal > 0 ? Math.round(((totals.cacheRead || 0) / contextTotal) * 100) : 0;
+
+      if (data.status === "scanning") body.push(h(CmProgress, { key: "p", scanned: data.scanned, total: data.total }));
+
       body.push(h("div", { key: "kpis", className: "cm-kpis" }, [
         h("div", { key: "s", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, String(totals.sessions || 0)), h("div", { key: "l", className: "cm-kpi-label" }, "会话")]),
         h("div", { key: "t", className: "cm-kpi" }, [h("div", { key: "n", className: "cm-kpi-num" }, cmTokens(tokens)), h("div", { key: "l", className: "cm-kpi-label" }, "token 总量")]),
@@ -917,34 +944,47 @@ window.__ModuleLoader__.load({
       ]));
 
       const otherMs = Math.max(0, (totals.spanMs || 0) - (totals.toolMs || 0) - (totals.retryMs || 0));
+      const timeTotal = Math.max(1, (totals.toolMs || 0) + (totals.retryMs || 0) + otherMs);
       body.push(h("div", { key: "charts", className: "cm-grid" }, [
         h("div", { key: "tok", className: "cm-card" }, [
           h("h3", { key: "t", className: "cm-card-title" }, "token 构成"),
-          h(CmDonut, { key: "d", segments: [
-            { label: "未命中", value: totals.input || 0, color: "#3b6ea5", text: cmTokens(totals.input) },
-            { label: "命中", value: totals.cacheRead || 0, color: "#2f7d5f", text: cmTokens(totals.cacheRead) },
-            { label: "输出", value: totals.output || 0, color: "#b06a2c", text: cmTokens(totals.output) },
-          ] }),
+          h(CmDonut, {
+            key: "d",
+            center: cmTokens(tokens),
+            segments: [
+              { label: "未命中", value: totals.input || 0, color: "#3b6ea5", text: cmTokens(totals.input), pct: tokens ? Math.round((totals.input || 0) / tokens * 100) + "%" : "" },
+              { label: "命中", value: totals.cacheRead || 0, color: "#2f7d5f", text: cmTokens(totals.cacheRead), pct: tokens ? Math.round((totals.cacheRead || 0) / tokens * 100) + "%" : "" },
+              { label: "输出", value: totals.output || 0, color: "#b06a2c", text: cmTokens(totals.output), pct: tokens ? Math.round((totals.output || 0) / tokens * 100) + "%" : "" },
+            ],
+          }),
         ]),
         h("div", { key: "time", className: "cm-card" }, [
           h("h3", { key: "t", className: "cm-card-title" }, "耗时构成"),
-          h(CmDonut, { key: "d", segments: [
-            { label: "工具执行", value: totals.toolMs || 0, color: "#2f7d5f", text: cmDuration(totals.toolMs) },
-            { label: "重试等待", value: totals.retryMs || 0, color: "#8e2f28", text: cmDuration(totals.retryMs) },
-            { label: "模型与其它", value: otherMs, color: "#6b4fa0", text: cmDuration(otherMs) },
-          ] }),
+          h(CmDonut, {
+            key: "d",
+            center: cmDuration(timeTotal),
+            segments: [
+              { label: "工具执行", value: totals.toolMs || 0, color: "#2f7d5f", text: cmDuration(totals.toolMs), pct: Math.round((totals.toolMs || 0) / timeTotal * 100) + "%" },
+              { label: "重试等待", value: totals.retryMs || 0, color: "#8e2f28", text: cmDuration(totals.retryMs), pct: Math.round((totals.retryMs || 0) / timeTotal * 100) + "%" },
+              { label: "模型与其它", value: otherMs, color: "#6b4fa0", text: cmDuration(otherMs), pct: Math.round(otherMs / timeTotal * 100) + "%" },
+            ],
+          }),
         ]),
       ]));
 
       const days = Object.entries(totals.byDay || {}).sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-30);
-      const maxDay = Math.max(1, ...days.map(([, value]) => (value.input || 0) + (value.cacheRead || 0) + (value.output || 0)));
+      const dayTotals = days.map(([day, value]) => ({ day, total: (value.input || 0) + (value.cacheRead || 0) + (value.output || 0) }));
+      const maxDay = Math.max(1, ...dayTotals.map((item) => item.total));
       body.push(h("div", { key: "days", className: "cm-card" }, [
         h("h3", { key: "t", className: "cm-card-title" }, "按天用量"),
-        days.length === 0 ? h("div", { key: "e", className: "cm-note" }, "这个范围内没有记录") : h("div", { key: "b", className: "cm-bars" }, days.map(([day, value]) => {
-          const total = (value.input || 0) + (value.cacheRead || 0) + (value.output || 0);
-          return h("div", { key: day, className: "cm-bar" + (total ? "" : " empty"), style: { height: Math.max(2, Math.round((total / maxDay) * 118)) + "px" }, title: day + " · " + cmTokens(total) });
-        })),
-        h("div", { key: "a", className: "cm-axis" }, days.length ? [h("span", { key: "f" }, days[0][0]), h("span", { key: "l" }, days[days.length - 1][0])] : []),
+        dayTotals.length === 0 ? h("div", { key: "e", className: "cm-note" }, "这个范围内没有记录") : h("div", { key: "b", className: "cm-bars" },
+          dayTotals.map((item) => h("div", {
+            key: item.day,
+            className: "cm-bar" + (item.total ? "" : " empty"),
+            style: { height: Math.max(2, Math.round((item.total / maxDay) * 118)) + "px" },
+            title: item.day + " · " + cmTokens(item.total),
+          }))),
+        h("div", { key: "a", className: "cm-axis" }, dayTotals.length ? [h("span", { key: "f" }, dayTotals[0].day), h("span", { key: "l" }, dayTotals[dayTotals.length - 1].day)] : []),
       ]));
 
       return h("div", { className: "cm-root" }, body);
