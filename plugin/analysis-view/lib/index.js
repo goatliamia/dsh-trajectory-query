@@ -963,6 +963,10 @@ async function buildContextFromProjections(ctx) {
       sessions.push({ id: record.header.id, createdAt: record.header.createdAt, ...value });
       continue;
     }
+    const stored = loadContextStore().sessions[record.header.id];
+    if (stored !== undefined) {
+      sessions.push({ id: record.header.id, createdAt: record.header.createdAt, ...stored });
+    }
     missing += 1;
     if (queued < ANALYSIS_BACKFILL_PER_REQUEST && !analysisBackfill.has(record.header.id)) {
       queued += 1;
