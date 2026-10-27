@@ -989,6 +989,37 @@ async function fillAnalysisContext(ctx, header) {
   }
 }
 
+import { readFileSync as readStoreFile, writeFileSync as writeStoreFile } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+const CONTEXT_STORE_PATH = join(homedir(), ".dsh", "context-manager-cache.json");
+let contextStore = null;
+let contextSaveTimer = null;
+
+function loadContextStore() {
+  if (contextStore !== null) return contextStore;
+  try {
+    const parsed = JSON.parse(readStoreFile(CONTEXT_STORE_PATH, "utf8"));
+    contextStore = parsed && typeof parsed === "object" && parsed.sessions && typeof parsed.sessions === "object" ? parsed : { v: 1, sessions: {} };
+  } catch {
+    contextStore = { v: 1, sessions: {} };
+  }
+  return contextStore;
+}
+
+function saveContextStore() {
+  if (contextSaveTimer !== null) return;
+  contextSaveTimer = setTimeout(() => {
+    contextSaveTimer = null;
+    try {
+      writeStoreFile(CONTEXT_STORE_PATH, JSON.stringify(contextStore));
+    } catch {
+      /* 缓存写失败不影响统计 */
+    }
+  }, 800);
+}
+
 export function apply(ctx) {
   const webServer = ctx.get("webServer");
   if (webServer === undefined) return;
