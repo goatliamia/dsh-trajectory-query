@@ -178,5 +178,22 @@ body{margin:0;background:var(--bg)}
   render();$('turn-list').querySelector('[aria-current=true]')?.scrollIntoView({block:'nearest'});
 })();
 </script>
+<style>.js-error{position:fixed;left:10px;bottom:10px;z-index:99;max-width:60vw;padding:8px 10px;border-radius:6px;background:#fdecea;color:#8e2f28;font:11px/1.45 ui-monospace,monospace;white-space:pre-wrap}.js-probe{position:fixed;right:10px;bottom:10px;z-index:99;padding:6px 10px;border-radius:6px;background:#e8f5ee;color:#1f5a47;font:11px ui-monospace,monospace}</style>
+<script>
+  function showNote(kind, text) {
+    var el = document.createElement('div');
+    el.className = kind === 'error' ? 'js-error' : 'js-probe';
+    el.textContent = text;
+    document.body.appendChild(el);
+    setTimeout(function () { el.remove(); }, 6000);
+  }
+  window.addEventListener('error', function (event) {
+    showNote('error', 'JS 错误: ' + (event.message || event.error));
+  });
+  document.addEventListener('click', function (event) {
+    var target = event.target && event.target.closest ? event.target.closest('[data-br-episode],[data-group]') : null;
+    if (target) showNote('probe', '捕获点击: ' + (target.tagName.toLowerCase()) + (target.dataset && target.dataset.group !== undefined ? ' 块 ' + target.dataset.group : ''));
+  });
+</script>
 </body>
 </html>
