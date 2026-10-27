@@ -155,50 +155,80 @@
     });
   }
 
+  const STEP_ICON={
+    read:'<circle cx="0" cy="0" r="4.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.4 3.4 L6.4 6.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+    write:'<path d="M-4.5 4.5 L-3.4 0.9 L3.2 -5.7 L5.4 -3.5 L-1.2 3.1 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>',
+    run:'<path d="M-4 -4 L-0.5 0 L-4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M0.6 4 H5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+    query:'<circle cx="0" cy="0" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M-4.6 0 H4.6 M0 -4.6 C-2.6 -1.6 -2.6 1.6 0 4.6 C2.6 1.6 2.6 -1.6 0 -4.6" fill="none" stroke="currentColor" stroke-width="1.1"/>',
+    other:'<circle cx="0" cy="0" r="2.4" fill="currentColor"/>',
+  };
+  function stepIcon(step){
+    if(!step.calls.length)return STEP_ICON.other;
+    return STEP_ICON[callKind(step.calls[0])]||STEP_ICON.other;
+  }
+  function stepLabel(step){
+    if(!step.calls.length)return '回复';
+    const kind=callKind(step.calls[0]);
+    const first=step.calls[0];
+    const subject=(first.target?String(first.target).split(/[\\/]/).pop():'')||'';
+    return kindLabel(kind)+(step.calls.length>1?' ×'+step.calls.length:(subject?' '+subject:''));
+  }
+  function showStep(index){
+    const t=turn(),step=t.steps[index];
+    if(!step)return;
+    let html='';
+    for(const c of step.calls)html+=callEntry(c);
+    if(!step.calls.length)html+='<div class="source-row">这一步没有工具调用,只有模型输出。</div>';
+    if(step.reply)html+=`<span class="code-label">助手原文</span>${block(step.reply)}`;
+    openDrawer(`第 ${t.number} 轮 · 第 ${step.number} 步`,`${clock(step.start)} → ${clock(step.end)} · ${step.calls.length} 次工具调用`,html);
+  }
   function renderActionPath() {
-    const t=turn();groups=actionPlan(t);
+    const t=turn();
     $('turn-heading').innerHTML='';
     if($('prompt-button'))$('prompt-button').onclick=showPrompts;
-    $('caption-note').textContent='三条道:研究 / 改写 / 验证 · 横轴是真实时间 · 红刻线是失败的调用';
-    const w=Math.max(640,$('graph-scroll').clientWidth),h=Math.max(240,$('graph-scroll').clientHeight-2);
-    const left=64,right=w-28,top=64,laneH=44,barH=14;
-    const startTime=t.start,endTime=endOf(t),duration=Math.max(1,endTime-startTime);
-    const x=time=>left+Math.max(0,Math.min(1,(time-startTime)/duration))*(right-left);
-    const LANES=[['研究','#4f73a0'],['改写','#a06a35'],['验证','#2f7d5f']];
-    let html=`<title>第 ${t.number} 轮行动路径</title><desc>三条泳道分别是研究、改写、验证。横向是真实时间,每根细条是一段连续动作,红刻线是失败的调用。</desc>`;
+    $('caption-note').textContent='每个圆是一步(一次模型请求加它的工具调用)· 点圆看这一步的记录';
+    const steps=t.steps,count=steps.length;
+    const left=54,right=54,stepGap=84;
+    const w=Math.max($('graph-scroll').clientWidth,left+right+Math.max(0,count-1)*stepGap+120);
+    const h=Math.max(260,$('graph-scroll').clientHeight-2);
+    const axisY=94,barBase=250,barMax=88;
+    const x=i=>left+40+i*stepGap;
     const prompt=t.prompts&&t.prompts[0]?String(t.prompts[0].text||'').replace(/\s+/g,' ').slice(0,64):'';
-    html+=svgText(left,26,'第 '+t.number+' 轮'+(prompt?' · '+prompt+(prompt.length>=64?'…':''):''),'action-small','start');
-    LANES.forEach(([name,color],li)=>{
-      const y=top+li*laneH;
-      html+=svgText(left-12,y+11,name,'action-small','end');
-      html+=`<line x1="${left}" x2="${right}" y1="${y+laneH/2}" y2="${y+laneH/2}" stroke="var(--grid)" stroke-dasharray="2 4"/>`;
-      const laneGroups=groups.filter(g=>g.phase===name);
-      laneGroups.forEach((g,gi)=>{
-        const a=x(g.start),b=Math.max(x(g.end),a+2);
-        const bad=g.calls.filter(c=>c.status==='error').length>0;
-        const title=name+' · '+g.note;
-        html+=`<g class="action-block" data-group="${groups.indexOf(g)}" role="button" tabindex="0" aria-label="${esc(title)}"><title>${esc(title)}</title><rect x="${a.toFixed(1)}" y="${y+3}" width="${(b-a).toFixed(1)}" height="${barH}" rx="3" fill="${color}" fill-opacity=".62"/>`;
-        if(bad)html+=`<rect x="${a.toFixed(1)}" y="${y+3+barH}" width="${(b-a).toFixed(1)}" height="2" fill="var(--error)" fill-opacity=".9"/>`;
-        html+='</g>';
-        if(b-a>52)html+=svgText((a+b)/2,y+3+barH+16,g.note,'action-small','middle');
-      });
-      for(const g of laneGroups){for(const c of g.calls){if(c.status!=='error')continue;const xx=x(c.start);html+=`<path d="M${xx.toFixed(1)} ${y-2} v${barH+10}" stroke="var(--error)" stroke-width="1" stroke-opacity=".55"/>`;}}
+    const errors=steps.reduce((n,s)=>n+s.calls.filter(c=>c.status==='error').length,0);
+    let html=`<title>第 ${t.number} 轮行动路径</title><desc>横向的每个圆是一步,圆里是这一步主要用的工具图标。圆下的柱是这一步新增加的输入 token。</desc>`;
+    html+=svgText(24,30,'第 '+t.number+' 轮 · '+(prompt||'（没有记录用户输入）')+(prompt.length>=64?'…':''),'action-note','start');
+    html+=svgText(w-24,30,count+' 步 · '+dur(endOf(t)-t.start)+(errors?' · '+errors+' 次失败':' · 无失败'),'action-small','end');
+    html+=`<line x1="${left}" x2="${w-right}" y1="${axisY}" y2="${axisY}" stroke="var(--line)" stroke-width="1.5"/>`;
+    const maxIn=Math.max(1,...steps.map(s=>s.inTok||0));
+    let prev=null;
+    steps.forEach((step,i)=>{
+      const cx=x(i);
+      const bad=step.calls.some(c=>c.status==='error');
+      const tone=bad?'var(--error)':(step.calls.length?'var(--tool)':'var(--unknown)');
+      if(prev!==null)html+=`<path d="M${prev+16} ${axisY} H${cx-17}" stroke="var(--line)" stroke-width="1.2" marker-end="url(#action-arrow)"/>`;
+      html+=`<g class="action-step" data-step="${i}" role="button" tabindex="0" aria-label="${esc('第 '+step.number+' 步 · '+stepLabel(step))}"><title>${esc('第 '+step.number+' 步 · '+stepLabel(step)+' · '+dur(step.end-step.start))}</title><circle cx="${cx}" cy="${axisY}" r="15" fill="var(--surface)" stroke="${tone}" stroke-width="${bad?2:1.4}"/><g transform="translate(${cx} ${axisY})" style="color:${tone}">${stepIcon(step)}</g>`;
+      if(bad)html+=`<circle cx="${cx+11}" cy="${axisY-11}" r="3.4" fill="var(--error)"/>`;
+      html+='</g>';
+      html+=svgText(cx,axisY+34,stepLabel(step),'action-small','middle');
+      html+=svgText(cx,axisY+50,clock(step.start).slice(0,5),'graph-axis','middle');
+      const ih=Math.max(2,Math.round((step.inTok||0)/maxIn*barMax));
+      if(step.inTok)html+=`<rect x="${cx-11}" y="${barBase-ih}" width="22" height="${ih}" rx="2" fill="var(--accent)" fill-opacity=".35"/>`+svgText(cx,barBase-ih-5,fmtTok(step.inTok),'graph-axis','middle');
+      prev=cx;
     });
-    const tick=[10,15,30,60,120,300,600].find(n=>n>=duration/1000/6)||900;
-    for(let sec=0;sec<=duration/1000;sec+=tick){const xx=x(startTime+sec*1000);html+=svgText(xx,top+LANES.length*laneH+22,elapsed(sec*1000),'graph-axis','middle');}
-    html+=svgText(left,top+LANES.length*laneH+22,clock(startTime).slice(0,5),'graph-axis','start');
-    html+=svgText(right,top+LANES.length*laneH+22,clock(endTime).slice(0,5)+' · '+dur(duration),'graph-axis','end');
-    $('graph').setAttribute('viewBox',`0 0 ${w} ${h}`);$('graph').setAttribute('height',h);$('graph').style.width='100%';$('graph').innerHTML=html;
-    attachGraphActions();
+    html+=`<defs><marker id="action-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--line)"/></marker></defs>`;
+    html+=svgText(24,barBase+18,'每步新增输入','action-small','start');
+    $('graph').setAttribute('viewBox',`0 0 ${w} ${h}`);$('graph').setAttribute('height',h);$('graph').style.width=w+'px';$('graph').innerHTML=html;
     const graphEl=$('graph');
-    if(!graphEl.__blockClick){
-      graphEl.__blockClick=true;
+    if(!graphEl.__stepClick){
+      graphEl.__stepClick=true;
       graphEl.addEventListener('click',(event)=>{
-        const el=event.target&&event.target.closest?event.target.closest('[data-group]'):null;
-        if(el)showGroup(Number(el.dataset.group));
+        const el=event.target&&event.target.closest?event.target.closest('[data-step]'):null;
+        if(el)showStep(Number(el.dataset.step));
       });
     }
   }
+
+  function fmtTok(value){return value>=1000?(value/1000).toFixed(value>=10000?0:1)+'k':String(value);}
 
   function renderPath(){
     $('canvas').classList.remove('tree-mode','spine-mode','overview-mode','lane-mode');
