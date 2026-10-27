@@ -155,24 +155,25 @@
     });
   }
 
+  function fmtTok(value){return value>=1000?(value/1000).toFixed(value>=10000?0:1)+'k':String(value);}
   const STEP_ICON={
-    read:'<circle cx="0" cy="0" r="4.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.4 3.4 L6.4 6.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
-    write:'<path d="M-4.5 4.5 L-3.4 0.9 L3.2 -5.7 L5.4 -3.5 L-1.2 3.1 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>',
-    run:'<path d="M-4 -4 L-0.5 0 L-4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M0.6 4 H5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
-    query:'<circle cx="0" cy="0" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M-4.6 0 H4.6 M0 -4.6 C-2.6 -1.6 -2.6 1.6 0 4.6 C2.6 1.6 2.6 -1.6 0 -4.6" fill="none" stroke="currentColor" stroke-width="1.1"/>',
-    other:'<circle cx="0" cy="0" r="2.4" fill="currentColor"/>',
+    read:'<circle cx="0" cy="0" r="4.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.2 3.2 L6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+    write:'<path d="M-4.4 4.4 L-3.3 0.9 L3.1 -5.5 L5.2 -3.4 L-1.2 3 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>',
+    run:'<path d="M-4 -4 L-0.6 0 L-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M0.6 4 H5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+    query:'<circle cx="0" cy="0" r="4.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M-4.4 0 H4.4 M0 -4.4 C-2.4 -1.5 -2.4 1.5 0 4.4 C2.4 1.5 2.4 -1.5 0 -4.4" fill="none" stroke="currentColor" stroke-width="1"/>',
+    other:'<circle cx="0" cy="0" r="2.3" fill="currentColor"/>',
   };
-  function stepIcon(step){
-    if(!step.calls.length)return STEP_ICON.other;
-    return STEP_ICON[callKind(step.calls[0])]||STEP_ICON.other;
-  }
+  const COND_NAME={FS_NOT_OBSERVED:'目标文件尚未读取',FS_STALE_VERSION:'文件版本已变化',SESSION_QUERY_PERSISTENCE_FAILED:'历史存储不可用',TOOL_TIMEOUT:'调用超时',TOOL_ERROR:'调用报错'};
+  function conditionName(c){const code=c&&c.error&&(c.error.code||c.error.name);return COND_NAME[code]||'调用报错';}
+  function stepIcon(step){if(!step.calls.length)return STEP_ICON.other;return STEP_ICON[callKind(step.calls[0])]||STEP_ICON.other;}
   function stepLabel(step){
     if(!step.calls.length)return '回复';
-    const kind=callKind(step.calls[0]);
-    const first=step.calls[0];
+    const kind=callKind(step.calls[0]),first=step.calls[0];
     const subject=(first.target?String(first.target).split(/[\\/]/).pop():'')||'';
     return kindLabel(kind)+(step.calls.length>1?' ×'+step.calls.length:(subject?' '+subject:''));
   }
+  let selectedStep=0;
+  function selectStep(index){selectedStep=index;renderActionPath();}
   function showStep(index){
     const t=turn(),step=t.steps[index];
     if(!step)return;
@@ -183,52 +184,79 @@
     openDrawer(`第 ${t.number} 轮 · 第 ${step.number} 步`,`${clock(step.start)} → ${clock(step.end)} · ${step.calls.length} 次工具调用`,html);
   }
   function renderActionPath() {
-    const t=turn();
+    const t=turn(),steps=t.steps,count=steps.length;
     $('turn-heading').innerHTML='';
     if($('prompt-button'))$('prompt-button').onclick=showPrompts;
-    $('caption-note').textContent='每个圆是一步(一次模型请求加它的工具调用)· 点圆看这一步的记录';
-    const steps=t.steps,count=steps.length;
-    const left=54,right=54,stepGap=84;
+    $('caption-note').textContent='每个圆是一步 · 点圆切换下面的详情 · 双击圆看原始记录';
+    const stepGap=104,left=56,right=60;
     const w=Math.max($('graph-scroll').clientWidth,left+right+Math.max(0,count-1)*stepGap+120);
-    const h=Math.max(260,$('graph-scroll').clientHeight-2);
-    const axisY=94,barBase=250,barMax=88;
-    const x=i=>left+40+i*stepGap;
-    const prompt=t.prompts&&t.prompts[0]?String(t.prompts[0].text||'').replace(/\s+/g,' ').slice(0,64):'';
+    const h=Math.max(300,$('graph-scroll').clientHeight-2);
+    const axisY=152,barBase=286,barMax=90;
+    const x=i=>left+30+i*stepGap;
+    const prompt=t.prompts&&t.prompts[0]?String(t.prompts[0].text||'').replace(/\s+/g,' '):'';
     const errors=steps.reduce((n,s)=>n+s.calls.filter(c=>c.status==='error').length,0);
-    let html=`<title>第 ${t.number} 轮行动路径</title><desc>横向的每个圆是一步,圆里是这一步主要用的工具图标。圆下的柱是这一步新增加的输入 token。</desc>`;
-    html+=svgText(24,30,'第 '+t.number+' 轮 · '+(prompt||'（没有记录用户输入）')+(prompt.length>=64?'…':''),'action-note','start');
-    html+=svgText(w-24,30,count+' 步 · '+dur(endOf(t)-t.start)+(errors?' · '+errors+' 次失败':' · 无失败'),'action-small','end');
-    html+=`<line x1="${left}" x2="${w-right}" y1="${axisY}" y2="${axisY}" stroke="var(--line)" stroke-width="1.5"/>`;
+    if(selectedStep>=count)selectedStep=0;
+    const sel=steps[selectedStep];
+    let html=`<title>第 ${t.number} 轮行动路径</title><desc>横向的每个圆是一步。圆下的柱是这一步新增的输入 token。点击切换下方详情。</desc>`;
+    html+=svgText(26,28,'第 '+t.number+' 轮 · '+(prompt?prompt.slice(0,58)+(prompt.length>58?'…':''):'（没有记录用户输入）'),'action-note','start');
+    html+=svgText(w-26,28,count+' 步 · '+dur(endOf(t)-t.start)+(errors?' · '+errors+' 次失败':' · 无失败'),'action-small','end');
+    // 顶部:选中这一步带着什么
+    const total=(sel.inTok||0)+(sel.cacheTok||0);
+    html+=svgText(26,58,'这一步带着','action-small','start');
+    let cx=26;
+    const segs=[[sel.cacheTok||0,'var(--branch-good)','缓存'], [sel.inTok||0,'var(--accent)','新增'], [sel.outTok||0,'var(--warm)','输出']];
+    const segTotal=segs.reduce((n,s)=>n+s[0],0)||1;
+    segs.forEach(([value,color])=>{
+      const sw=Math.max(value?3:0,value/segTotal*260);
+      if(sw>0)html+=`<rect x="${cx}" y="48" width="${sw.toFixed(1)}" height="10" rx="2" fill="${color}" fill-opacity=".55"/>`;
+      cx+=sw;
+    });
+    html+=svgText(cx+10,58,`${total?fmtTok(total)+' tokens':'这一步没有 usage 记录'}`,'action-small','start');
+    // 步骤脊柱
+    html+=`<line x1="${left}" x2="${w-right}" y1="${axisY}" y2="${axisY}" stroke="var(--line)" stroke-width="1.4"/>`;
     const maxIn=Math.max(1,...steps.map(s=>s.inTok||0));
-    let prev=null;
+    const recovered=new Set();
+    steps.forEach((step,si)=>{if(si>0&&step.calls.length){const prevBad=steps.slice(0,si).some(p=>p.calls.some(c=>c.status==='error'&&step.calls.some(n=>n.name===c.name)));if(prevBad)recovered.add(si);}});
     steps.forEach((step,i)=>{
-      const cx=x(i);
-      const bad=step.calls.some(c=>c.status==='error');
+      const pos=x(i),bad=step.calls.some(c=>c.status==='error'),active=i===selectedStep;
       const tone=bad?'var(--error)':(step.calls.length?'var(--tool)':'var(--unknown)');
-      if(prev!==null)html+=`<path d="M${prev+16} ${axisY} H${cx-17}" stroke="var(--line)" stroke-width="1.2" marker-end="url(#action-arrow)"/>`;
-      html+=`<g class="action-step" data-step="${i}" role="button" tabindex="0" aria-label="${esc('第 '+step.number+' 步 · '+stepLabel(step))}"><title>${esc('第 '+step.number+' 步 · '+stepLabel(step)+' · '+dur(step.end-step.start))}</title><circle cx="${cx}" cy="${axisY}" r="15" fill="var(--surface)" stroke="${tone}" stroke-width="${bad?2:1.4}"/><g transform="translate(${cx} ${axisY})" style="color:${tone}">${stepIcon(step)}</g>`;
-      if(bad)html+=`<circle cx="${cx+11}" cy="${axisY-11}" r="3.4" fill="var(--error)"/>`;
+      if(i>0)html+=`<path d="M${x(i-1)+17} ${axisY} H${pos-18}" stroke="var(--line)" stroke-width="1.2" marker-end="url(#action-arrow)"/>`;
+      html+=`<g class="action-step" data-step="${i}" role="button" tabindex="0" aria-label="${esc('第 '+step.number+' 步 · '+stepLabel(step))}"><title>${esc('第 '+step.number+' 步 · '+stepLabel(step)+' · '+dur(step.end-step.start))}</title><circle cx="${pos}" cy="${axisY}" r="${active?17:15}" fill="var(--surface)" stroke="${tone}" stroke-width="${active?2.4:bad?2:1.4}" ${active?'stroke-dasharray="3 2"':''}/><g transform="translate(${pos} ${axisY})" style="color:${tone}">${stepIcon(step)}</g>`;
+      if(bad)html+=`<circle cx="${pos+11}" cy="${axisY-11}" r="3.6" fill="var(--error)"/>`;
+      if(recovered.has(i))html+=`<circle cx="${pos+11}" cy="${axisY-11}" r="3.6" fill="var(--branch-good)"/>`;
       html+='</g>';
-      html+=svgText(cx,axisY+34,stepLabel(step),'action-small','middle');
-      html+=svgText(cx,axisY+50,clock(step.start).slice(0,5),'graph-axis','middle');
+      html+=svgText(pos,axisY+36,stepLabel(step),'action-small','middle');
+      html+=svgText(pos,axisY+52,clock(step.start).slice(0,5),'graph-axis','middle');
+      if(bad){const c=step.calls.find(c=>c.status==='error');html+=svgText(pos,axisY+68,conditionName(c),'graph-axis','middle');}
       const ih=Math.max(2,Math.round((step.inTok||0)/maxIn*barMax));
-      if(step.inTok)html+=`<rect x="${cx-11}" y="${barBase-ih}" width="22" height="${ih}" rx="2" fill="var(--accent)" fill-opacity=".35"/>`+svgText(cx,barBase-ih-5,fmtTok(step.inTok),'graph-axis','middle');
-      prev=cx;
+      if(step.inTok)html+=`<rect x="${pos-12}" y="${barBase-ih}" width="24" height="${ih}" rx="2" fill="var(--accent)" fill-opacity="${active?.55:.28}"/>`+svgText(pos,barBase-ih-6,fmtTok(step.inTok),'graph-axis','middle');
     });
     html+=`<defs><marker id="action-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--line)"/></marker></defs>`;
-    html+=svgText(24,barBase+18,'每步新增输入','action-small','start');
+    html+=svgText(26,barBase+18,'每步新增输入','action-small','start');
     $('graph').setAttribute('viewBox',`0 0 ${w} ${h}`);$('graph').setAttribute('height',h);$('graph').style.width=w+'px';$('graph').innerHTML=html;
+    // 底部详情
+    const panel=$('step-panel');
+    if(panel){
+      panel.classList.add('on');
+      const calls=sel.calls||[];
+      const chips=calls.map(c=>`<span class="panel-chip ${c.status==='error'?'bad':''}">${esc(c.name)}${c.status==='error'?' ✗':''}</span>`).join('');
+      panel.innerHTML=`<div><h4>这一步</h4><div class="panel-title">第 ${sel.number} 步 · ${stepLabel(sel)}</div><div class="panel-meta">${clock(sel.start)} → ${clock(sel.end)} · ${dur(sel.end-sel.start)} · ${calls.length} 次调用</div><div class="panel-calls">${chips}</div><button class="action-button" id="panel-record">查看调用与回报 ↗</button></div><div><h4>这一步带着多少上下文</h4><div class="panel-row"><span>缓存读</span><span>${fmtTok(sel.cacheTok||0)}</span></div><div class="panel-row"><span>新增输入</span><span>${fmtTok(sel.inTok||0)}</span></div><div class="panel-row"><span>输出</span><span>${fmtTok(sel.outTok||0)}</span></div><div class="panel-row"><span>合计</span><span>${fmtTok((sel.cacheTok||0)+(sel.inTok||0)+(sel.outTok||0))}</span></div></div><div><h4>这一步的回复</h4><div class="panel-meta">${sel.reply?esc(String(sel.reply.text||'').replace(/\s+/g,' ').slice(0,120)):'这一步没有文字回复'}</div></div>`;
+      const button=$('panel-record');
+      if(button)button.onclick=()=>showStep(selectedStep);
+    }
     const graphEl=$('graph');
     if(!graphEl.__stepClick){
       graphEl.__stepClick=true;
       graphEl.addEventListener('click',(event)=>{
         const el=event.target&&event.target.closest?event.target.closest('[data-step]'):null;
+        if(el)selectStep(Number(el.dataset.step));
+      });
+      graphEl.addEventListener('dblclick',(event)=>{
+        const el=event.target&&event.target.closest?event.target.closest('[data-step]'):null;
         if(el)showStep(Number(el.dataset.step));
       });
     }
   }
-
-  function fmtTok(value){return value>=1000?(value/1000).toFixed(value>=10000?0:1)+'k':String(value);}
 
   function renderPath(){
     $('canvas').classList.remove('tree-mode','spine-mode','overview-mode','lane-mode');
