@@ -159,34 +159,35 @@
     const t=turn();groups=actionPlan(t);
     $('turn-heading').innerHTML='';
     if($('prompt-button'))$('prompt-button').onclick=showPrompts;
-    $('caption-note').textContent='一段连续的动作是一块 · 长度是耗时 · 红边表示里面有失败';
+    $('caption-note').textContent='三条道:研究 / 改写 / 验证 · 横轴是真实时间 · 红刻线是失败的调用';
     const w=Math.max(640,$('graph-scroll').clientWidth),h=Math.max(240,$('graph-scroll').clientHeight-2);
-    const left=36,right=w-36,top=74,barH=30,gap=4;
-    const KIND={read:'#4f73a0',write:'#a06a35',run:'#2f7d5f',query:'#6d55a3',other:'#5b6a7a'};
-    const PHASE_COLOR={'研究':'#4f73a0','改写':'#a06a35','验证':'#2f7d5f','其他':'#5b6a7a'};
-    let html=`<title>第 ${t.number} 轮行动路径</title><desc>横向是这一轮的推进顺序,每块是一段连续动作,长度按耗时分配。红边表示其中出现过失败。</desc>`;
-    const prompt=t.prompts&&t.prompts[0]?String(t.prompts[0].text||'').replace(/\s+/g,' ').slice(0,60):'';
-    html+=svgText(left,26,'第 '+t.number+' 轮'+(prompt?' · '+prompt+(prompt.length>=60?'…':''):''),'action-small','start');
-    const total=groups.reduce((n,g)=>n+Math.max(1,g.end-g.start),0)||1;
-    const available=right-left-gap*Math.max(0,groups.length-1);
-    const minW=14;
-    let widths=groups.map(g=>Math.max(minW,Math.round(available*Math.max(1,g.end-g.start)/total)));
-    const sum=widths.reduce((a,b)=>a+b,0);
-    if(sum>available){const scale=available/sum;widths=widths.map(v=>Math.max(8,Math.floor(v*scale)));}
-    let cursor=left;
-    groups.forEach((g,i)=>{
-      const bw=widths[i],bad=g.calls.filter(c=>c.status==='error').length;
-      const tone=PHASE_COLOR[g.phase]||KIND[g.kind]||KIND.other;
-      const title=g.title+' · '+g.note;
-      html+=`<g class="action-block" data-group="${i}" role="button" tabindex="0" aria-label="${esc(title)}"><title>${esc(title)}</title><rect x="${cursor}" y="${top-10}" width="${bw}" height="${barH+36}" fill="transparent" pointer-events="all"/><rect x="${cursor}" y="${top}" width="${bw}" height="${barH}" rx="4" fill="${tone}" fill-opacity="${bad?.22:.16}" stroke="${bad?'var(--error)':tone}" stroke-opacity="${bad?.9:.55}" stroke-width="${bad?1.8:1.1}"/>`;
-      if(bw>=46)html+=svgText(cursor+bw/2,top+19,g.title,'action-title','middle');
-      if(bw>=64)html+=svgText(cursor+bw/2,top+barH+15,g.note,'action-small','middle');
-      if(bad)html+=svgText(cursor+6,top-6,'✗'+bad,'action-small','start');
-      html+='</g>';
-      cursor+=bw+gap;
+    const left=64,right=w-28,top=64,laneH=44,barH=14;
+    const startTime=t.start,endTime=endOf(t),duration=Math.max(1,endTime-startTime);
+    const x=time=>left+Math.max(0,Math.min(1,(time-startTime)/duration))*(right-left);
+    const LANES=[['研究','#4f73a0'],['改写','#a06a35'],['验证','#2f7d5f']];
+    let html=`<title>第 ${t.number} 轮行动路径</title><desc>三条泳道分别是研究、改写、验证。横向是真实时间,每根细条是一段连续动作,红刻线是失败的调用。</desc>`;
+    const prompt=t.prompts&&t.prompts[0]?String(t.prompts[0].text||'').replace(/\s+/g,' ').slice(0,64):'';
+    html+=svgText(left,26,'第 '+t.number+' 轮'+(prompt?' · '+prompt+(prompt.length>=64?'…':''):''),'action-small','start');
+    LANES.forEach(([name,color],li)=>{
+      const y=top+li*laneH;
+      html+=svgText(left-12,y+11,name,'action-small','end');
+      html+=`<line x1="${left}" x2="${right}" y1="${y+laneH/2}" y2="${y+laneH/2}" stroke="var(--grid)" stroke-dasharray="2 4"/>`;
+      const laneGroups=groups.filter(g=>g.phase===name);
+      laneGroups.forEach((g,gi)=>{
+        const a=x(g.start),b=Math.max(x(g.end),a+2);
+        const bad=g.calls.filter(c=>c.status==='error').length>0;
+        const title=name+' · '+g.note;
+        html+=`<g class="action-block" data-group="${groups.indexOf(g)}" role="button" tabindex="0" aria-label="${esc(title)}"><title>${esc(title)}</title><rect x="${a.toFixed(1)}" y="${y+3}" width="${(b-a).toFixed(1)}" height="${barH}" rx="3" fill="${color}" fill-opacity=".62"/>`;
+        if(bad)html+=`<rect x="${a.toFixed(1)}" y="${y+3+barH}" width="${(b-a).toFixed(1)}" height="2" fill="var(--error)" fill-opacity=".9"/>`;
+        html+='</g>';
+        if(b-a>52)html+=svgText((a+b)/2,y+3+barH+16,g.note,'action-small','middle');
+      });
+      for(const g of laneGroups){for(const c of g.calls){if(c.status!=='error')continue;const xx=x(c.start);html+=`<path d="M${xx.toFixed(1)} ${y-2} v${barH+10}" stroke="var(--error)" stroke-width="1" stroke-opacity=".55"/>`;}}
     });
-    html+=svgText(left,top+barH+52,clock(t.start).slice(0,5),'graph-axis','start');
-    html+=svgText(right,top+barH+52,clock(endOf(t)).slice(0,5)+' · '+dur(endOf(t)-t.start),'graph-axis','end');
+    const tick=[10,15,30,60,120,300,600].find(n=>n>=duration/1000/6)||900;
+    for(let sec=0;sec<=duration/1000;sec+=tick){const xx=x(startTime+sec*1000);html+=svgText(xx,top+LANES.length*laneH+22,elapsed(sec*1000),'graph-axis','middle');}
+    html+=svgText(left,top+LANES.length*laneH+22,clock(startTime).slice(0,5),'graph-axis','start');
+    html+=svgText(right,top+LANES.length*laneH+22,clock(endTime).slice(0,5)+' · '+dur(duration),'graph-axis','end');
     $('graph').setAttribute('viewBox',`0 0 ${w} ${h}`);$('graph').setAttribute('height',h);$('graph').style.width='100%';$('graph').innerHTML=html;
     attachGraphActions();
     const graphEl=$('graph');
