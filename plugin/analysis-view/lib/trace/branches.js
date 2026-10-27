@@ -52,7 +52,7 @@
       $('br-rules').onclick=spShowSource;
       $('turn-heading').querySelectorAll('[data-br-layer]').forEach(el=>el.onchange=()=>{el.checked?overviewLayers.add(el.dataset.brLayer):overviewLayers.delete(el.dataset.brLayer);renderOverview();});
       $('ov-zoom-in').onclick=()=>setOverviewScale(overviewScale*1.8);$('ov-zoom-out').onclick=()=>setOverviewScale(overviewScale/1.8);$('ov-fit').onclick=()=>setOverviewScale(1);
-      $('graph-caption').innerHTML='<div class="tl-readout" id="tl-readout"></div><button class="back-link" id="tl-record" hidden>查看记录 ↗</button><span class="br-gesture">滚轮缩放 · 左右拖动 · 双击聚焦</span>';
+      $('graph-caption').innerHTML='<div class="tl-readout" id="tl-readout"></div><span class="br-gesture">滚轮缩放 · 左右拖动 · 双击聚焦</span>';
       tlReadout(tlLastReadout||'所有轮次按执行时间排列。点击错误枝条，展开失败、补充动作与再次尝试。',tlAction);
     }
     let html='';let bottom=base+42;

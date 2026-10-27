@@ -26,7 +26,6 @@
   function tlReadout(text,action){
     tlLastReadout=text;tlAction=action||null;
     if($('tl-readout'))$('tl-readout').textContent=text;
-    if($('tl-record')){$('tl-record').hidden=!action;$('tl-record').onclick=action;}
   }
   function tlRoundReadout(t){
     tlReadout(`第 ${t.number} 轮 · 执行 ${dur(endOf(t)-t.start)} · ${t.steps.length} 步 · ${t.calls} 次调用${t.errors?' · '+t.errors+' 次工具报错':''}`,()=>openOverviewRound(t.number,'duration'));
