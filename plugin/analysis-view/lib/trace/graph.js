@@ -231,7 +231,7 @@
       html+=svgText(pos,band.clock,clock(step.start).slice(0,5),'graph-axis','middle');
       if(bad){const c=step.calls.find(c=>c.status==='error');html+=svgText(pos,band.cond,conditionName(c),'graph-axis','middle');}
       const ih=Math.max(2,Math.round((step.inTok||0)/maxIn*band.barMax));
-      const barColor=bad?'var(--error)':(KIND[callKind(step.calls[0])]||KIND.other);
+      const barColor=bad?'var(--error)':(KIND[step.calls.length?callKind(step.calls[0]):'other']||KIND.other);
       if(step.inTok)html+=`<rect x="${pos-12}" y="${band.barBase-ih}" width="24" height="${ih}" rx="2" fill="${barColor}" fill-opacity="${active?.75:.5}"/>`+svgText(pos,band.barBase-ih-6,fmtTok(step.inTok),'graph-axis','middle');
     });
     html+=`<defs><marker id="action-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--line)"/></marker></defs>`;
