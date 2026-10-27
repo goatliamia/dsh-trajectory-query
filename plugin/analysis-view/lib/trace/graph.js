@@ -116,7 +116,7 @@
     const start=steps[0].start,end=steps.at(-1).end,duration=Math.max(1,end-start);
     groups=groupsFor(steps);
     $('turn-heading').innerHTML=`<div class="eyebrow"><strong>第 ${t.number} 轮</strong><span>${day(t.start)}</span><span>细节 · 第 ${range[0]}—${range[1]} 步</span></div><h2 class="prompt">${esc(t.title)}</h2>`;
-    $('prompt-button').onclick=showPrompts;
+    if($('prompt-button'))$('prompt-button').onclick=showPrompts;
     $('caption-note').textContent='这一段按动作类型归并 · 点一块看具体调用';
     const w=Math.max(620,$('graph-scroll').clientWidth),h=Math.max(220,$('graph-scroll').clientHeight-2),left=44,right=w-44,top=64,barH=64;
     const x=time=>left+Math.max(0,Math.min(1,(time-start)/duration))*(right-left);
@@ -176,7 +176,7 @@
   function renderActionPath() {
     const t=turn();groups=actionPlan(t);
     $('turn-heading').innerHTML='';
-    $('prompt-button').onclick=showPrompts;
+    if($('prompt-button'))$('prompt-button').onclick=showPrompts;
     $('caption-note').textContent='横轴是真实时间 · 一块是一段连续动作 · 点一块看记录';
     const w=Math.max(720,$('graph-scroll').clientWidth),h=Math.max(230,$('graph-scroll').clientHeight-2);
     const left=44,right=w-44,top=64,barH=26;
