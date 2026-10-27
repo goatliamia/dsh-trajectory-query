@@ -199,12 +199,8 @@ const digest = {
 };
 
 const readyState = { status: "ready", data: digest, error: null, at: Date.now() };
-const props = { sessionId: "session-fixture", openView() {}, useTrajectory: () => null, initialMode: "digest" };
+const props = { sessionId: "session-fixture", openView() {}, useTrajectory: () => null };
 
-const traceTree = render(Panel, { sessionId: "session-fixture", openView() {}, useTrajectory: () => null }, { 0: readyState });
-const traceNodes = all(traceTree);
-const traceFrame = traceNodes.find((node) => node.type === "iframe");
-check("render: 默认显示轨迹页(iframe 指向 trace 路由)", traceFrame !== undefined && String(traceFrame.props.src).includes("/analysis-view/trace?session=session-fixture"), traceFrame && traceFrame.props);
 const tree = render(Panel, props, { 0: readyState });
 const text = textOf(tree).join(" ");
 const nodes = all(tree);
@@ -228,13 +224,13 @@ check("render: 页脚带日志身份", text.includes("日志 abcdef123456"), tex
 
 /* 失败态:host 路由不可用 + 轨迹投影里有报错 → 降级 incident 仍要出现 */
 const snap = { eventNodes: [{ kind: "tool-result", seq: 12, error: { name: "BashError" } }, { kind: "tool-result", seq: 13 }] };
-const errorTree = render(Panel, { sessionId: "session-fixture", openView() {}, useTrajectory: () => snap, initialMode: "digest" }, { 0: { status: "error", data: null, error: "HTTP 500", at: 0 } });
+const errorTree = render(Panel, { sessionId: "session-fixture", openView() {}, useTrajectory: () => snap }, { 0: { status: "error", data: null, error: "HTTP 500", at: 0 } });
 const errorText = textOf(errorTree).join(" ");
 check("render: 失败态给提示与重试", errorText.includes("读取会话失败") && errorText.includes("重试"), errorText.slice(0, 160));
 check("render: 失败态仍列投影里的事实", errorText.includes("调用失败") && errorText.includes("来自轨迹投影"), errorText.slice(0, 240));
 
 /* 空会话:没有事件时不假装有数据 */
-const emptyTree = render(Panel, { sessionId: "session-fixture", openView() {}, useTrajectory: () => null, initialMode: "digest" }, { 0: { status: "ready", data: Object.assign({}, digest, { turns: 0, toolCalls: 0, errors: 0, incidentCount: 0, incidents: [], turnStats: [], toolStats: [], eventCount: 0 }), error: null, at: Date.now() } });
+const emptyTree = render(Panel, { sessionId: "session-fixture", openView() {}, useTrajectory: () => null }, { 0: { status: "ready", data: Object.assign({}, digest, { turns: 0, toolCalls: 0, errors: 0, incidentCount: 0, incidents: [], turnStats: [], toolStats: [], eventCount: 0 }), error: null, at: Date.now() } });
 const emptyText = textOf(emptyTree).join(" ");
 check("render: 空会话不画假图表", emptyText.includes("这段会话还没有开始任何 turn") && emptyText.includes("没有发现可归因的 incident"), emptyText.slice(0, 200));
 
