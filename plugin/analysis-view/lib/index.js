@@ -8,18 +8,14 @@ import { buildTracePayload } from "./trace-build.js";
 
 const ROUTE_PATH = "/analysis-view";
 
-let tracePageCache = null;
-/** 「执行路径」页面:模板 + 渲染器 + 本次会话的数据,拼成一份自包含 HTML。 */
+/** 「执行路径」页面:模板 + 渲染器 + 本次会话的数据,拼成一份自包含 HTML。每次现读,改样式不用重启。 */
 function renderTracePage(payload) {
-  if (tracePageCache === null) {
-    const read = (name) => readFileSync(new URL("./trace/" + name, import.meta.url), "utf8");
-    let page = read("template.html");
-    const renderer = ["graph.js", "panorama.js", "scene.js", "branches.js"].map(read).join("\n");
-    page = page.replace("</style>", () => read("branches.css") + "\n</style>").replace("/*__TRACE_RENDERER__*/", () => renderer);
-    tracePageCache = page;
-  }
+  const read = (name) => readFileSync(new URL("./trace/" + name, import.meta.url), "utf8");
+  let page = read("template.html");
+  const renderer = ["graph.js", "panorama.js", "scene.js", "branches.js"].map(read).join("\n");
+  page = page.replace("</style>", () => read("branches.css") + "\n</style>").replace("/*__TRACE_RENDERER__*/", () => renderer);
   const json = JSON.stringify(payload).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
-  return tracePageCache.replace("/*__TRACE_DATA__*/", () => json);
+  return page.replace("/*__TRACE_DATA__*/", () => json);
 }
 
 /**
