@@ -52,7 +52,7 @@
       $('br-rules').onclick=spShowSource;
       $('turn-heading').querySelectorAll('[data-br-layer]').forEach(el=>el.onchange=()=>{el.checked?overviewLayers.add(el.dataset.brLayer):overviewLayers.delete(el.dataset.brLayer);renderOverview();});
       $('ov-zoom-in').onclick=()=>setOverviewScale(overviewScale*1.8);$('ov-zoom-out').onclick=()=>setOverviewScale(overviewScale/1.8);$('ov-fit').onclick=()=>setOverviewScale(1);
-      $('graph-caption').innerHTML='<div class="tl-readout" id="tl-readout"></div><button class="back-link" id="tl-record" hidden>查看记录 ↗</button><span class="br-gesture">滚轮缩放 · 左右拖动 · 双击聚焦</span>';
+      $('graph-caption').innerHTML='<div class="tl-readout" id="tl-readout"></div><button class="back-link" id="tl-record" hidden>查看记录 ↗</button><span class="br-gesture">滚轮缩放 · 左右拖动 · 双击聚焦</span><span class="br-legend">✗ 报错 · ⏱ 超时 · ⊢ 一次动作 · ✓ 随后成功 · ↻ 请求重试 · 数字是轮次</span>';
       tlReadout(tlLastReadout||'所有轮次按执行时间排列。点击错误枝条，展开失败、补充动作与再次尝试。',tlAction);
     }
     let html='';let bottom=base+42;
@@ -154,7 +154,7 @@
     const bind=(selector,enter,click,dbl)=>$('graph').querySelectorAll(selector).forEach(el=>{el.onmouseenter=()=>enter?.(el);el.onclick=ev=>{ev.stopPropagation();click?.(el);};el.ondblclick=ev=>{ev.preventDefault();ev.stopPropagation();(dbl||click)?.(el);};el.onkeydown=ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();click?.(el);}};});
     bind('[data-br-round]',el=>tlRoundReadout(brRound(Number(el.dataset.brRound))),el=>{const t=brRound(Number(el.dataset.brRound));turnIndex=turns.indexOf(t);header();tlFocusRange(t,t.start,endOf(t));tlRoundReadout(t);});
     bind('[data-br-step]',el=>{const [n,k]=el.dataset.brStep.split(':').map(Number),t=brRound(n);tlStepReadout(t,t.steps.find(s=>s.number===k));},el=>{const [n,k]=el.dataset.brStep.split(':').map(Number),t=brRound(n);tlOpenStep(t,t.steps.find(s=>s.number===k));});
-    bind('[data-br-episode]',el=>{const e=episodes.find(e=>e.id===el.dataset.brEpisode);tlReadout(`第 ${e.turn} 轮 · ${e.reason} · ${e.failedCount} 次失败 · ${e.summary}，点击展开`,()=>openOverviewEpisode(e.id));},el=>brFocusEpisode(episodes.find(e=>e.id===el.dataset.brEpisode)));
+    bind('[data-br-episode]',el=>{const e=episodes.find(e=>e.id===el.dataset.brEpisode);tlReadout(`第 ${e.turn} 轮 · ${e.reason} · ${e.failedCount} 次失败 · ${e.summary}，点击展开`,()=>openOverviewEpisode(e.id));},el=>openOverviewEpisode(el.dataset.brEpisode));
     bind('[data-br-batch]',el=>{const b=model.batches[Number(el.dataset.brBatch)];tlReadout(`第 ${b.turn.number} 轮 / 第 ${b.step.number} 步 · ${b.name} ×${b.calls.length} · ${b.end===null?'结果未记录':preciseTime(b.end-b.start)}${b.status==='error'?' · '+(b.calls.find(c=>c.error)?.error?.code||'调用失败'):''}`,()=>tlOpenBatch(b));},el=>tlOpenBatch(model.batches[Number(el.dataset.brBatch)]));
     bind('[data-br-proof]',el=>{const e=episodes.find(e=>e.id===el.dataset.brProof);tlReadout(`原操作随后成功 ${e.confirmedCount}/${e.failedCount} · ${e.summary} · 处理经过 ${preciseTime(e.continuationMs??0)}`,()=>openOverviewEpisode(e.id));},el=>openOverviewEpisode(el.dataset.brProof));
     bind('[data-br-child]',el=>{const c=data.sessions.find(s=>s.id===el.dataset.brChild);tlReadout(`子 Agent · ${c.totals.steps} 步 · ${c.totals.calls} 次调用 · ${c.totals.errors} 次报错`,()=>openChild(c.id));},el=>openChild(el.dataset.brChild));
