@@ -203,7 +203,7 @@
     // 顶部:选中这一步带着什么
     const total=(sel.inTok||0)+(sel.cacheTok||0);
     html+=svgText(26,58,'这一步带着','action-small','start');
-    let cx=26;
+    let cx=96;
     const segs=[[sel.cacheTok||0,'var(--branch-good)','缓存'], [sel.inTok||0,'var(--accent)','新增'], [sel.outTok||0,'var(--warm)','输出']];
     const segTotal=segs.reduce((n,s)=>n+s[0],0)||1;
     segs.forEach(([value,color])=>{
@@ -225,7 +225,8 @@
       if(bad)html+=`<circle cx="${pos+11}" cy="${axisY-11}" r="3.6" fill="var(--error)"/>`;
       if(recovered.has(i))html+=`<circle cx="${pos+11}" cy="${axisY-11}" r="3.6" fill="var(--branch-good)"/>`;
       html+='</g>';
-      html+=svgText(pos,axisY+36,stepLabel(step),'action-small','middle');
+      const short=stepLabel(step).length>9?stepLabel(step).slice(0,9)+'…':stepLabel(step);
+      html+=svgText(pos,axisY+36,short,'action-small','middle');
       html+=svgText(pos,axisY+52,clock(step.start).slice(0,5),'graph-axis','middle');
       if(bad){const c=step.calls.find(c=>c.status==='error');html+=svgText(pos,axisY+68,conditionName(c),'graph-axis','middle');}
       const ih=Math.max(2,Math.round((step.inTok||0)/maxIn*barMax));
@@ -237,10 +238,12 @@
     // 底部详情
     const panel=$('step-panel');
     if(panel){
-      panel.classList.add('on');
+      panel.classList.add('on');panel.style.display='grid';
       const calls=sel.calls||[];
       const chips=calls.map(c=>`<span class="panel-chip ${c.status==='error'?'bad':''}">${esc(c.name)}${c.status==='error'?' ✗':''}</span>`).join('');
-      panel.innerHTML=`<div><h4>这一步</h4><div class="panel-title">第 ${sel.number} 步 · ${stepLabel(sel)}</div><div class="panel-meta">${clock(sel.start)} → ${clock(sel.end)} · ${dur(sel.end-sel.start)} · ${calls.length} 次调用</div><div class="panel-calls">${chips}</div><button class="action-button" id="panel-record">查看调用与回报 ↗</button></div><div><h4>这一步带着多少上下文</h4><div class="panel-row"><span>缓存读</span><span>${fmtTok(sel.cacheTok||0)}</span></div><div class="panel-row"><span>新增输入</span><span>${fmtTok(sel.inTok||0)}</span></div><div class="panel-row"><span>输出</span><span>${fmtTok(sel.outTok||0)}</span></div><div class="panel-row"><span>合计</span><span>${fmtTok((sel.cacheTok||0)+(sel.inTok||0)+(sel.outTok||0))}</span></div></div><div><h4>这一步的回复</h4><div class="panel-meta">${sel.reply?esc(String(sel.reply.text||'').replace(/\s+/g,' ').slice(0,120)):'这一步没有文字回复'}</div></div>`;
+      panel.innerHTML=`<div><h4>这一步</h4><div class="panel-title">第 ${sel.number} 步 · ${stepLabel(sel)}</div><div class="panel-meta">${clock(sel.start)} → ${clock(sel.end)} · ${dur(sel.end-sel.start)} · ${calls.length} 次调用</div><div class="panel-calls">${chips}</div><button class="action-button" id="panel-record">查看调用与回报 ↗</button> <button class="back-link" id="panel-close">收起</button></div><div><h4>这一步带着多少上下文</h4><div class="panel-row"><span>缓存读</span><span>${fmtTok(sel.cacheTok||0)}</span></div><div class="panel-row"><span>新增输入</span><span>${fmtTok(sel.inTok||0)}</span></div><div class="panel-row"><span>输出</span><span>${fmtTok(sel.outTok||0)}</span></div><div class="panel-row"><span>合计</span><span>${fmtTok((sel.cacheTok||0)+(sel.inTok||0)+(sel.outTok||0))}</span></div></div><div><h4>这一步的回复</h4><div class="panel-meta">${sel.reply?esc(String(sel.reply.text||'').replace(/\s+/g,' ').slice(0,120)):'这一步没有文字回复'}</div></div>`;
+      const close=$('panel-close');
+      if(close)close.onclick=()=>{panel.style.display='none';panel.classList.remove('on');};
       const button=$('panel-record');
       if(button)button.onclick=()=>showStep(selectedStep);
     }
