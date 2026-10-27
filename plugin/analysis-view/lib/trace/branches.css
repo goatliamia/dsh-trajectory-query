@@ -1,4 +1,4 @@
-  :root{--branch-ink:#475a70;--branch-muted:#7b8795;--branch-model:#a7b6ca;--branch-good:#2b6b57;--branch-bad:#a63a31;--branch-link:#8492a3;--branch-child:#637596}
+  :root{--branch-ink:#2f4054;--branch-muted:#6b7889;--branch-model:#8fa3bd;--branch-good:#1f5a47;--branch-bad:#8e2f28;--branch-link:#6f7f93;--branch-child:#637596}
   @media(prefers-color-scheme:dark){:root{--branch-ink:#c4cfdd;--branch-muted:#98a4b4;--branch-model:#7589a3;--branch-good:#7bb7a0;--branch-bad:#ed9589;--branch-link:#9aabbd;--branch-child:#a6b7d5}}
   .overview-mode.branch-scene .turn-heading{padding:18px 26px 12px}
   .overview-mode.branch-scene .graph-scroll{scrollbar-gutter:stable}
@@ -9,14 +9,14 @@
   .overview-mode.branch-scene .ov-controls{padding:6px 0 0;gap:12px;flex-wrap:wrap}
   .overview-mode.branch-scene .ov-layer-check{font-size:12px;color:var(--ink)}
   .overview-mode.branch-scene .ov-layer-check input{accent-color:var(--accent)}
-  .br-key{display:flex;align-items:center;gap:19px;flex-wrap:wrap;margin-top:16px;color:var(--muted);font-size:11px}
-  .br-key span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .br-key{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-left:auto;color:var(--ink);font-size:11px;opacity:.85}
+  .br-key-item{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.br-key span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
   .br-key svg{width:29px;height:14px;overflow:visible;flex-shrink:0}
   .br-key .br-key-error{color:var(--branch-bad)}
   .br-key .br-key-return{color:var(--branch-good)}
   .br-key-note{margin-left:auto;font:10px var(--mono)}
   .br-trunk{fill:none;stroke:var(--ink);stroke-width:4}
-.br-legend{font:10px var(--mono);color:var(--ink);opacity:.72;margin-left:auto;white-space:nowrap}
   .br-model{fill:var(--ink);opacity:.18}
   .br-connector{fill:none;stroke:var(--branch-ink);stroke-width:1.25;stroke-opacity:.55;stroke-linejoin:round;stroke-linecap:round}
   .br-return{fill:none;stroke:var(--branch-link);stroke-width:1;stroke-opacity:.6}
