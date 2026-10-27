@@ -46,3 +46,7 @@
   .branch-scene .tl-readout{font-size:11px}
   .branch-scene .back-link{white-space:nowrap}
   @media(max-width:700px){.br-gesture,.br-key-note{display:none}.br-key{gap:11px}.overview-mode.branch-scene .graph-caption{padding:10px 16px}.overview-mode.branch-scene .turn-heading{padding:17px 18px 10px}}
+
+.br-layers{display:flex;gap:12px;align-items:center;font-size:11px;color:var(--ink);opacity:.9}
+.br-layer{display:inline-flex;align-items:center;gap:4px;cursor:pointer;white-space:nowrap}
+.br-layer input{accent-color:var(--branch-bad);margin:0}
