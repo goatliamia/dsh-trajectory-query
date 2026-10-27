@@ -156,6 +156,7 @@
   }
 
   function fmtTok(value){return value>=1000?(value/1000).toFixed(value>=10000?0:1)+'k':String(value);}
+  const KIND={read:'#3b6ea5',write:'#b06a2c',run:'#2f7d5f',query:'#6b4fa0',other:'#5b6a7a'};
   const STEP_ICON={
     read:'<circle cx="0" cy="0" r="4.4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3.2 3.2 L6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
     write:'<path d="M-4.4 4.4 L-3.3 0.9 L3.1 -5.5 L5.2 -3.4 L-1.2 3 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>',
@@ -188,10 +189,10 @@
     $('turn-heading').innerHTML='';
     if($('prompt-button'))$('prompt-button').onclick=showPrompts;
     $('caption-note').textContent='每个圆是一步 · 点圆切换下面的详情 · 双击圆看原始记录';
-    const stepGap=104,left=56,right=60;
+    const stepGap=112,left=56,right=60;
     const w=Math.max($('graph-scroll').clientWidth,left+right+Math.max(0,count-1)*stepGap+120);
-    const h=Math.max(300,$('graph-scroll').clientHeight-2);
-    const axisY=152,barBase=286,barMax=90;
+    const h=Math.max(408,$('graph-scroll').clientHeight-2);
+    const band={ctx:48,spine:140,label:176,clock:196,cond:216,barBase:330,barMax:72};
     const x=i=>left+30+i*stepGap;
     const prompt=t.prompts&&t.prompts[0]?String(t.prompts[0].text||'').replace(/\s+/g,' '):'';
     const errors=steps.reduce((n,s)=>n+s.calls.filter(c=>c.status==='error').length,0);
@@ -213,27 +214,28 @@
     });
     html+=svgText(cx+10,58,`${total?fmtTok(total)+' tokens':'这一步没有 usage 记录'}`,'action-small','start');
     // 步骤脊柱
-    html+=`<line x1="${left}" x2="${w-right}" y1="${axisY}" y2="${axisY}" stroke="var(--line)" stroke-width="1.4"/>`;
+    html+=`<line x1="${left}" x2="${w-right}" y1="${band.spine}" y2="${band.spine}" stroke="var(--line)" stroke-width="1.4"/>`;
     const maxIn=Math.max(1,...steps.map(s=>s.inTok||0));
     const recovered=new Set();
     steps.forEach((step,si)=>{if(si>0&&step.calls.length){const prevBad=steps.slice(0,si).some(p=>p.calls.some(c=>c.status==='error'&&step.calls.some(n=>n.name===c.name)));if(prevBad)recovered.add(si);}});
     steps.forEach((step,i)=>{
       const pos=x(i),bad=step.calls.some(c=>c.status==='error'),active=i===selectedStep;
       const tone=bad?'var(--error)':(step.calls.length?'var(--tool)':'var(--unknown)');
-      if(i>0)html+=`<path d="M${x(i-1)+17} ${axisY} H${pos-18}" stroke="var(--line)" stroke-width="1.2" marker-end="url(#action-arrow)"/>`;
-      html+=`<g class="action-step" data-step="${i}" role="button" tabindex="0" aria-label="${esc('第 '+step.number+' 步 · '+stepLabel(step))}"><title>${esc('第 '+step.number+' 步 · '+stepLabel(step)+' · '+dur(step.end-step.start))}</title><circle cx="${pos}" cy="${axisY}" r="${active?17:15}" fill="var(--surface)" stroke="${tone}" stroke-width="${active?2.4:bad?2:1.4}" ${active?'stroke-dasharray="3 2"':''}/><g transform="translate(${pos} ${axisY})" style="color:${tone}">${stepIcon(step)}</g>`;
-      if(bad)html+=`<circle cx="${pos+11}" cy="${axisY-11}" r="3.6" fill="var(--error)"/>`;
-      if(recovered.has(i))html+=`<circle cx="${pos+11}" cy="${axisY-11}" r="3.6" fill="var(--branch-good)"/>`;
+      if(i>0)html+=`<path d="M${x(i-1)+17} ${band.spine} H${pos-18}" stroke="var(--line)" stroke-width="1.2" marker-end="url(#action-arrow)"/>`;
+      html+=`<g class="action-step" data-step="${i}" role="button" tabindex="0" aria-label="${esc('第 '+step.number+' 步 · '+stepLabel(step))}"><title>${esc('第 '+step.number+' 步 · '+stepLabel(step)+' · '+dur(step.end-step.start))}</title><circle cx="${pos}" cy="${band.spine}" r="${active?17:15}" fill="var(--surface)" stroke="${tone}" stroke-width="${active?2.4:bad?2:1.4}" ${active?'stroke-dasharray="3 2"':''}/><g transform="translate(${pos} ${band.spine})" style="color:${tone}">${stepIcon(step)}</g>`;
+      if(bad)html+=`<circle cx="${pos+11}" cy="${band.spine-11}" r="3.6" fill="var(--error)"/>`;
+      if(recovered.has(i))html+=`<circle cx="${pos+11}" cy="${band.spine-11}" r="3.6" fill="var(--branch-good)"/>`;
       html+='</g>';
       const short=stepLabel(step).length>9?stepLabel(step).slice(0,9)+'…':stepLabel(step);
-      html+=svgText(pos,axisY+36,short,'action-small','middle');
-      html+=svgText(pos,axisY+52,clock(step.start).slice(0,5),'graph-axis','middle');
-      if(bad){const c=step.calls.find(c=>c.status==='error');html+=svgText(pos,axisY+68,conditionName(c),'graph-axis','middle');}
-      const ih=Math.max(2,Math.round((step.inTok||0)/maxIn*barMax));
-      if(step.inTok)html+=`<rect x="${pos-12}" y="${barBase-ih}" width="24" height="${ih}" rx="2" fill="var(--accent)" fill-opacity="${active?.55:.28}"/>`+svgText(pos,barBase-ih-6,fmtTok(step.inTok),'graph-axis','middle');
+      html+=svgText(pos,band.label,short,'action-small','middle');
+      html+=svgText(pos,band.clock,clock(step.start).slice(0,5),'graph-axis','middle');
+      if(bad){const c=step.calls.find(c=>c.status==='error');html+=svgText(pos,band.cond,conditionName(c),'graph-axis','middle');}
+      const ih=Math.max(2,Math.round((step.inTok||0)/maxIn*band.barMax));
+      const barColor=bad?'var(--error)':(KIND[callKind(step.calls[0])]||KIND.other);
+      if(step.inTok)html+=`<rect x="${pos-12}" y="${band.barBase-ih}" width="24" height="${ih}" rx="2" fill="${barColor}" fill-opacity="${active?.75:.5}"/>`+svgText(pos,band.barBase-ih-6,fmtTok(step.inTok),'graph-axis','middle');
     });
     html+=`<defs><marker id="action-arrow" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L6 3 L0 6 Z" fill="var(--line)"/></marker></defs>`;
-    html+=svgText(26,barBase+18,'每步新增输入','action-small','start');
+    html+=svgText(26,band.barBase+18,'每步新增输入','action-small','start');
     $('graph').setAttribute('viewBox',`0 0 ${w} ${h}`);$('graph').setAttribute('height',h);$('graph').style.width=w+'px';$('graph').innerHTML=html;
     // 底部详情
     const panel=$('step-panel');
