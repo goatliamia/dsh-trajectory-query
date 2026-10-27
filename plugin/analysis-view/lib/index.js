@@ -738,6 +738,30 @@ async function runContextScan(ctx, from, to, state) {
       const record = queue.shift();
       if (record === undefined) return;
       try {
+        const store = loadContextStore();
+        const cached = store.sessions[record.header.id];
+        if (cached !== undefined && cached.createdAt === record.header.createdAt && record.live !== true) {
+          const totals = state.totals;
+          totals.sessions += 1;
+          totals.turns += cached.turns || 0;
+          totals.calls += cached.calls || 0;
+          totals.errors += cached.errors || 0;
+          totals.toolMs += cached.toolMs || 0;
+          totals.retryMs += cached.retryMs || 0;
+          totals.spanMs += cached.spanMs || 0;
+          totals.input += cached.input || 0;
+          totals.cacheRead += cached.cacheRead || 0;
+          totals.output += cached.output || 0;
+          for (const [day, bucket] of Object.entries(cached.byDay || {})) {
+            const target = state.byDay[day] || (state.byDay[day] = { input: 0, cacheRead: 0, output: 0, calls: 0 });
+            target.input += bucket.input || 0;
+            target.cacheRead += bucket.cacheRead || 0;
+            target.output += bucket.output || 0;
+            target.calls += bucket.calls || 0;
+          }
+          state.scanned += 1;
+          continue;
+        }
         const snapshot = await sessionQuery.readSession(record.header.id);
         const per = summarizeSession(snapshot && Array.isArray(snapshot.events) ? snapshot.events : []);
         const totals = state.totals;
@@ -754,13 +778,29 @@ async function runContextScan(ctx, from, to, state) {
           totals.cacheRead += row.cacheRead;
           totals.output += row.output;
         }
+        const byDay = {};
         for (const [day, bucket] of per.byDay) {
           const target = state.byDay[day] || (state.byDay[day] = { input: 0, cacheRead: 0, output: 0, calls: 0 });
           target.input += bucket.input;
           target.cacheRead += bucket.cacheRead;
           target.output += bucket.output;
           target.calls += bucket.calls;
+          byDay[day] = bucket;
         }
+        loadContextStore().sessions[record.header.id] = {
+          createdAt: record.header.createdAt,
+          turns: per.turns,
+          calls: per.calls,
+          errors: per.errors,
+          toolMs: per.toolMs,
+          retryMs: per.retryMs,
+          spanMs: per.spanMs,
+          input: per.requests.reduce((n, row) => n + row.input, 0),
+          cacheRead: per.requests.reduce((n, row) => n + row.cacheRead, 0),
+          output: per.requests.reduce((n, row) => n + row.output, 0),
+          byDay,
+        };
+        saveContextStore();
       } catch {
         state.failed += 1;
       }
@@ -798,6 +838,37 @@ async function buildContextSummary(ctx, { from, to }) {
       ? { currency: pricing.currency, total: (pricing.cost.miss || 0) + (pricing.cost.hit || 0) + (pricing.cost.output || 0) }
       : null,
   };
+}
+
+import { readFileSync as readStoreFile, writeFileSync as writeStoreFile } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+const CONTEXT_STORE_PATH = join(homedir(), ".dsh", "context-manager-cache.json");
+let contextStore = null;
+let contextSaveTimer = null;
+
+function loadContextStore() {
+  if (contextStore !== null) return contextStore;
+  try {
+    const parsed = JSON.parse(readStoreFile(CONTEXT_STORE_PATH, "utf8"));
+    contextStore = parsed && typeof parsed === "object" && parsed.sessions && typeof parsed.sessions === "object" ? parsed : { v: 1, sessions: {} };
+  } catch {
+    contextStore = { v: 1, sessions: {} };
+  }
+  return contextStore;
+}
+
+function saveContextStore() {
+  if (contextSaveTimer !== null) return;
+  contextSaveTimer = setTimeout(() => {
+    contextSaveTimer = null;
+    try {
+      writeStoreFile(CONTEXT_STORE_PATH, JSON.stringify(contextStore));
+    } catch {
+      /* 缓存写失败不影响统计 */
+    }
+  }, 800);
 }
 
 export function apply(ctx) {
