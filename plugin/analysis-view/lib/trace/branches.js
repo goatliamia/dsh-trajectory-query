@@ -70,8 +70,11 @@
         for(const s of t.steps){
           for(const r of s.retries){
             const a=mapTime(r.time),b=mapTime(r.time+(r.delayMs||0));if(!visible(a,b))continue;const wdt=Math.max(3,b-a);
-            const head = Math.max(3, Math.min(9, wdt * 0.6));const body = Math.max(2.5, Math.min(4, wdt / 4));const ry = base + 17;
-            html+=brGroup(`class="br-retry" data-br-round="${t.number}"`,`<path d="M${a} ${ry - body} H${b - head} L${b} ${ry} L${b - head} ${ry + body} H${a} Z" fill="var(--warm)" fill-opacity=".34" stroke="var(--warm)" stroke-opacity=".8" stroke-width="1.1"/>`,`请求重试 · 等待 ${dur(r.delayMs || 0)} · seq ${r.seq}`);
+            const ry = base + 19;const hook = Math.max(4, Math.min(9, wdt * 0.4));
+            const bridge =
+              `<path d="M${a} ${base + 2} V${ry} H${b} V${base + 2}" fill="none" stroke="var(--warm)" stroke-opacity=".55" stroke-width="1.1"/>` +
+              `<path d="M${b - hook - 5} ${ry - 3.6} L${b - hook} ${ry} L${b - hook - 5} ${ry + 3.6}" fill="none" stroke="var(--warm)" stroke-opacity=".95" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+            html+=brGroup(`class="br-retry" data-br-round="${t.number}"`,bridge,`请求重试 · 等待 ${dur(r.delayMs || 0)} · seq ${r.seq}`);
           }
         }
         if(stopLabel(t.reason?.kind)){const x=l.end;html+=brGroup(`class="br-marker" data-br-stop="${t.number}"`,`<path d="M${x-2} ${base-6} v12 M${x+2} ${base-6} v12" class="br-glyph"/>`,stopLabel(t.reason.kind));}
