@@ -45,7 +45,12 @@
   .overview-mode.spine-scene .graph-scroll,.overview-mode.spine-scene .graph-wrap{background:var(--surface)}.sp-backbone{stroke:var(--ov-idle);stroke-width:2;fill:none}.sp-generation{fill:var(--ov-model);opacity:.82}.sp-round,.sp-action,.sp-child,.sp-retry,.sp-error-mark,.sp-gap{cursor:pointer;outline:none}.sp-round-number{font:10px var(--mono);fill:var(--muted)}.sp-small{font-size:10px;fill:var(--muted)}.sp-child-label{font-size:10px;fill:var(--child)}.sp-child-route{fill:none;stroke:var(--child);stroke-width:1.6}.sp-action rect{fill:var(--surface);stroke:var(--line);stroke-width:1.2}.sp-action text{font-size:11px;fill:var(--ink);pointer-events:none}.sp-action.failure rect{fill:var(--error-bg);stroke:var(--error);stroke-opacity:.65}.sp-action.failure text{fill:var(--error)}.sp-action.read rect{fill:var(--surface);stroke:var(--ov-stop);stroke-opacity:.6}.sp-action.success rect,.sp-action.normal rect{fill:var(--surface);stroke:var(--tool);stroke-opacity:.65}.sp-action.success text,.sp-action.normal text{fill:var(--tool)}.sp-action:hover rect,.sp-action:focus rect{stroke-width:1.8;stroke-opacity:1}.sp-failure-route{fill:none;stroke:var(--error);stroke-width:1.15;stroke-opacity:.5}.sp-recovery-route{fill:none;stroke:var(--tool);stroke-width:1.15;stroke-opacity:.65}.sp-stage-link{fill:none;stroke:var(--ov-stop);stroke-width:1.1}.sp-open-end{fill:none;stroke:var(--ov-stop);stroke-width:1.1;stroke-dasharray:2 2}.sp-branch-label{font-size:10px;fill:var(--muted)}.sp-axis-rule{stroke:var(--line);stroke-width:1;fill:none}.sp-axis{font:10px var(--mono);fill:var(--muted)}.sp-pinned{pointer-events:none}.sp-gesture{color:var(--muted);font-size:9px;white-space:nowrap}.overview-mode.spine-scene .graph-caption{padding:9px 16px;flex-wrap:nowrap;gap:12px;min-height:38px}.overview-mode.spine-scene .ov-controls{flex-wrap:wrap;row-gap:4px;padding:5px 0}.ov-zoom #ov-fit{white-space:nowrap;min-width:38px}.overview-mode.spine-scene .graph-caption .back-link{font-size:10px;white-space:nowrap}
   @media(max-width:700px){.sp-gesture{display:none}}
 </style>
-<style>/* 嵌入分析面板:去掉独立页面的外框与留白,让图铺满标签页 */
+<style>.heading{display:none}
+.canvas-bar .segmented{display:none}
+.turn-heading{display:none}
+.strip-title{display:none}
+.turn-strip{min-height:26px;padding:2px 12px 0;gap:8px}
+/* 嵌入分析面板:去掉独立页面的外框与留白,让图铺满标签页 */
 body{margin:0;background:var(--bg)}
 .app{max-width:none;padding:0}
 .top{display:none}

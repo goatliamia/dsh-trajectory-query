@@ -31,7 +31,7 @@
   .br-child-return{fill:none;stroke:var(--branch-child);stroke-width:1.1;stroke-dasharray:3 4}
   .br-round,.br-action,.br-incident,.br-relation,.br-child,.br-marker,.br-gap{cursor:pointer;outline:none}
   .br-hit{fill:transparent;stroke:none}
-  .br-hover{fill:var(--soft);opacity:0}
+  .br-hover{fill:transparent;opacity:0}
   .br-action:hover .br-hover,.br-action:focus-visible .br-hover,.br-incident:hover .br-hover,.br-incident:focus-visible .br-hover,.br-relation:hover .br-hover,.br-relation:focus-visible .br-hover{opacity:.75}
   .br-action:hover .br-body,.br-action:focus-visible .br-body{opacity:1}
   .br-label{font-size:12px;fill:var(--branch-ink);pointer-events:none}

@@ -1,6 +1,6 @@
 {
   "name": "dsh-analysis-view",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "type": "module",
   "description": "「分析」标签:执行路径图 + 当前会话的轮次、花费、工具与 incident",
