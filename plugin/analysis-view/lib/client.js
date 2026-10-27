@@ -10,6 +10,8 @@ window.__ModuleLoader__.load({
     const CSS = `
 .av-root{--av-accent:color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, var(--dsw-alias-state-success-primary));padding:16px;overflow:auto;min-height:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5}
 .av-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.av-trace-frame{width:100%;height:calc(100vh - 210px);min-height:420px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
+.av-btn[aria-pressed="true"]{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-border-l1);color:var(--dsw-alias-label-primary)}
 .av-title{margin:0;font-size:14px;font-weight:500;letter-spacing:.01em}
 .av-meta{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-live{width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-success-primary);flex:none}
@@ -806,6 +808,7 @@ window.__ModuleLoader__.load({
         }]
         : [];
 
+      const [mode, setMode] = React.useState(props && props.initialMode === "digest" ? "digest" : "trace");
       const head = h("div", { key: "h", className: "av-head" }, [
         h("span", { key: "d", className: "av-live " + (status === "ready" ? "" : status === "stale" ? "stale" : "dead"), title: status === "ready" ? "已读取" : status === "stale" ? "刷新失败,显示上一次结果" : "未连接" }),
         h("h2", { key: "t", className: "av-title" }, "分析"),
@@ -813,10 +816,19 @@ window.__ModuleLoader__.load({
           data.log.id + " · " + fmt(data.log.events) + " 事件 · seq " + data.log.minSeq + "–" + data.log.maxSeq,
         ]) : null,
         h("span", { key: "sp", className: "av-spacer" }),
+        h("button", { key: "trace", className: "av-btn", "aria-pressed": mode === "trace", onClick: () => setMode("trace") }, "轨迹"),
+        h("button", { key: "digest", className: "av-btn", "aria-pressed": mode === "digest", onClick: () => setMode("digest") }, "概览"),
         h("button", { key: "r", className: "av-btn", onClick: digest.refresh, disabled: !sessionId || status === "loading" }, "刷新"),
       ]);
 
       if (!sessionId) return h("div", { className: "av-root" }, [head, h(Notice, { key: "n", text: "还没有选中会话" })]);
+
+      if (mode === "trace") {
+        return h("div", { className: "av-root" }, [
+          head,
+          h("iframe", { key: "f", className: "av-trace-frame", title: "执行路径", src: "/analysis-view/trace?session=" + encodeURIComponent(sessionId) }),
+        ]);
+      }
 
       if (status === "loading" || (status === "idle" && !data)) return h("div", { className: "av-root" }, [head, h(Skeleton, { key: "s" })]);
 

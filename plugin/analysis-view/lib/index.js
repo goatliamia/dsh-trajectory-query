@@ -2,9 +2,25 @@
 // 通过 /analysis-view 的只读路由给出。
 
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { incident } from "./incident-shape.js";
+import { buildTracePayload } from "./trace-build.js";
 
 const ROUTE_PATH = "/analysis-view";
+
+let tracePageCache = null;
+/** 「执行路径」页面:模板 + 渲染器 + 本次会话的数据,拼成一份自包含 HTML。 */
+function renderTracePage(payload) {
+  if (tracePageCache === null) {
+    const read = (name) => readFileSync(new URL("./trace/" + name, import.meta.url), "utf8");
+    let page = read("template.html");
+    const renderer = ["graph.js", "panorama.js", "scene.js", "branches.js"].map(read).join("\n");
+    page = page.replace("</style>", () => read("branches.css") + "\n</style>").replace("/*__TRACE_RENDERER__*/", () => renderer);
+    tracePageCache = page;
+  }
+  const json = JSON.stringify(payload).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+  return tracePageCache.replace("/*__TRACE_DATA__*/", () => json);
+}
 
 /**
  * Deterministic incident detection over raw session events (mirror of analyzers/incidents.mjs).
@@ -648,6 +664,13 @@ export function apply(ctx) {
         if (req.method !== "GET") return send(404, { error: "not found" });
         const sessionId = url.searchParams.get("session");
         if (!sessionId) return send(400, { error: "missing session" });
+        if (url.pathname === ROUTE_PATH + "/trace") {
+          const events = await withTimeout(loadEvents(ctx, sessionId), 8000);
+          const html = renderTracePage(buildTracePayload(events, sessionId));
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+          res.end(html);
+          return;
+        }
         if (url.pathname === ROUTE_PATH + "/digest") {
           const fresh = url.searchParams.get("fresh") === "1";
           const hit = digestCache.get(sessionId);

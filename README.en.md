@@ -75,6 +75,7 @@ Every result carries `(session, seq@logId)` and quotes the original text; an emp
 A third tab next to "Chat" and "Trajectory":
 
 | Section | Content |
+| Execution path (default) | the current turn's trunk and detours, turn strip, time axis; click a node for the real event; switch to Overview for the previous statistics panel |
 |---|---|
 | KPI | turns, tool calls, failures, cache hit rate, events |
 | Turns | a duration-proportional strip coloured by failures; a failing turn jumps to the trajectory |
