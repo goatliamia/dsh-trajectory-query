@@ -1,0 +1,17 @@
+// Presentation arithmetic only. Occupancy and source estimates stay separate.
+export function contextOverview(pressure, breakdown, composition) {
+  const valid = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+  const used = valid(pressure?.projectedTokens) ? pressure.projectedTokens : valid(pressure?.pressureTokens) ? pressure.pressureTokens : null;
+  const capacity = valid(pressure?.contextWindow) && pressure.contextWindow > 0 ? pressure.contextWindow : null;
+  const detailedKeys = ['system', 'tools', 'user', 'inject', 'skill', 'assistant', 'tool'];
+  const detailed = detailedKeys.every(key => valid(composition?.[key]));
+  const values = detailed ? detailedKeys.map(key => ({ key, value: composition[key] })) : [
+    { key: 'system', value: breakdown?.systemTokens }, { key: 'tools', value: breakdown?.toolsTokens }, { key: 'messages', value: breakdown?.messageTokens },
+  ].filter(item => valid(item.value));
+  const total = values.reduce((sum, item) => sum + item.value, 0);
+  const percent = used !== null && capacity !== null ? used / capacity * 100 : null;
+  return { used, capacity, percent, fill: percent === null ? null : Math.min(100, Math.max(0, percent)), detailed,
+    estimatedTotal: total,
+    categories: values.filter(item => item.value > 0).map(item => ({ ...item, share: item.value / total * 100 })),
+  };
+}

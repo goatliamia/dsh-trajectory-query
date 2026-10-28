@@ -1,0 +1,53 @@
+// The original twig geometry stays fixed: anchor → vertical stem → rounded tip.
+// Labels reserve the tip, text, and stem, including stems of deeper branches.
+export function aggregateInScreen(items, maxSpan = 30) {
+  const ordered = [...items].sort((a, b) => (a.at ?? a.x) - (b.at ?? b.x) || a.id.localeCompare(b.id));
+  const nodes = ordered.map(item => ({ members: [item], lo: item.at ?? item.x, hi: item.at ?? item.x }));
+  // The hierarchy uses event time, not the viewport. Zoom only opens/closes nodes
+  // of this same hierarchy; horizontal panning cannot change group membership.
+  while (nodes.length > 1) {
+    let pair = 0, span = Infinity;
+    for (let i = 0; i < nodes.length - 1; i++) {
+      const size = nodes[i + 1].hi - nodes[i].lo;
+      if (size < span) { pair = i; span = size; }
+    }
+    const a = nodes[pair], b = nodes[pair + 1];
+    nodes.splice(pair, 2, { lo: a.lo, hi: b.hi, members: [...a.members, ...b.members], children: [a, b] });
+  }
+  const groups = [], stack = nodes.length ? [nodes[0]] : [];
+  while (stack.length) {
+    const node = stack.pop(), width = node.members.at(-1).x - node.members[0].x;
+    if (!node.children || width <= maxSpan) groups.push(node.members);
+    else stack.push(node.children[1], node.children[0]);
+  }
+  return groups;
+}
+
+export function layoutBranches(items, { left, right, measure, labelOf, slots = [32, -48, 77, -94, 122], gap = 10, aggregateSpan = 30, obstacles = [] }) {
+  let groups = aggregateInScreen(items, aggregateSpan);
+  const intersects = (a, b) => a.left < b.right + gap && a.right + gap > b.left && a.top < b.bottom + 5 && a.bottom + 5 > b.top;
+  const stemHits = (anchor, dy, box) => anchor > box.left - 4 && anchor < box.right + 4 && Math.max(0, dy) > box.top - 4 && Math.min(0, dy) < box.bottom + 4;
+  for (;;) {
+    const placed = [];
+    let failed = -1;
+    for (let i = 0; i < groups.length; i++) {
+      const members = groups[i], x = members[Math.floor((members.length - 1) / 2)].x;
+      const label = labelOf(members), width = measure(label) + 6;
+      const cx = Math.max(left + width / 2, Math.min(right - width / 2, x + 20));
+      const occupiedLeft = Math.min(cx - width / 2, x + 9), occupiedRight = Math.max(cx + width / 2, x + 44);
+      const candidate = slots.map(dy => ({
+        x, cx, dy, label, members,
+        left: occupiedLeft, right: occupiedRight,
+        top: dy > 0 ? dy - 9 : dy - 28, bottom: dy > 0 ? dy + 25 : dy + 9,
+      })).find(p => placed.every(q => !intersects(p, q) && !stemHits(p.x, p.dy, q) && !stemHits(q.x, q.dy, p)) && obstacles.every(q => !intersects(p, q)));
+      if (!candidate) { failed = i; break; }
+      placed.push(candidate);
+    }
+    if (failed < 0) return placed;
+    if (groups.length < 2) throw new Error('Cannot place branch');
+    let pair = failed === 0 ? 0 : failed - 1;
+    if (failed > 0 && failed < groups.length - 1 &&
+      groups[failed + 1][0].x - groups[failed].at(-1).x < groups[failed][0].x - groups[failed - 1].at(-1).x) pair = failed;
+    groups.splice(pair, 2, [...groups[pair], ...groups[pair + 1]]);
+  }
+}

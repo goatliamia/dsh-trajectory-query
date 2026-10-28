@@ -1,0 +1,43 @@
+:root{--file-read:#4f89a8;--file-change:#b57b48;--file-read-soft:#edf6fa;--file-change-soft:#fbf3e9}
+.review-file-object{cursor:pointer;outline:none;color:var(--file-read)}
+.review-file-object.change{color:var(--file-change)}
+.review-file-body{fill:var(--surface);stroke:currentColor;stroke-width:.8;stroke-opacity:.65}
+.review-file-icon{fill:none;stroke:currentColor;stroke-width:1.15;stroke-linejoin:round}
+.review-file-name{font:10.5px var(--sans);fill:var(--branch-ink);pointer-events:none}
+.review-file-lane-label{font:10px var(--sans);fill:var(--file-read)}
+.review-file-lane-label.change{fill:var(--file-change)}
+.review-file-object:hover .review-file-body,.review-file-object:focus-visible .review-file-body,.review-file-object.step-related .review-file-body,.review-file-object.branch-related .review-file-body{stroke-width:1.4;stroke-opacity:1}
+.review-file-object.read:hover .review-file-body,.review-file-object.read.selected .review-file-body,.review-file-object.read.step-related .review-file-body{fill:var(--file-read-soft)}
+.review-file-object.change:hover .review-file-body,.review-file-object.change.selected .review-file-body,.review-file-object.change.step-related .review-file-body{fill:var(--file-change-soft)}
+.review-file-object.selected .review-file-body{stroke-width:1.8;stroke-opacity:1}
+.review-file-touch{cursor:pointer;color:var(--file-read);outline:none}
+.review-file-touch.change{color:var(--file-change)}
+.review-file-touch.failed{color:var(--branch-bad)}
+.review-file-tick{fill:none;stroke:currentColor;stroke-width:1.2;pointer-events:none}
+.review-file-touch-dot{fill:currentColor;stroke:var(--surface);stroke-width:1.5}
+.review-file-touch-ring{fill:none;stroke:currentColor;stroke-width:.8}
+.review-file-touch:hover .review-file-touch-dot,.review-file-touch:focus-visible .review-file-touch-dot{stroke:currentColor;stroke-width:2}
+.review-file-focused .review-action-step:not(.file-related),.review-file-focused .br-incident:not(.file-related){opacity:.3}
+.review-file-focused .review-action-step.file-related .review-action-node{stroke-width:2.1}
+.review-file-status{display:flex;align-items:center;gap:10px;flex-wrap:wrap;flex-basis:100%;order:2;min-height:26px;font:10px/1.6 var(--sans);color:var(--branch-muted);border-top:1px solid var(--line);padding-top:7px}
+.review-file-status[aria-hidden=true]{visibility:hidden;pointer-events:none}
+.review-file-status strong{font-weight:500;color:var(--branch-ink);max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.review-file-status button{color:var(--review-action);font:10px var(--sans);padding:0;white-space:nowrap}
+.review-file-status button:hover{text-decoration:underline}
+.review-file-source-note{margin-left:auto;font-size:9px}
+.review-files-on .review-action-guidance{visibility:hidden}
+.review-file-list{display:flex;flex-direction:column}
+.review-file-list button{text-align:left;padding:13px 0;border-bottom:1px solid var(--line);display:grid;gap:4px}
+.review-file-list button:hover strong{color:var(--review-action)}
+.review-file-list strong{font:500 12px/1.6 var(--sans);color:var(--branch-ink)}
+.review-file-list span{font:11px/1.6 var(--sans);color:var(--branch-muted)}
+.review-file-list small{font:10px/1.6 var(--mono);color:var(--branch-muted);overflow-wrap:anywhere}
+.review-file-evidence-note{font:11px/1.8 var(--sans);color:var(--branch-muted);margin:0 0 14px}
+.review-file-history button{display:flex;width:100%;align-items:center;gap:12px;text-align:left;padding:12px 0;border-bottom:1px solid var(--line)}
+.review-file-history button>span:first-child{font:11px var(--sans);min-width:58px;color:var(--file-read)}
+.review-file-history button>span.change{color:var(--file-change)}
+.review-file-history button>div{flex:1;display:grid;gap:4px}
+.review-file-history strong{font:500 12px var(--sans)}
+.review-file-history small,.review-file-history button>span:last-child{font:10px var(--sans);color:var(--branch-muted)}
+.review-file-history button:hover>span:last-child{color:var(--review-action)}
+@media(prefers-color-scheme:dark){:root{--file-read:#91bdd3;--file-change:#d9aa7c;--file-read-soft:#243843;--file-change-soft:#3e3027}}

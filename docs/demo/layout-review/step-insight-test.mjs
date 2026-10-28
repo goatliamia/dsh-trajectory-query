@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { describeCall, stepInsight } from './step-insight.mjs';
+const excerpt = value => ({ text: typeof value === 'string' ? value : JSON.stringify(value), omitted: 0 });
+const call = overrides => ({ name: 'trajectory_search', seq: 1, resultSeq: 2, status: 'returned',
+  args: excerpt({ query: 'needle' }), result: excerpt({ hitCount: 3, returned: 2, items: [] }), ...overrides });
+assert.match(describeCall(call()).outcome, /命中 3 条.*返回 2 条/);
+assert.match(describeCall(call({ result: { text: '{"hitCount":999', omitted: 60 } })).outcome, /已收到工具返回/);
+assert.doesNotMatch(describeCall(call({ result: { text: '{"hitCount":999', omitted: 60 } })).outcome, /999/);
+assert.equal(describeCall(call({ result: excerpt({ ok: false }) })).tone, 'bad');
+assert.match(describeCall(call({ status: 'unknown', resultSeq: null })).outcome, /不能判断/);
+const edit = describeCall(call({ name: 'edit', status: 'error', error: { code: 'FS_NOT_OBSERVED' },
+  args: excerpt({ file_path: '/x/a.js', old_string: 'old', new_string: 'new' }), result: excerpt('blocked') }));
+assert.match(edit.outcome, /还没有读取/);
+assert.match(edit.detail, /原计划/);
+assert.deepEqual(edit.preview, { before: 'old', after: 'new', partial: false });
+assert.match(describeCall(call({ name: 'pwsh', args: excerpt({ command: 'node checks.mjs' }), result: excerpt('PASS 4 checks') })).outcome, /^命令输出报告/);
+assert.doesNotMatch(describeCall(call({ name: 'pwsh', result: excerpt('some output') })).outcome, /成功|完成任务/);
+assert.match(describeCall(call({ status: 'error', error: { code: 'TOOL_ABORTED_BEFORE_DISPATCH' } })).outcome, /没有实际启动/);
+const trace = JSON.parse(readFileSync('.dsh/layout-review/installed-trace.html', 'utf8').match(/<script id="trace-data" type="application\/json">([\s\S]*?)<\/script>/)[1]);
+const session = trace.sessions.find(s => s.id === trace.mainSession);
+const fixture = JSON.parse(readFileSync('.dsh/layout-review/context-data.json'));
+const t20 = session.turns.find(t => t.number === 20), t35 = session.turns.find(t => t.number === 35);
+const first = stepInsight(t20, t20.steps[0], session.overview.episodes, fixture.callFacts);
+assert.equal(first.calls[0].title, '读取会话记录 #5–15');
+assert.equal(first.calls[0].outcome, '返回 11 条事件记录。');
+assert.match(first.following.text, /搜索会话“看下我们插件”/);
+const recovery = stepInsight(t35, t35.steps[0], session.overview.episodes, fixture.callFacts);
+assert.equal(recovery.calls.length, 2);
+assert.equal(recovery.calls[0].tone, 'bad');
+assert.match(recovery.calls[1].outcome, /482–493.*800/);
+assert.equal(recovery.links[0].step, 4);
+assert.equal(stepInsight(t35, t35.steps[0], [], fixture.callFacts).links.length, 0, 'a later similar tool cannot prove recovery on its own');
+assert.equal(Object.keys(fixture.callFacts).length, session.turns.flatMap(t => t.steps.flatMap(s => s.calls)).length);
+console.log('PASS step insight: complete-record facts, missing/truncated results, intended vs actual edits, command claims and exact recovery links');

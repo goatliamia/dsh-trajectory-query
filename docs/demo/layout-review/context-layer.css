@@ -1,0 +1,50 @@
+:root{--review-retry:#9462b5;--review-compact:#bd8a18;--review-stop:#bd7d3b;--review-unknown:#b98a2d;--review-gap:#5e8daf}
+.review-retry-line{stroke:var(--review-retry);opacity:.85}.review-retry:hover .review-retry-line,.review-retry:focus-visible .review-retry-line{stroke:var(--review-retry)}.review-retry-summary{color:var(--review-retry)}.review-retry-summary i{border-color:var(--review-retry)}
+.br-marker[data-br-stop] .br-glyph{stroke:var(--review-stop)}.br-marker[data-br-round] .br-label{fill:var(--review-compact)}.br-gap .br-glyph{stroke:var(--review-gap)}.br-incident .br-note{fill:var(--review-unknown)}
+[data-tone=stop] .br-glyph{stroke:var(--review-stop)}[data-tone=compact] svg text{fill:var(--review-compact)}[data-tone=unknown] svg text{fill:var(--review-unknown)}[data-tone=gap] .br-glyph{stroke:var(--review-gap)}
+.review-turn-divider{fill:none;stroke:#8295ac;stroke-width:1.1;stroke-dasharray:5 5;opacity:.52}.review-turn-divider.short{stroke-dasharray:none;opacity:.65}.review-turn-duration{font:10px var(--mono);fill:#5d7390;paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round}.review-duration-hit{cursor:pointer}.review-duration-hit:hover .review-turn-duration{fill:var(--accent)}
+.review-context-title{font:500 12px var(--sans);fill:var(--branch-ink)}.review-context-value{font:11px var(--mono);fill:#5279a6}.review-context-rule{stroke:var(--line);stroke-width:1}.review-context-grid{stroke:#829cbc;stroke-width:.7;stroke-dasharray:2 5;opacity:.24}.review-context-zero{stroke:#829cbc;stroke-width:1;opacity:.55}.review-context-axis{font:9px var(--mono);fill:#778ba5}.review-context-footnote{font:9px var(--sans);fill:var(--muted)}.review-context-legend-text{font:10px var(--sans);fill:var(--branch-ink)}.review-context-legend{cursor:default}.review-context-turn{cursor:pointer;outline:none}.review-context-turn:hover [data-context-segment],.review-context-turn:focus-visible [data-context-segment]{opacity:1;stroke:var(--surface);stroke-width:.4}.review-context-baseline{fill:var(--surface);stroke:#5286bf;stroke-width:1.2}.review-context-missing{stroke:var(--review-unknown);fill:none}.review-context-compaction{font:12px var(--sans);fill:var(--review-compact);pointer-events:none}
+.review-context-headline{display:flex;align-items:baseline;gap:12px;margin:3px 0 14px}.review-context-headline strong{font:500 29px var(--mono);letter-spacing:-1px;color:#5286bf}.review-context-headline span{font-size:11px;color:var(--muted)}.review-context-totals{display:flex;gap:25px;font-size:11px;color:var(--muted);padding-bottom:17px;border-bottom:1px solid var(--line)}.review-context-totals b{font:500 12px var(--mono);color:var(--ink);margin-left:6px}.review-context-breakdown{margin:10px 0 18px}.review-context-category{padding:10px 0;border-bottom:1px solid var(--line)}.review-context-category>div:first-child{display:flex;align-items:center;gap:8px;font-size:12px}.review-context-category>div:first-child i{width:7px;height:7px;border-radius:2px;flex:none}.review-context-category b{margin-left:auto;font:500 12px var(--mono)}.review-context-category small{display:block;font:10px/1.6 var(--mono);color:var(--muted);margin-top:5px}.review-context-meter{height:4px;background:var(--line);border-radius:2px;margin-top:7px;overflow:hidden}.review-context-meter i{display:block;height:100%;border-radius:2px}.review-context-change-note{font-size:11px;line-height:1.8;color:var(--review-compact);padding-left:10px;border-left:2px solid var(--review-compact)}
+@media(prefers-color-scheme:dark){:root{--review-retry:#bd94da;--review-compact:#e0b64d;--review-stop:#d7ab70;--review-unknown:#d9b566;--review-gap:#89b3d0}.review-context-value,.review-context-headline strong{fill:#92b9e4;color:#92b9e4}.review-context-axis,.review-turn-duration{fill:#9eb3cf}.review-turn-divider{stroke:#91a5c0;opacity:.5}}
+.review-overlay-key{display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-basis:100%;order:1;padding:9px 0 0;border-top:1px solid var(--line);font-size:10px;color:var(--branch-ink)}.review-overlay-caption{font-weight:500}.review-overlay-caption b{font-weight:400;color:var(--muted);margin-left:5px}.review-overlay-source{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;cursor:default}.review-overlay-source i{width:6px;height:6px;border-radius:2px;display:inline-block}.review-overlay-pick{color:#5286bf;font:10px var(--mono);padding:0;margin-left:auto}.review-overlay-scale{font-size:9px;color:var(--muted)}
+.review-context-turn:hover [data-context-segment],.review-context-turn:focus-visible [data-context-segment]{opacity:.75;stroke:none}
+.br-label{paint-order:stroke;stroke:var(--surface);stroke-width:2.5px;stroke-linejoin:round}
+.review-overlay-key[aria-hidden=true]{visibility:hidden;pointer-events:none}
+.review-context-grid{stroke:#9bb0c8;stroke-width:1;stroke-dasharray:4 5;opacity:.6}
+.review-context-axis{fill:#5d7795;font-size:9px}
+.review-context-capped{fill:var(--surface);stroke:#87a4bf;stroke-width:.7;pointer-events:none}
+.review-context-capped-dot{fill:#5286bf;pointer-events:none}
+.review-context-overflow-label{font:9px var(--mono);fill:#4d7198;paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round}
+.review-context-overflow{cursor:pointer}
+.review-branch-halo{fill:none;stroke:var(--surface);stroke-width:4;pointer-events:none}
+.review-compaction-divider{fill:none;stroke:var(--review-compact);stroke-width:1.8;stroke-dasharray:7 5;opacity:.95;pointer-events:none}
+.review-compaction-marker{cursor:pointer;outline:none}.review-compaction-hit{fill:var(--surface);stroke:#ead7a0;stroke-width:1}
+.review-scissors{fill:none;stroke:var(--review-compact);stroke-width:1.55;stroke-linecap:round;stroke-linejoin:round}
+.review-compaction-marker:hover .review-compaction-hit,.review-compaction-marker:focus-visible .review-compaction-hit{fill:#fff3ce;stroke:var(--review-compact)}
+.review-compaction-count{font:10px var(--mono);fill:var(--review-compact)}
+.review-activity-label{paint-order:stroke;stroke:var(--surface);stroke-width:3px;stroke-linejoin:round}
+.review-duration-band{fill:#f2f6fa;stroke:#dce5ed;stroke-width:.7}
+.review-duration-value{font-size:9px;fill:#697b92}
+.review-duration-hit:hover .review-duration-band,.review-duration-hit:focus-visible .review-duration-band{fill:#e5edf7;stroke:#91abc7}
+.review-overlay-source{border:0;background:none;padding:0;color:inherit;font:inherit;cursor:pointer}
+.review-overlay-source:hover{text-decoration:underline;text-underline-offset:3px}
+.review-overlay-scale{padding:0;color:#587596;cursor:pointer}
+.review-source-definition{padding:13px 0;border-bottom:1px solid var(--line)}
+.review-source-definition strong{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:550}
+.review-source-definition i{width:7px;height:7px;border-radius:2px}
+.review-source-definition p{font-size:12px;line-height:1.8;color:var(--muted);margin:7px 0 0}
+.review-round-search{display:flex;gap:10px;align-items:center;margin:5px 0 12px}
+.review-round-search label{font-size:12px;white-space:nowrap}
+.review-round-search input{min-width:0;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:5px;color:var(--ink);background:var(--surface);font:12px var(--mono)}
+.review-round-search button{white-space:nowrap}
+.review-round-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;margin-top:14px}
+.review-round-card{border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.review-round-card>button{display:grid;gap:6px;width:100%;padding:12px;text-align:left;background:var(--surface)}
+.review-round-card strong{font:11px var(--sans);color:var(--muted)}
+.review-round-card b{font:500 14px var(--mono);color:#4d749b}
+.review-round-card>button:hover{background:var(--soft)}
+.review-round-card>div{display:flex;border-top:1px solid var(--line)}
+.review-round-card>div button{flex:1;padding:7px 3px;font:10px var(--sans);color:#557da4}
+.review-round-card>div button:hover{background:var(--soft)}
+.review-toolbar button:disabled{opacity:.3;cursor:default}
+@media(prefers-color-scheme:dark){.review-duration-band{fill:#242e3b;stroke:#425268}.review-duration-hit:hover .review-duration-band{fill:#33435a}.review-duration-value{fill:#9fb4cf}.review-context-capped-dot{fill:#8eb4dc}.review-context-overflow-label{fill:#a1bedb}.review-overlay-scale,.review-round-card b,.review-round-card>div button{color:#9fbddc}}

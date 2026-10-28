@@ -37,7 +37,7 @@ window.__ModuleLoader__.load({
 \n
 .av-root{--av-accent:color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, var(--dsw-alias-state-success-primary));padding:16px;overflow:auto;min-height:0;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.5}
 .av-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-.av-trace-frame{width:100%;height:calc(100vh - 210px);min-height:420px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
+.av-root.av-trace{padding:0;overflow:hidden;min-height:0;height:100%;display:flex;flex-direction:column}.av-root.av-trace .av-trace-frame{flex:1 1 auto;width:100%;height:100%;min-height:0;border:0;border-radius:0;display:block;background:var(--dsw-alias-bg-layer-1)}.av-trace-frame{width:100%;height:calc(100vh - 210px);min-height:420px;border:1px solid var(--dsw-alias-border-l1);border-radius:8px;background:var(--dsw-alias-bg-layer-1)}
 .av-title{margin:0;font-size:14px;font-weight:500;letter-spacing:.01em}
 .av-meta{font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .av-live{width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-success-primary);flex:none}
@@ -1017,19 +1017,148 @@ window.__ModuleLoader__.load({
     }
 
     /* ---------------- 面板 ---------------- */
+    // 官方统计与上下文构成只存在于视图侧。页面由 /analysis-view/trace 现场生成,
+    // 把这类值作为补丁交进 iframe,页面拿到后只启动一次。
+    //
+    // contextTimeline 在浏览器里只有精简头,requests/events 是空的;插件自己的完整明细由
+    // 它自己的只读路由给出(它自己的面板也是这么取的那份)。拿不到就当没有,不猜。
+    function loadTraceDetail(sessionId) {
+      return fetch("api/dsh-context/detail", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      }).then((response) => (response.ok ? response.json() : null))
+        .then((body) => (body && body.ok && body.value && typeof body.value === "object" ? body.value : null))
+        .catch(() => null);
+    }
+
+    function officialTracePatch(sessionId, detail, timeline, pressure, breakdown) {
+      const patch = {}, context = {};
+      // 口径先走官方:构成与路由取官方投影的当前值(contextTimeline 的精简头),
+      // 官方没有的按轮历史才退回插件自己的明细。
+      const head = detail && detail.head && typeof detail.head === "object" ? detail.head : null;
+      const current = timeline?.current ?? detail?.current ?? head?.current;
+      if (current && Object.values(current).some(value => typeof value === "number" && value > 0)) context.current = current;
+      const route = (timeline && (timeline.provider || timeline.model) ? timeline : null)
+        || (detail && (detail.provider || detail.model) ? detail : null) || head;
+      if (route && (route.provider || route.model)) context.route = { provider: route.provider, model: route.model, reasoningEffort: route.reasoningEffort };
+      const requests = Array.isArray(detail?.requests) && detail.requests.length ? detail.requests
+        : Array.isArray(timeline?.requests) && timeline.requests.length ? timeline.requests : null;
+      if (requests) context.requests = requests;
+      if (Object.keys(context).length) patch.context = context;
+      let snapshot;
+      try {
+        const target = clientCtx && clientCtx.uiConversation && clientCtx.uiConversation.binding(sessionId).target("stats");
+        snapshot = target && (typeof target.getSnapshot === "function" ? target.getSnapshot() : typeof target.snapshot === "function" ? target.snapshot() : target);
+      } catch (error) {
+        snapshot = undefined;
+      }
+      if (snapshot || pressure || breakdown) {
+        patch.officialStats = { context: { pressure, breakdown, source: "@deepseek-ai/dsh-token-meter" } };
+        if (snapshot) patch.officialStats.snapshot = snapshot;
+      }
+      return Object.keys(patch).length ? patch : null;
+    }
+
     // 独立的一页:执行路径图,数据由 /analysis-view/trace 现场生成。
+    // 切标签会卸载这个视图;把已经加载好的 iframe 收起来(不销毁、不重载),回来时原样挂回去。
+    const traceFrame = { element: null, session: null };
     function PathView(props) {
       React.useEffect(() => ensureStyle(), []);
       const sessionId = props && props.sessionId;
+      const useProjection = props && props.useProjection;
+      const timeline = useProjection ? useProjection("contextTimeline") : undefined;
+      const pressure = useProjection ? useProjection("contextPressure") : undefined;
+      const breakdown = useProjection ? useProjection("contextBreakdown") : undefined;
+      const [detail, setDetail] = React.useState(undefined);
+      const [settled, setSettled] = React.useState(false);
+      React.useEffect(() => {
+        setDetail(undefined);
+        if (!sessionId) return undefined;
+        let live = true;
+        loadTraceDetail(sessionId).then((value) => { if (live) setDetail(value); });
+        return () => { live = false; };
+      }, [sessionId]);
+      const patch = React.useMemo(
+        () => (sessionId ? officialTracePatch(sessionId, detail, timeline, pressure, breakdown) : null),
+        [sessionId, detail, timeline, pressure, breakdown],
+      );
+      // 明细请求挂了就不再等;页面自己也有兜底计时,空白不会成为正常状态。
+      React.useEffect(() => {
+        if (detail !== undefined) return undefined;
+        const timer = setTimeout(() => setSettled(true), 1500);
+        return () => clearTimeout(timer);
+      }, [detail]);
+      const open = detail !== undefined || settled;
+      const shell = React.useRef(null);
+      const [frame, setFrame] = React.useState(null);
+      // 挂载时复用上一次的 iframe;只有换会话才重新加载。
+      React.useLayoutEffect(() => {
+        const host = shell.current;
+        if (!host || !open || !sessionId) return undefined;
+        let element = traceFrame.element;
+        if (!element || traceFrame.session !== sessionId) {
+          if (element) element.remove();
+          element = document.createElement("iframe");
+          element.className = "av-trace-frame";
+          element.title = "执行路径";
+          element.src = "/analysis-view/trace?session=" + encodeURIComponent(sessionId);
+          traceFrame.element = element;
+          traceFrame.session = sessionId;
+        }
+        host.append(element);
+        setFrame(element);
+        const fit = () => {
+          const parent = host.parentElement;
+          const height = Math.max(host.clientHeight, parent ? parent.clientHeight : 0);
+          if (height > 240) element.style.height = height + "px";
+        };
+        fit();
+        const observer = typeof ResizeObserver === "function" ? new ResizeObserver(fit) : null;
+        if (observer) { observer.observe(host); if (host.parentElement) observer.observe(host.parentElement); }
+        return () => {
+          if (observer) observer.disconnect();
+          setFrame(null);
+          // 只是挪走,不销毁:回来看的是同一份已经渲染好的页面。
+          element.remove();
+        };
+      }, [open, sessionId]);
+      React.useEffect(() => {
+        if (!frame || !patch) return undefined;
+        const post = () => { if (frame.contentWindow) frame.contentWindow.postMessage({ type: "analysis-trace-data", payload: patch }, location.origin); };
+        const onMessage = (event) => {
+          if (event.origin !== location.origin || !event.data || event.data.type !== "analysis-trace-ready") return;
+          post();
+        };
+        window.addEventListener("message", onMessage);
+        frame.addEventListener("load", post);
+        return () => {
+          window.removeEventListener("message", onMessage);
+          frame.removeEventListener("load", post);
+        };
+      }, [frame, patch]);
+      // 页面里的"跳到第 N 轮对话":切到对话并滚到那一轮,复用分析面板的定位逻辑。
+      React.useEffect(() => {
+        if (!sessionId) return undefined;
+        const onJump = (event) => {
+          if (event.origin !== location.origin || !event.data || event.data.type !== "analysis-trace-jump") return;
+          const turn = Number(event.data.turn);
+          if (!Number.isInteger(turn) || turn < 1) return;
+          try {
+            if (props.openView) props.openView("chat", "");
+          } catch (error) {
+            /* 切不过去就按当前 DOM 找 */
+          }
+          waitForChatTurn(turn, 2500).then((row) => {
+            if (row && typeof row.scrollIntoView === "function") row.scrollIntoView({ block: "center", behavior: "smooth" });
+          });
+        };
+        window.addEventListener("message", onJump);
+        return () => window.removeEventListener("message", onJump);
+      }, [sessionId]);
       if (!sessionId) return h("div", { className: "av-root" }, [h(Notice, { key: "n", text: "还没有选中会话" })]);
-      return h("div", { className: "av-root" }, [
-        h("iframe", {
-          key: "f",
-          className: "av-trace-frame",
-          title: "执行路径",
-          src: "/analysis-view/trace?session=" + encodeURIComponent(sessionId),
-        }),
-      ]);
+      return h("div", { className: "av-root av-trace", ref: shell });
     }
 
     function AnalysisPanel(props) {

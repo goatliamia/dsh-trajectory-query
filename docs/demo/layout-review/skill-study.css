@@ -1,0 +1,25 @@
+.skill-study .app{height:calc(100dvh - 87px)}
+.study-banner{padding:5px 24px;font:11px/20px var(--sans);background:var(--soft);border-bottom:1px solid var(--line);color:var(--muted)}
+.study-banner b{color:var(--file-change);font-weight:500;margin-right:12px}
+.skill-study .geist-edition,.skill-study .geist-previous,.skill-study #review-stress,.skill-study #actor-selection{display:none!important}
+.study-materials{flex:none;padding:12px 24px 8px;display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
+.study-materials>span{font:12px var(--sans);color:var(--muted)}
+.study-materials button{font:12px/20px var(--sans);color:var(--ink);padding:4px 10px;border:1px solid var(--line);background:var(--surface);border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:7px}
+.study-materials button[aria-pressed=true]{color:var(--chart-skill);border-color:var(--chart-skill);background:color-mix(in srgb,var(--chart-skill) 7%,var(--surface))}
+.study-materials svg{width:13px;height:14px;fill:none;stroke:currentColor;stroke-width:1.3}
+.study-materials #study-clear{border:0;background:none;margin-left:auto;color:var(--muted)}
+.study-summary{flex:none;padding:0 24px 9px;font:12px/21px var(--sans);color:var(--muted);display:flex;flex-wrap:wrap;gap:5px 12px;align-items:center}
+.study-summary strong{font-weight:500;color:var(--ink)}
+.study-summary button{margin-left:auto;border:0;background:none;padding:0;font:12px var(--sans);color:var(--review-action);cursor:pointer}
+.study-range{fill:var(--chart-skill);opacity:.11;pointer-events:none}
+.study-range-label{font:11px var(--sans);fill:var(--chart-skill);paint-order:stroke fill;stroke:var(--surface);stroke-width:3px;pointer-events:none}
+.skill-study .study-dim{opacity:.24}
+.skill-study .study-related .br-connector{stroke:var(--chart-skill);stroke-width:1.7}
+.skill-study .study-related .review-file-body{stroke:var(--chart-skill);stroke-width:1.7}
+.study-proof{padding:12px 0;margin-bottom:8px;border-bottom:1px solid var(--line);font:13px/22px var(--sans)}
+.study-proof strong{display:block;font-weight:500;color:var(--chart-skill);margin-bottom:6px}
+.study-proof p{margin:0}
+.skill-study .geist-context-overview{padding-top:10px;padding-bottom:8px}
+.skill-study .geist-context-total strong{font-size:24px;line-height:28px}
+.skill-study .geist-context-sources{gap:4px 20px}
+@media(max-width:600px){.study-materials,.study-summary{padding-left:14px;padding-right:14px}.study-banner{padding:5px 14px}.skill-study #review-state{display:none}.study-materials button{padding:5px 8px}}

@@ -30,3 +30,7 @@ plugin/**/*.tgz
 
 # 差分基准里的真实会话缩减流:含真实工具参数与路径,只留本地
 analyzers/fixtures/*.real.json
+
+# Local demos embed real conversation excerpts; retain the builder/template only.
+docs/demo/*.real.html
+docs/demo/*.real.png

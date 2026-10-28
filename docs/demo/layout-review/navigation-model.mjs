@@ -1,0 +1,24 @@
+export function durationGroups(layout, minWidth = 112) {
+  const groups = [];
+  let current = [];
+  for (const row of layout) {
+    current.push(row);
+    if (row.end - current[0].x >= minWidth) {
+      groups.push(current);
+      current = [];
+    }
+  }
+  if (current.length) {
+    if (groups.length) groups.at(-1).push(...current);
+    else groups.push(current);
+  }
+  return groups.map(rows => ({
+    rows, start: rows[0].x, end: rows.at(-1).end,
+    duration: rows.reduce((sum, l) => sum + Math.max(0, (l.turn.end ?? l.turn.steps?.at(-1)?.end ?? l.turn.start) - l.turn.start), 0),
+  }));
+}
+
+export function semanticZoomTarget(layout, anchorX, viewportWidth) {
+  const row = layout.find(l => anchorX >= l.x && anchorX <= l.end);
+  return row && row.end - row.x >= viewportWidth * .85 && row.turn.steps?.length ? row : null;
+}

@@ -5,7 +5,7 @@
 | 插件 | 位置 | 做什么 |
 |---|---|---|
 | `dsh-trajectory-tools` | host（模型工具） | 三个只读入口：查历史事件、取逐字窗口、看关系链 |
-| `dsh-analysis-view` | 「分析」标签 | 当前会话的轮次、花费、工具、incident，以及一次按需解读 |
+| `dsh-analysis-view` | 「分析」与「路径」 | 当前会话的轮次、花费、工具、incident、一次按需解读,以及完整的执行路径页 |
 | `dsh-conversation-search` | 右侧栏 | 在当前会话里搜关键词，点结果跳到对应轮次 |
 
 不改 DSH core，不写回会话，不新增埋点。设计取舍见 [docs/design.md](docs/design.md)。
@@ -33,7 +33,7 @@ cd ../conversation-search     && pnpm pack
 {
   "dependencies": {
     "dsh-trajectory-tools": "file:/绝对路径/dsh-trajectory-tools-0.3.6.tgz",
-    "dsh-analysis-view": "file:/绝对路径/dsh-analysis-view-0.3.19.tgz",
+    "dsh-analysis-view": "file:/绝对路径/dsh-analysis-view-0.10.13.tgz",
     "dsh-conversation-search": "file:/绝对路径/dsh-conversation-search-0.2.1.tgz"
   },
   "dsh": {
@@ -77,8 +77,8 @@ cd ~/.dsh/profiles/web && pnpm install
 Web GUI「对话 | 轨迹」旁边的第三个标签：
 
 | 区块 | 内容 |
-| 路径(独立标签) | 当前一轮的主线与支路、轮次条、时间轴;点节点看真实事件,数据从 /analysis-view/trace 现场生成 |
 |---|---|
+| 路径(独立标签) | 当前一轮的主线与支路、轮次条、时间轴,加上上下文构成、文件对象、工具结果、子代理与 Skill;点节点看真实事件,数据从 /analysis-view/trace 现场生成 |
 | KPI | 轮次、工具调用、失败、缓存命中、事件 |
 | 轮次 | 一条按时长分宽的带子，颜色按失败数；点有失败的轮次跳到轨迹 |
 | 花费 | 每轮命中与未命中分开画、输出单独一条，右侧是这一轮的命中率；点一行跳到对话对应轮次。走官方 API 时每个数字下面直接给这项花了多少钱 |
@@ -91,6 +91,7 @@ Web GUI「对话 | 轨迹」旁边的第三个标签：
 ```text
 GET /analysis-view/digest?session=<id>      # 确定性事实，2 秒缓存，&fresh=1 强刷
 GET /analysis-view/interpret?session=<id>   # 按需解读，会消耗一次模型调用
+GET /analysis-view/trace?session=<id>       # 「路径」整页(自包含 HTML)，每次现读
 ```
 
 ### 对话搜索
@@ -141,7 +142,7 @@ node plugin/conversation-search/self-test.mjs   # 对话搜索
 | 包 | 版本 |
 |---|---|
 | dsh-trajectory-tools | 0.3.6 |
-| dsh-analysis-view | 0.3.19 |
+| dsh-analysis-view | 0.10.13 |
 | dsh-conversation-search | 0.2.1 |
 
 ## 许可证

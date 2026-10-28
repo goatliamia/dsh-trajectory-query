@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>执行路径 · 布局预览</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<main class="app">
+  <header class="page-head"><div class="brand"><span class="brand-mark">↳</span><span>DSH <span class="slash">/</span> 执行路径</span><span class="preview-tag">独立预览</span></div><button class="text-button" id="baseline-toggle" aria-expanded="false">查看安装版原图 ↗</button></header>
+  <section class="intro"><div><h1 id="title">正在载入轨迹…</h1><p id="subtitle">读取当前 DSH 会话快照</p></div><div class="data-switch" aria-label="数据样本"><button class="selected" data-sample="real" aria-pressed="true">当前会话</button><button data-sample="dense" aria-pressed="false">密集样本 <span>160</span></button></div></section>
+  <section class="baseline" id="baseline" hidden><div class="baseline-head"><span>安装版快照 · 与当前会话使用同一份数据</span><button class="text-button" id="baseline-close">收起 ×</button></div><iframe title="安装版原始路径图" src="about:blank"></iframe></section>
+  <section class="workspace">
+    <div class="chart-column">
+      <div class="chart-toolbar"><div class="chart-label"><span class="live-dot"></span><strong>执行全景</strong><span id="view-info"></span></div><div class="zoom-controls"><button id="zoom-out" aria-label="缩小">−</button><button id="fit" title="回到全览">全览</button><button id="zoom-in" aria-label="放大">＋</button></div></div>
+      <div class="viewport" id="viewport"><svg id="graph" role="group" aria-label="执行时间线、请求重试与错误分支"></svg></div>
+      <div class="chart-footer"><div class="legend"><span><i class="line-key"></i>执行主线</span><span><i class="error-key"></i>受阻</span><span><i class="success-key"></i>后续成功</span><span><b class="retry-key">↻</b>请求重试</span></div><span class="gesture">滚轮缩放 · 拖动平移</span></div>
+      <div class="navigator"><span id="range-label">整段会话</span><div id="minimap" class="minimap" role="slider" tabindex="0" aria-label="时间窗口" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div><button class="text-button" id="reset">复位</button></div>
+    </div>
+    <aside class="inspector" id="inspector"><div class="inspector-head"><span>事件详情</span><button id="clear-selection" aria-label="清除选择">×</button></div><div id="detail" class="detail"></div></aside>
+  </section>
+  <footer class="page-footer"><span id="coverage"></span><span>原始时间位置保留 · 聚合只改变展示</span></footer>
+  <div role="status" aria-live="polite" class="sr-only" id="announcement"></div>
+</main>
+<script type="module" src="/app.js"></script>
+</body></html>

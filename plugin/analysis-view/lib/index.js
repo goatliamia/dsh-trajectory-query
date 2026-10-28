@@ -3,19 +3,25 @@
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { gzip } from "node:zlib";
+import { promisify } from "node:util";
 import { incident } from "./incident-shape.js";
 import { buildTracePayload } from "./trace-build.js";
+import { readContextTimeline, traceActors, traceContext } from "./trace-context.js";
+
+const gzipAsync = promisify(gzip);
 
 const ROUTE_PATH = "/analysis-view";
+const TRACE_FONTS = { "Geist-Variable.woff2": "font/woff2", "GeistMono-Variable.woff2": "font/woff2" };
 
 /** 「执行路径」页面:模板 + 渲染器 + 本次会话的数据,拼成一份自包含 HTML。每次现读,改样式不用重启。 */
-function renderTracePage(payload) {
+export function renderTracePage(payload) {
   const read = (name) => readFileSync(new URL("./trace/" + name, import.meta.url), "utf8");
-  let page = read("template.html");
-  const renderer = ["graph.js", "panorama.js", "scene.js", "branches.js"].map(read).join("\n");
-  page = page.replace("</style>", () => read("branches.css") + "\n</style>").replace("/*__TRACE_RENDERER__*/", () => renderer);
   const json = JSON.stringify(payload).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
-  return page.replace("/*__TRACE_DATA__*/", () => json);
+  // 一次性替换两个占位符:会话正文里可能出现同样的字符串,分批替换会把它替换进数据里。
+  const renderer = read("page.js");
+  return read("page.html").replace(/\/\*__TRACE_DATA__\*\/|\/\*__TRACE_RENDERER__\*\//g,
+    token => (token === "/*__TRACE_DATA__*/" ? json : renderer));
 }
 
 /**
@@ -483,7 +489,7 @@ function disposeObservation(observation) {
 async function loadEvents(ctx, sessionId) {
   const query = ctx.get("sessionQuery");
   if (query && typeof query.observeSession === "function") {
-    const observation = await query.observeSession(sessionId);
+    const observation = await query.observeSession(sessionId, { projectionMode: "none" });
     try {
       return observation.events || [];
     } finally {
@@ -516,6 +522,71 @@ function withTimeout(promise, ms) {
     const timer = setTimeout(() => reject(new Error("analysis-view: session load timed out")), ms);
     promise.then((value) => { clearTimeout(timer); resolve(value); }, (error) => { clearTimeout(timer); reject(error); });
   });
+}
+
+// 大会话(几百轮)的正文里,单次调用的参数/结果占了大头;截短只影响展开细节,不影响结构。
+function shrinkTracePayload(payload) {
+  const session = payload.sessions && payload.sessions[0];
+  const turns = (session && session.turns) || [];
+  if (turns.length < 200) return payload;
+  const clamp = (cell, limit) => {
+    if (!cell || typeof cell.text !== "string" || cell.text.length <= limit) return;
+    cell.omitted = (cell.omitted || 0) + cell.text.length - limit;
+    cell.text = cell.text.slice(0, limit) + "…";
+  };
+  for (const turn of turns) for (const step of turn.steps || []) for (const call of step.calls || []) {
+    clamp(call.args, 600);
+    clamp(call.result, 600);
+  }
+  for (const fact of Object.values((payload.context && payload.context.callFacts) || {})) {
+    if (typeof fact.preview === "string" && fact.preview.length > 400) fact.preview = fact.preview.slice(0, 400) + "…";
+    if (typeof fact.outcome === "string" && fact.outcome.length > 400) fact.outcome = fact.outcome.slice(0, 400) + "…";
+  }
+  return payload;
+}
+
+// 同一会话、同一个尾 seq 的重复打开不必重算界面,也不必重传 5MB。
+const traceCache = new Map();
+const TRACE_CACHE_MAX = 4;
+
+/** 活着的会话直接读尾 seq;拿不到就说明这份缓存不能凭 seq 判断。 */
+function liveTraceSeq(ctx, sessionId) {
+  try {
+    const sessions = ctx.get("sessions");
+    const session = sessions && typeof sessions.get === "function" ? sessions.get(sessionId) : undefined;
+    return session && typeof session.seq === "number" ? session.seq : null;
+  } catch {
+    return null;
+  }
+}
+
+function cachedTrace(sessionId, seq) {
+  const hit = traceCache.get(sessionId);
+  if (!hit || hit.seq !== seq) return undefined;
+  traceCache.delete(sessionId);
+  traceCache.set(sessionId, hit);
+  return hit;
+}
+
+/** 10MB 的页面对本机也一样贵:客户端说支持 gzip 就压一次,压好的留在缓存里。 */
+async function sendHtml(res, req, headers, entry, sessionId) {
+  const accepts = String(req.headers["accept-encoding"] || "").includes("gzip");
+  if (!accepts || entry.html.length < 256 * 1024) {
+    res.writeHead(200, headers);
+    res.end(entry.html);
+    return;
+  }
+  if (!entry.gz) entry.gz = await gzipAsync(Buffer.from(entry.html, "utf8"));
+  const hit = traceCache.get(sessionId);
+  if (hit && hit.etag === entry.etag) hit.gz = entry.gz;
+  res.writeHead(200, { ...headers, "content-encoding": "gzip", "content-length": entry.gz.length });
+  res.end(entry.gz);
+}
+
+function rememberTrace(sessionId, entry) {
+  traceCache.delete(sessionId);
+  traceCache.set(sessionId, entry);
+  while (traceCache.size > TRACE_CACHE_MAX) traceCache.delete(traceCache.keys().next().value);
 }
 
 function clipText(value, max) {
@@ -1043,13 +1114,53 @@ export function apply(ctx) {
           const fromProjections = await buildContextFromProjections(ctx);
           return send(200, fromProjections !== null ? fromProjections : buildContextSessions(ctx));
         }
+        if (url.pathname.startsWith(ROUTE_PATH + "/trace/fonts/")) {
+          const name = url.pathname.slice((ROUTE_PATH + "/trace/fonts/").length);
+          if (!Object.hasOwn(TRACE_FONTS, name)) return send(404, { error: "not found" });
+          res.writeHead(200, { "content-type": TRACE_FONTS[name], "cache-control": "public, max-age=86400" });
+          res.end(readFileSync(new URL("./trace/fonts/" + name, import.meta.url)));
+          return;
+        }
         const sessionId = url.searchParams.get("session");
         if (!sessionId) return send(400, { error: "missing session" });
         if (url.pathname === ROUTE_PATH + "/trace") {
+          const started = Date.now();
+          const sendTiming = (extra) => Object.entries(extra).map(([name, ms]) => name + ";dur=" + ms).join(", ");
+          const seq = liveTraceSeq(ctx, sessionId);
+          const cached = seq === null ? undefined : cachedTrace(sessionId, seq);
+          if (cached !== undefined) {
+            const headers = {
+              "content-type": "text/html; charset=utf-8",
+              "cache-control": "private, no-cache",
+              etag: cached.etag,
+              "server-timing": sendTiming({ cache: Date.now() - started }),
+            };
+            if (req.headers["if-none-match"] === cached.etag) { res.writeHead(304, headers); res.end(); return; }
+            await sendHtml(res, req, headers, cached, sessionId);
+            return;
+          }
           const events = await withTimeout(loadEvents(ctx, sessionId), 8000);
-          const html = renderTracePage(buildTracePayload(events, sessionId));
-          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-          res.end(html);
+          const loaded = Date.now();
+          const payload = buildTracePayload(events, sessionId);
+          // 事件里能推出的层先给;官方统计由视图侧通过官方 hook 补上。
+          payload.context = traceContext(events, payload, readContextTimeline(ctx, sessionId));
+          // 子代理支线是锦上添花:读不到就少这一层,绝不把整页拖到超时。
+          try {
+            Object.assign(payload.context, await withTimeout(
+              traceActors(events, payload, payload.context.skillEvents, id => withTimeout(loadEvents(ctx, id), 1200)), 2500));
+          } catch { /* 子代理与 Skill 回放失败不影响主图 */ }
+          const html = renderTracePage(shrinkTracePayload(payload));
+          const etag = '"' + createHash("sha1").update(html).digest("hex").slice(0, 16) + '"';
+          const version = seq !== null ? seq : events.at(-1)?.seq ?? 0;
+          rememberTrace(sessionId, { seq: version, html, etag, gz: null });
+          const headers = {
+            "content-type": "text/html; charset=utf-8",
+            "cache-control": "private, no-cache",
+            etag,
+            "server-timing": sendTiming({ load: loaded - started, build: Date.now() - loaded }),
+          };
+          if (req.headers["if-none-match"] === etag) { res.writeHead(304, headers); res.end(); return; }
+          await sendHtml(res, req, headers, { html, etag, gz: null }, sessionId);
           return;
         }
         if (url.pathname === ROUTE_PATH + "/digest") {

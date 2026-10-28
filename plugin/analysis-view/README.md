@@ -97,20 +97,50 @@ node analyzers/shape-law.mjs --mutate   # prove the laws bite: reasonable mistak
 Dynamic plugins are session-scoped and vanish on reload; this one is installed into the web profile.
 
 ```text
-1. pnpm pack                      # -> dsh-analysis-view-0.3.19.tgz
+1. pnpm pack                      # -> dsh-analysis-view-0.10.13.tgz
 2. add to ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.3.19.tgz"
+     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.10.13.tgz"
      dsh.profile.bundles: append "dsh-analysis-view"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. rebuild / restart `dsh web`    # so the new client module enters the bundle
 ```
+
+### The 路径 page
+
+The separate **路径** tab serves `GET /analysis-view/trace?session=<id>`: one self-contained page per
+request, assembled from `lib/trace/page.html` + `lib/trace/page.js` and the session payload. It is the
+Geist visual study from `docs/demo/layout-review`, ported back into the plugin — overview and per-turn
+action path, context composition, file objects, tool-result branches, sub-agents and Skill observation.
+
+Renderer sources are authored in the demo, not here. `node scripts/port-geist-page.mjs` splits the
+built demo page into those two runtime assets and copies the pure model modules into
+`lib/trace/models/`; never hand-edit `page.html` or `page.js`.
+
+Data arrives from two sides, because two families of values only exist in the view:
+
+- Host (`lib/trace-context.js`): call facts, file operations, compaction/pruning boundaries, LLM
+  retries, supplement-source counts, Skill load records, Skill retention (a replay through the
+  official `SurfaceManager`), and sub-agent branches (child sessions read through the same Session
+  query service).
+- View (`lib/client.js`): the official stats snapshot from the `stats` conversation target, plus
+  `contextPressure` / `contextBreakdown` / `contextTimeline` read through the standard
+  `useProjection` hook seat. They arrive as one `postMessage` patch; the page boots only after it,
+  and falls back to the base graph after two seconds without one.
+
+Both halves degrade: absent projections or a missing stats target hide those layers, while the graph
+still renders. The `contextTimeline` value is also read on the Host when the session is live
+(`ctx.sessionProjections.snapshot`), which is what supplies the per-request composition.
 
 ### Files
 
 | File | Role |
 |---|---|
 | `lib/client.js` | the client plugin; must self-register via `window.__ModuleLoader__.load({ id, factory })`; `require("react")` instead of a global |
-| `lib/index.js` | host half: computes incidents and serves `GET /analysis-view/digest?session=<id>` (facts + `log` identity) and `GET /analysis-view/interpret?session=<id>` (model interpretation, called only when expanded) |
+| `lib/index.js` | host half: computes incidents and serves `GET /analysis-view/digest?session=<id>` (facts + `log` identity), `GET /analysis-view/interpret?session=<id>` (model interpretation, called only when expanded), `GET /analysis-view/trace?session=<id>` (the 路径 page) and `/analysis-view/trace/fonts/*` |
+| `lib/trace-build.js` | session events → the page payload (turns, steps, calls, incidents, communications) |
+| `lib/trace-context.js` | the payload's extra layers: call facts, file operations, boundaries, retries, supplements, Skills, sub-agents |
+| `lib/trace-skill-evidence.js` | Skill text/retention evidence (a copy of `analyzers/dsh-skill-evidence.mjs`) |
+| `lib/trace/` | the generated page assets (`page.html`, `page.js`), pure model modules (`models/`) and the Geist fonts |
 | `lib/incident-shape.js` | the single declaration of the incident fact: ordered fields, types, `incident()` constructor, and the participant registry |
 | `cordis.patch.yml` | bundle layer that inserts the plugin row |
 | `package.json` | `dsh.bundle.patch` + `dsh.client` (platform web + client injects) |
@@ -119,7 +149,7 @@ Dynamic plugins are session-scoped and vanish on reload; this one is installed i
 
 - Refresh the GUI → the **分析** tab renders the work path for the current session.
 - If it is blank, check the browser console for the first error.
-- Panel render: `node plugin/analysis-view/self-test.mjs` (must print `ALL PASS (14 checks)`); it
+- Panel render: `node plugin/analysis-view/self-test.mjs` (must print `ALL PASS (21 checks)`); it
   executes the real component tree against a React shim, so no browser is needed.
 - Analyzer semantics: `node analyzers/self-test.mjs` (must print `ALL PASS`).
 - Shape contract: `node analyzers/shape-law.mjs` and `node analyzers/shape-law.mjs --mutate`
@@ -204,20 +234,47 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 动态插件是会话级、刷新即失;这个是装进 web profile 的常驻插件。
 
 ```text
-1. pnpm pack                      # 生成 dsh-analysis-view-0.3.19.tgz
+1. pnpm pack                      # 生成 dsh-analysis-view-0.10.13.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.3.19.tgz"
+     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.10.13.tgz"
      dsh.profile.bundles 追加 "dsh-analysis-view"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重建/重启 `dsh web`,让新的 client 模块进入前端包
 ```
+
+### 路径页
+
+单独的「路径」标签取 `GET /analysis-view/trace?session=<id>`:每次请求现拼一份自包含页面,
+由 `lib/trace/page.html` + `lib/trace/page.js` 加本次会话的数据组成。它就是
+`docs/demo/layout-review` 里那套 Geist 视觉试作搬回插件后的样子 —— 全景与逐轮行动路径、上下文构成、
+文件对象、工具结果枝条、子代理与 Skill 观察。
+
+页面代码的**作者位置在 demo,不在插件里**。`node scripts/port-geist-page.mjs` 把构建好的 demo 页面
+拆成这两个运行时资产,并把纯模型模块复制到 `lib/trace/models/`;`page.html` 与 `page.js` 不要手改。
+
+数据分两头来,因为有两类值只存在于视图侧:
+
+- host(`lib/trace-context.js`):调用事实、文件操作、压缩与裁短边界、模型重试、补充内容计数、
+  Skill 读入记录、Skill 正文存续(走官方 `SurfaceManager` 回放)、子代理支线(子会话同样通过
+  Session 查询服务读取)。
+- 视图(`lib/client.js`):`stats` 会话目标里的官方统计快照,以及通过标准 `useProjection` 钩子位读到的
+  `contextPressure` / `contextBreakdown` / `contextTimeline`。这些作为**一次** `postMessage` 补丁送达,
+  页面收到后才启动;两秒内没收到就先用基础图启动。
+
+两边都可缺:投影没到、没有 stats 目标时,对应图层不出现,主图照常渲染。
+会话在本进程里活着时,host 也会直接读一次 `contextTimeline`(`ctx.sessionProjections.snapshot`),
+每轮请求构成就来自这里。
 
 ### 文件
 
 | 文件 | 作用 |
 |---|---|
 | `lib/client.js` | 客户端插件本体;必须以 `window.__ModuleLoader__.load({ id, factory })` 自注册,`require("react")` 而非全局 |
-| `lib/index.js` | host 半边:计算 incidents,提供 `GET /analysis-view/digest?session=<id>`(事实 + `log` 身份)与 `GET /analysis-view/interpret?session=<id>`(AI 解读,仅展开时才调用) |
+| `lib/index.js` | host 半边:计算 incidents,提供 `GET /analysis-view/digest?session=<id>`(事实 + `log` 身份)、`GET /analysis-view/interpret?session=<id>`(AI 解读,仅展开时才调用)、`GET /analysis-view/trace?session=<id>`(路径页)与 `/analysis-view/trace/fonts/*` |
+| `lib/trace-build.js` | 会话事件 → 页面数据(轮次、步骤、调用、incident、通信) |
+| `lib/trace-context.js` | 页面的补充图层:调用事实、文件操作、边界、重试、补充内容、Skill、子代理 |
+| `lib/trace-skill-evidence.js` | Skill 正文与存续证据(`analyzers/dsh-skill-evidence.mjs` 的副本) |
+| `lib/trace/` | 生成出来的页面资产(`page.html`、`page.js`)、纯模型模块(`models/`)与 Geist 字体 |
 | `lib/incident-shape.js` | incident 事实的唯一声明:有序字段、类型、`incident()` 构造器、参与者认领表 |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |
 | `package.json` | `dsh.bundle.patch` + `dsh.client`(platform web + client injects) |
@@ -226,7 +283,7 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 
 - 刷新 GUI → 「分析」标签按当前会话渲染工作路径。
 - 若空白:看浏览器控制台第一条报错。
-- 面板渲染:`node plugin/analysis-view/self-test.mjs`(必须输出 `ALL PASS (14 checks)`);
+- 面板渲染:`node plugin/analysis-view/self-test.mjs`(必须输出 `ALL PASS (21 checks)`);
   它用一个 React 垫片真的执行组件树,不需要开浏览器。
 - 分析器语义:`node analyzers/self-test.mjs`(必须输出 `ALL PASS`)。
 - 形状契约:`node analyzers/shape-law.mjs` 与 `node analyzers/shape-law.mjs --mutate`
