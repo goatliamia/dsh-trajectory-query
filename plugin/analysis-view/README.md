@@ -13,14 +13,7 @@ English | [中文](#中文)
 
 ### What it is
 
-A pure-client DSH plugin that registers a third sibling tab next to **Conversation | Trajectory**:
-
-```text
-conversation.view  →  [对话 chat] [轨迹 trajectory] [分析 analysis]
-```
-
-It reuses the trajectory view's own projection (`useTrajectory((s) => s)`) — no extra fetch,
-no separate data source — and renders a **deterministic, evidence-cited** view.
+A DSH Web GUI plugin providing **Analysis** and **Path** views for the current conversation.
 
 ### What the tab shows
 
@@ -34,63 +27,16 @@ no separate data source — and renders a **deterministic, evidence-cited** view
   DeepSeek API (`deepseek-flash` / `deepseek-v4-pro`), the right side of the summary shows the official
   unit prices for miss / hit / output plus a total, with the peak/off-peak schedule already applied;
   anything else shows no price at all.
-- **Tools** — three rings side by side: categories → that category's tools → the selected tool's calls
-  per turn. All three are visible by default (largest category and its top tool); picking a category or
-  a tool only changes the other two. Category colours avoid red, which stays reserved for errors. The
-  category is decided by the **host from each tool's own declaration**, never from a name list: the
-  parameter schema decides first (`file_path` / `path` → 文件, `command` → 执行, `url`/`queries` → 网络,
-  `session`/`seq` → 上下文, `todos`/`objective`/schedule fields / `questions` / `prompt` / `script` /
-  agent ids → 协作, `provider`/`service`/`entry` → 插件), then name and description keywords, and
-  anything unrecognised lands in 其他.
+- **Tools** — three rings show categories, tools and calls per turn. Selecting a category or tool updates the related rings.
 - **Incident cards** — only *evidence-backed* incidents. Each card is a causal chain:
   `Cause / Runtime knew / Model received / Harness response / Impact`, with evidence `seq` chips
   that jump to the Trajectory tab.
-- **Open interpretation (one model call)** — a button; when pressed, the host makes one direct
-  `llm.stream` call to the **current default model** with a fixed system prompt and a bounded
-  evidence block (incidents + cost + up to 8 verbatim excerpts). No skill, no agent loop, nothing
-  written back to the session; every claim cites `(session, seq@logId)`. Off by default because it
-  costs tokens.
+- **Interpretation** — click to request an explanation from the current default model.
+  It consumes tokens and includes evidence citations. It is not run until requested.
 
-The panel renders one `conversation.view` seat (`id: "analysis"`), next to Conversation and
-Trajectory — no new sidebar, no tools registered, zero bytes in the tool table.
+The Analysis tab appears next to Conversation and Trajectory.
 
-### Design principles
 
-1. **Detection is deterministic, not model judgement.** What counts as an incident is decided by
-   analyzers over typed events; the model may interpret, never invent.
-2. **The panel only renders evidence.** It never turns surface patterns into incidents.
-3. **No profiler counts.** Tool-name histograms and call counts are not incidents.
-   Two traps are pinned by tests: *mention ≠ occurrence* (a string in the log is not an event)
-   and *same name ≠ repeat* (a repeat needs the same tool **and** the same arguments).
-4. **Honest gaps are labeled.** Same-args repeat and no-op turns need arguments/state that the
-   client projection does not carry, so they are marked `needs host` instead of guessed.
-
-### The incident shape has exactly one home
-
-`incidents` is a ten-field fact (`type severity title detail cause runtimeKnew modelKnew harness impact seqs`).
-It is written by three carriers — the repo analyzer, this plugin's host half, and this plugin's client
-half (which cannot import anything) — so "who owns the shape" used to be a habit, not a fact.
-
-It is now declared once, in **`lib/incident-shape.js`**, and that file lives **in the package**: the
-runtime cannot import repo scripts, so the declaration travels with the plugin and `analyzers/`
-imports it *back*. Records can only be built through `incident(...)`, which throws on a missing field,
-an undeclared field, a wrong type, or a chip-shaped `seqs` — so "each branch writes the same ten names
-again" is no longer writable.
-
-`analyzers/shape-law.mjs` keeps it that way:
-
-```text
-node analyzers/shape-law.mjs            # shape / claim / drift / differential / witness
-node analyzers/shape-law.mjs --mutate   # prove the laws bite: reasonable mistakes must be caught
-```
-
-- **claim** — a detector finds every file that knows this shape; each one must be listed in the
-  declaration with a role (source / consumer / witness) and a form (what `seqs` is there). Forgetting
-  a participant *is* an error.
-- **drift** — carriers that build their own literal (the client half) are compared key-by-key, in order.
-- **differential** — byte-identical JSON against a frozen baseline (synthetic streams + reduced real
-  sessions), key order included.
-- **witness** — the historical `experiments/reports/*.facts.json` is read and validated, never rewritten.
 
 ### Install (permanent, not a dynamic plugin)
 
@@ -105,73 +51,19 @@ Dynamic plugins are session-scoped and vanish on reload; this one is installed i
 4. rebuild / restart `dsh web`    # so the new client module enters the bundle
 ```
 
-### The 路径 page
+### Path view
 
-The separate **路径** tab opens `GET /analysis-view/trace?staged=1&session=<id>`: the actual page starts
-immediately, followed by the real trunk, eagerly prefetched bodies/file layers, and sub-agent layers. All
-stages share one main-session observation and a captured cut; a selected turn gets a small priority
-request while bulk prefetch continues. Parameters/results retain the original projection's excerpts;
-the staged route does not apply the old extra 600-character clamp for long sessions. The standalone
-`GET /analysis-view/trace?session=<id>` remains a self-contained snapshot. Both use
-`lib/trace/page.html` + `lib/trace/page.js`. It is the
-Geist visual study from `docs/demo/layout-review`, ported back into the plugin — overview and per-turn
-action path, context composition, file objects, tool-result branches, sub-agents and Skill observation.
+Open the **Path** tab to browse the session overview and individual turns.
+Context composition, file history, tool results, subagent branches and Skill records are available
+from the page. Tool parameters and results open in the detail drawer.
 
-The path projection includes native Code Mode dispatch events, folds successful wrappers when their
-children are recorded, and preserves pure code runs, wrapper failures and pending dispatches. Grep
-associates only returned match fragments; direct reads and search fragments are counted separately.
-Each twig has one endpoint symbol, with an exceptional state replacing the ordinary tool glyph.
-Context category counts also show their existing estimated composition percentage inline.
+The page appears in stages: the real trunk appears first, followed by details and other layers.
+Selecting a turn gives its details priority. Viewport, zoom and selection remain while data arrives.
+When older context data is outside the current range, use **Load earlier increments**.
 
-Pages are cached against the official live cut or persistence revision, child revisions and renderer
-assets. Unchanged requests reuse HTML/gzip and support ETag/304. The parent observation stays pinned
-while up to two children are read; a child timeout preserves other branches and releases late leases.
-HTML and staged responses share four cache slots, an estimated 64 MiB budget and two-minute idle
-expiration (one oversized current snapshot may exceed the estimate). Only compressed responses are
-retained alongside parsed data. Main reads, actors and history replay have global concurrency limits.
-Leaving or hiding the page cancels unfinished enrichment. After leaving the path view, its hidden iframe expires after two minutes;
-quick re-entry reuses it and checks data/assets independently. Context summary updates do not redraw
-the graph; context history replaces only its own SVG layer. Layer updates keep viewport, zoom and selections;
-unready layers have local loading/error states rather than gating the first graph.
-Older context outside the official retention window is labeled and can be requested explicitly. History
-uses the public detached projection restore API in batches, without changing live projections or global
-retention settings. Each snapshot retains one history window of at most 1500 request records.
-Run `node plugin/analysis-view/perf-test.mjs`, `node plugin/analysis-view/resources-test.mjs` and `node plugin/analysis-view/stages-test.mjs` from the
-repository root for cache, replay, staged-read consistency, priority bodies and lease checks.
+The standalone `GET /analysis-view/trace?session=<id>` URL returns a self-contained snapshot.
 
-Renderer sources are authored in the demo, not here. `node scripts/port-geist-page.mjs` splits the
-built demo page into those two runtime assets and copies the pure model modules into
-`lib/trace/models/`; never hand-edit `page.html` or `page.js`.
 
-Data arrives from two sides, because two families of values only exist in the view:
-
-- Host (`lib/trace-context.js`): call facts, file operations, compaction/pruning boundaries, LLM
-  retries, supplement-source counts, Skill load records, Skill retention (a replay through the
-  official `SurfaceManager`), and sub-agent branches (child sessions read through the same Session
-  query service).
-- View (`lib/client.js`): the official stats snapshot from the `stats` conversation target, plus
-  `contextPressure` / `contextBreakdown` / `contextTimeline` read through the standard
-  `useProjection` hook seat. They arrive as session-scoped `postMessage` patches and update an already
-  interactive graph; there is no 1.5/2-second boot gate for these optional values.
-
-Both halves degrade: absent projections or a missing stats target hide those layers, while the graph
-still renders. The `contextTimeline` value is also read on the Host when the session is live
-(`ctx.sessionProjections.snapshot`), which is what supplies the per-request composition.
-
-### Files
-
-| File | Role |
-|---|---|
-| `lib/client.js` | the client plugin; must self-register via `window.__ModuleLoader__.load({ id, factory })`; `require("react")` instead of a global |
-| `lib/index.js` | host half: computes incidents and serves `GET /analysis-view/digest?session=<id>` (facts + `log` identity), `GET /analysis-view/interpret?session=<id>` (model interpretation, called only when expanded), `GET /analysis-view/trace?session=<id>` (the 路径 page) and `/analysis-view/trace/fonts/*` |
-| `lib/trace-build.js` | session events → the page payload (turns, steps, calls, incidents, communications) |
-| `lib/trace-stages.js` | shared captured cut, lightweight trunk, eager detail/actor enrichment and priority turn reads |
-| `lib/trace-context.js` | the payload's extra layers: call facts, file operations, boundaries, retries, supplements, Skills, sub-agents |
-| `lib/trace-skill-evidence.js` | Skill text/retention evidence (a copy of `analyzers/dsh-skill-evidence.mjs`) |
-| `lib/trace/` | the generated page assets (`page.html`, `page.js`), pure model modules (`models/`) and the Geist fonts |
-| `lib/incident-shape.js` | the single declaration of the incident fact: ordered fields, types, `incident()` constructor, and the participant registry |
-| `cordis.patch.yml` | bundle layer that inserts the plugin row |
-| `package.json` | `dsh.bundle.patch` + `dsh.client` (platform web + client injects) |
 
 ### Verify
 
@@ -185,11 +77,10 @@ still renders. The `contextTimeline` value is also read on the Host when the ses
 
 ### Limitations
 
-- The host half serves incidents at `GET /analysis-view/digest?session=<id>` (same-args repeat, no-op turn, harness response); the client fetches it and renders evidence only.
-- `Harness response` is derived from error codes, not a template.
-- Host analysis and the repo analyzers are still two implementations — they now share one declaration, but their *values* differ on purpose (e.g. severity), so each keeps its own self-test and the differential baseline is frozen per implementation.
-- The client half cannot import the declaration (it is a `window.__ModuleLoader__` factory with no relative imports), so its literal is held in place by the drift law instead of by the constructor.
-- Sessions are read through `sessionQuery.observeSession(id)` (the sanctioned path since DSH 0.1.6 deprecated `snapshotEvents`); the observation is disposed right after use. Fallbacks keep older deployments working: in-memory snapshot → `sessionPersistence.open(id, 'read')` → `SessionHandle.read()` → legacy `inspect()`.
+- Missing official statistics or context data is shown as unavailable; other available content remains accessible.
+- Earlier context may require an explicit history load.
+- Model interpretation is optional and consumes tokens.
+- Price display is limited to the supported official API models.
 
 ---
 
@@ -198,14 +89,7 @@ still renders. The `contextTimeline` value is also read on the Host when the ses
 
 ### 这是什么
 
-一个**纯客户端** DSH 插件,在「对话 | 轨迹」旁边注册第三个同级标签:
-
-```text
-conversation.view  →  [对话] [轨迹] [分析]
-```
-
-它复用轨迹视图自己的投影(`useTrajectory((s) => s)`),不额外取数、不另建数据源,
-渲染的是一个**确定性、带证据引用**的视图。
+为 DSH Web GUI 的当前会话提供「分析」和「路径」视图的插件。
 
 ### 面板内容
 
@@ -218,44 +102,11 @@ conversation.view  →  [对话] [轨迹] [分析]
   点类别或工具只切换后两张;类别色不用红,红只留给错误。
 - **Incident 卡片**:只列**有证据**的 incident,每张是一条因果链
   `Cause / Runtime 知道 / Model 收到 / Harness 反应 / 影响`,并带证据 `seq` 徽章。
-- **开放解读(一次模型调用)**:按钮触发,host 用**当前默认模型**直接发一次 `llm.stream`——system prompt
-  固定,证据块是 incident + cost + 最多 8 条逐字片段;不走 agent loop、不加载 skill、不写回会话。
-  每条陈述带引用;默认不调用(会消耗 tokens)。输出触到 token 上限时面板会标"已截断"。
+- **解读**：点击后由当前默认模型解释，消耗 token，并附证据引用。默认不调用；输出达到上限时显示「已截断」。
 
-面板只占 `conversation.view` 的一个位置(`id: "analysis"`,与「对话」「轨迹」同一排),不新开侧栏、
-不注册工具,工具表一个字节都不占。
+「分析」与「对话」「轨迹」位于同一排标签。
 
-### 设计原则
 
-1. **检测是确定性的,不是模型判断。** 什么算 incident 由分析器按类型化事件判定;模型只解释,不发明。
-2. **面板只渲染证据**,绝不把表面模式当 incident。
-3. **不做 profiler 计数。** 工具名直方图、调用次数不是 incident。两条坑已被测试钉死:
-   *提及 ≠ 发生*(日志里出现字符串不等于事件发生)、*同名 ≠ 重复*(重复必须同工具**且**同参)。
-4. **诚实标注缺口。** 同参重复、空转 turn 需要参数/状态,而客户端投影不携带,因此标 `需 host`,不猜。
-
-### incident 的形状只有一份家
-
-`incidents` 是十个字段的事实(`type severity title detail cause runtimeKnew modelKnew harness impact seqs`)。
-写它的地方有三个 —— 仓库分析器、本插件的 host 半边、本插件的客户端半边(它 import 不到任何东西)——
-所以"形状归谁管"以前是习惯,不是事实。
-
-现在它是**一处声明**:`lib/incident-shape.js`,而且这个文件**住在包里** —— 运行期 import 不到仓库脚本,
-所以声明跟着包走,由 `analyzers/` **反过来** import 它。记录只能经 `incident(...)` 造出来:
-缺字段、多字段、类型不符、`seqs` 写成 chip 形态,都当场抛。于是"每个分支再写一遍那十个名字"这件事
-**写不出来了**。
-
-`analyzers/shape-law.mjs` 负责让它一直这样:
-
-```text
-node analyzers/shape-law.mjs            # 形状 / 认领 / 漂移 / 差分 / 证人
-node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必须被抓
-```
-
-- **认领** —— 探测器找出所有"知道这份形状"的文件,每一个都要在声明里挂上角色(源 / 像 / 证人)与形态
-  (在它手里 `seqs` 是什么)。**漏一个参与者本身就是错。**
-- **漂移** —— 自己写字面量的载体(客户端半边)按键、按顺序逐个比对。
-- **差分** —— 与冻结基准逐字节相同(合成流 + 缩减后的真实会话),键顺序也在字节里。
-- **证人** —— 历史 `experiments/reports/*.facts.json` 只读校验,绝不回写。
 
 ### 安装(常驻,非动态插件)
 
@@ -272,53 +123,15 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 
 ### 路径页
 
-单独的「路径」标签取 `GET /analysis-view/trace?staged=1&session=<id>`:立即启动真实页面,
-先显示当前统计,主干就绪后立即显示,正文、文件与子代理图层随后主动补齐。所有阶段共享一次主日志观察和同一份 cut;
-预载期间选中某轮会优先读取该轮正文,参数与结果沿用原始投影的节选长度,不再额外缩到 600 字符。
-图层补齐保留缩放、位置与选择。原有 `GET /analysis-view/trace?session=<id>` 仍提供自包含快照。
-官方当前上下文更新只刷新摘要;历史增量更新只替换上下文 SVG 图层,不重建主干。
-切走或浏览器隐藏会取消未完成的补齐任务。切走后的隐藏 iframe 最多保留两分钟,到期释放;回到页面时重验数据与资产版本。
-HTML 与阶段数据共用最多四项、估算 64 MiB、空闲两分钟的缓存预算,仅一个超大当前快照可超过预算。
-缓存只保留压缩后的响应,不同时长期保留 JSON 字符串;主日志、子代理、历史回放各有全局并发限制。
+打开「路径」标签，可浏览全景与逐轮行动路径，并查看上下文构成、文件历史、工具结果、
+子代理和 Skill 记录。点击工具即可在详情中查看参数和结果。
 
-超长会话若超过 `dsh-context` 的历史保留范围,页面会标注当前覆盖范围并提供「回补更早增量」。
-点击后通过 Harness 公共 `sessionProjections.restore` 接口分批回放早期日志,不改动活跃投影或全局保留设置。
-每个快照只保留一个回补窗口;每个窗口最多 1500 条请求,继续点击可向前回补。工具正文仍主动预载,选中轮次会优先返回。
-两者由 `lib/trace/page.html` + `lib/trace/page.js` 组成。它就是
-`docs/demo/layout-review` 里那套 Geist 视觉试作搬回插件后的样子 —— 全景与逐轮行动路径、上下文构成、
-文件对象、工具结果枝条、子代理与 Skill 观察。
+页面分阶段显示：先出现真实主干，再补齐正文和其他图层；选中某轮会优先加载其详情。
+补齐数据时保留位置、缩放和选中项。更早的上下文超出当前范围时，可点击「回补更早增量」。
 
-页面代码的**作者位置在 demo,不在插件里**。`node scripts/port-geist-page.mjs` 把构建好的 demo 页面
-拆成这两个运行时资产,并把纯模型模块复制到 `lib/trace/models/`;`page.html` 与 `page.js` 不要手改。
+`GET /analysis-view/trace?session=<id>` 可单独打开自包含快照。
 
-数据分两头来,因为有两类值只存在于视图侧:
 
-- host(`lib/trace-context.js`):调用事实、文件操作、压缩与裁短边界、模型重试、补充内容计数、
-  Skill 读入记录、Skill 正文存续(走官方 `SurfaceManager` 回放)、子代理支线(子会话同样通过
-  Session 查询服务读取)。
-- 视图(`lib/client.js`):`stats` 会话目标里的官方统计快照,以及通过标准 `useProjection` 钩子位读到的
-  `contextPressure` / `contextBreakdown` / `contextTimeline`。这些作为按会话隔离的 `postMessage` 补丁送达,
-  到达后重建对应索引并更新图层,主干启动不再等待它们;详情先到、后到都能正确保留。
-
-两边都可缺:投影没到、没有 stats 目标时,对应图层不出现,主图照常渲染。
-会话在本进程里活着时,host 也会直接读一次 `contextTimeline`(`ctx.sessionProjections.snapshot`),
-每轮请求构成就来自这里。
-
-### 文件
-
-| 文件 | 作用 |
-|---|---|
-| `lib/client.js` | 客户端插件本体;必须以 `window.__ModuleLoader__.load({ id, factory })` 自注册,`require("react")` 而非全局 |
-| `lib/index.js` | host 半边:计算 incidents,提供 `GET /analysis-view/digest?session=<id>`(事实 + `log` 身份)、`GET /analysis-view/interpret?session=<id>`(AI 解读,仅展开时才调用)、`GET /analysis-view/trace?session=<id>`(路径页)与 `/analysis-view/trace/fonts/*` |
-| `lib/trace-build.js` | 会话事件 → 页面数据(轮次、步骤、调用、incident、通信) |
-| `lib/trace-stages.js` | 共用日志切点、轻量主干、主动预载正文和子代理、单轮优先读取 |
-| `lib/trace-resources.js` | 跨快照共享的容量预算、空闲淘汰、可取消队列与并发限制 |
-| `lib/trace-context.js` | 页面的补充图层:调用事实、文件操作、边界、重试、补充内容、Skill、子代理 |
-| `lib/trace-skill-evidence.js` | Skill 正文与存续证据(`analyzers/dsh-skill-evidence.mjs` 的副本) |
-| `lib/trace/` | 生成出来的页面资产(`page.html`、`page.js`)、纯模型模块(`models/`)与 Geist 字体 |
-| `lib/incident-shape.js` | incident 事实的唯一声明:有序字段、类型、`incident()` 构造器、参与者认领表 |
-| `cordis.patch.yml` | 插入插件行的 bundle 层 |
-| `package.json` | `dsh.bundle.patch` + `dsh.client`(platform web + client injects) |
 
 ### 验证
 
@@ -333,9 +146,9 @@ HTML 与阶段数据共用最多四项、估算 64 MiB、空闲两分钟的缓�
 
 ### 局限
 
-- host 半边在 `GET /analysis-view/digest?session=<id>` 提供 incidents(同参重复、空转 turn、Harness 反应);客户端 fetch 后只负责渲染证据。
-- `Harness 反应` 由错误码推导,不是模板文案。
-- host 分析与仓库 `analyzers/` 仍是两份实现 —— 现在共用一份声明,但**取值**是刻意不同的(例如 severity),
-  所以各自保留自检,差分基准也按实现分别冻结。
-- 客户端半边 import 不到声明(它是 `window.__ModuleLoader__` 工厂,没有相对导入),所以它那份字面量靠**漂移法则**钉住,而不是靠构造器。
-- 会话经 `sessionQuery.observeSession(id)` 读取(DSH 0.1.6 起 `snapshotEvents` 已弃用,这是官方路径),读完立即释放观察;兼容退路依次是内存快照 → `sessionPersistence.open(id, 'read')` → `SessionHandle.read()` → 旧版 `inspect()`。
+- 官方统计或上下文数据缺失时会明确显示不可用，已有内容仍可查看。
+- 更早的上下文可能需要手动回补。
+- 模型解读为可选功能，会消耗 token。
+- 费用显示仅适用于已支持的官方 API 模型。
+
+开发文档：[分析面板与路径页](https://github.com/goatliamia/dsh-trajectory-query/blob/main/docs/analysis-view-design.md)。

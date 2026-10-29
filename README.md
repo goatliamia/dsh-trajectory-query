@@ -8,7 +8,7 @@
 | `dsh-analysis-view` | 「分析」与「路径」 | 当前会话的轮次、花费、工具、incident、一次按需解读,以及完整的执行路径页 |
 | `dsh-conversation-search` | 右侧栏 | 在当前会话里搜关键词，点结果跳到对应轮次 |
 
-不改 DSH core，不写回会话，不新增埋点。设计取舍见 [docs/design.md](docs/design.md)。
+不改 DSH core，不写回会话，不新增埋点。更多文档见 [docs/](docs/)。
 
 ## 环境
 
@@ -87,7 +87,7 @@ Web GUI「对话 | 轨迹」旁边的第三个标签：
 | Incident | 有证据的因果链：Cause / Runtime 知道 / Model 收到 / Harness 反应 / 影响，`seq` 可点 |
 | 解读 | 按钮触发，host 用当前模型调一次，每条陈述带引用 |
 
-面板数据来自两个只读路由：
+提供以下只读接口：
 
 ```text
 GET /analysis-view/digest?session=<id>      # 确定性事实，2 秒缓存，&fresh=1 强刷
@@ -137,7 +137,7 @@ node plugin/conversation-search/self-test.mjs   # 对话搜索
 - `plugin/conversation-search/`：对话搜索（host 路由 + 客户端）
 - `analyzers/`：确定性分析器、digest 运行器、自检
 - `skill/`：`trajectory-query.md`、`analysis.md`
-- `docs/`：设计说明
+- `docs/`：技术文档
 - `experiments/`：语料、探针与生成的报告
 
 ## 版本

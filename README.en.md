@@ -8,7 +8,7 @@ Three DSH plugins that make a session already written to the log retrievable, re
 | `dsh-analysis-view` | "Analysis" tab | Turns, spend, tools, incidents, plus an on-demand interpretation |
 | `dsh-conversation-search` | right sidebar | Search the current conversation and jump to the matching turn |
 
-No changes to DSH core, nothing written back to the session, no new instrumentation. Design notes live in [docs/design.md](docs/design.md).
+No changes to DSH core, nothing written back to the session, no new instrumentation. More documentation is available in [docs/](docs/).
 
 ## Requirements
 
@@ -76,8 +76,8 @@ Every result carries `(session, seq@logId)` and quotes the original text; an emp
 A third tab next to "Chat" and "Trajectory":
 
 | Section | Content |
-| Path (separate tab) | the current turn's trunk and detours, turn strip, time axis; click a node for the real event; data is built live from /analysis-view/trace |
 |---|---|
+| Path (separate tab) | the current turn's trunk and detours, turn strip, time axis; click a node for the real event |
 | KPI | turns, tool calls, failures, cache hit rate, events |
 | Turns | a duration-proportional strip coloured by failures; a failing turn jumps to the trajectory |
 | Spend | per-turn cache hit and miss drawn apart, output on its own bar, per-turn hit rate on the right; a row jumps to that turn in the chat. With the official API, each number carries its own cost |
@@ -85,11 +85,13 @@ A third tab next to "Chat" and "Trajectory":
 | Incidents | evidence-backed chains: Cause / Runtime knew / Model received / Harness response / Impact, `seq` clickable |
 | Interpretation | one model call on demand, every statement carries a citation |
 
-Data comes from two read-only routes:
+Read-only endpoints:
 
 ```text
 GET /analysis-view/digest?session=<id>      # deterministic facts, 2s cache, &fresh=1 to bypass
 GET /analysis-view/interpret?session=<id>   # on-demand interpretation, spends one model call
+GET /analysis-view/trace?session=<id>       # standalone Path snapshot
+GET /analysis-view/trace?staged=1&session=<id> # staged Path page
 ```
 
 ### Conversation search
@@ -130,7 +132,7 @@ node plugin/conversation-search/self-test.mjs
 - `plugin/conversation-search/` — conversation search (host route + client)
 - `analyzers/` — deterministic analyzers, digest runner, self-tests
 - `skill/` — `trajectory-query.md`, `analysis.md`
-- `docs/` — design notes
+- `docs/` — technical documentation
 - `experiments/` — corpus, probes, generated reports
 
 ## Versions
