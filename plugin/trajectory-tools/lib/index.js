@@ -7,6 +7,7 @@
 //   trajectory_search  查事实与数字:会话清单 / 会话目录 / 事件命中 / token 成本(view 区分)
 //   trajectory_read    按 (session, seq 区间) 逐字取原文
 //   trajectory_graph   事件替换/引用/派生链 + 会话谱系
+//   trajectory_inspect 官方统计与诊断取证
 //
 // 原则(与 skill/trajectory-query.md 一致):
 //   1. 只读:不写入、不改写任何事件;返回文本逐字来自日志。
@@ -24,6 +25,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { SKILL_BODY, SKILL_DESCRIPTION, SKILL_NAME, SKILL_WHEN_TO_USE } from "./skill.js";
+import { InspectionService } from "./inspect-service.js";
 
 export const inject = ["tools"];
 
@@ -365,15 +367,16 @@ function disposeObservation(observation) {
  * `eventAt()` 自 DSH 0.1.6 起弃用、禁止新增调用),返回 live 优先、冷启动可复用的不可变快照。
  * 退路(按序):sessionPersistence 句柄 → 旧版 inspect() → 无 sessionQuery 时的内存快照。
  */
-async function loadEvents(ctx, sessionId) {
+async function loadEvents(ctx, sessionId, signal) {
   const query = ctx.get("sessionQuery");
   if (query !== undefined && typeof query.observeSession === "function") {
-    const observation = await query.observeSession(sessionId);
+    const observation = await query.observeSession(sessionId, { projectionMode: 'none', ...(signal ? { signal } : {}) });
     try {
       return {
-        header: observation.header || null,
+        header: observation.header || observation.session || null,
         events: observation.events || [],
         source: observation.source === "live" ? "live" : "persisted",
+        inherited: observation.inheritedEventCount || 0,
       };
     } finally {
       disposeObservation(observation);
@@ -848,6 +851,7 @@ export function registerReconcile(ctx, options = {}) {
 }
 
 export function apply(ctx, config = {}) {
+  const inspections = new InspectionService({ ctx, identify: logIdentity, load: (id, signal) => withTimeout(loadEvents(ctx, id, signal), LOAD_TIMEOUT_MS, 'trajectory_inspect') });
   // 工具要么全注册、要么一个都不注册。重名会抛错(例如上一个进程里被 stop/undefine 的
   // 动态插件留下了同名注册),此时静默少注册会让模型拿到半个工具集,不如显式失败并给出重启提示。
   const disposers = [];
@@ -1205,6 +1209,7 @@ export function apply(ctx, config = {}) {
         return { ok: false, error: "窗口超过 " + MAX_WINDOW + " 事件上限,请缩小范围", window: { from, to } };
       }
       const window = await withTimeout(readWindow(ctx, sessionId, Math.max(from, 0), to), LOAD_TIMEOUT_MS, "trajectory_read");
+      if (args.snapshot) inspections.validateRead(args.snapshot, sessionId, Math.max(from, 0), to, window.events);
       const log = { id: logIdOf(sessionId, window.first), eventCount: window.total === undefined ? null : window.total };
       if (args.format === "json") {
         // 完整事件对象(仍是 60 条窗口):给需要看信封/来源/stream 的人;JSON 往返保证输出是纯 JSON。
@@ -1299,6 +1304,24 @@ export function apply(ctx, config = {}) {
   });
 
   register({
+    name: "trajectory_inspect",
+    description: "获取会话运行统计、代表性执行片段及关联原文，用于诊断执行过程。",
+    parameters: {
+      view: { type: "string", enum: ["overview", "latency", "cost", "repeats", "io", "context"], description: "overview=总览(默认);latency=耗时;cost=消耗与常驻工具定义;repeats=重复候选;io=工具文件;context=上下文变化" },
+      session: { type: "string", description: "会话 id，省略为当前会话" },
+      turns: { type: "object", additionalProperties: true, description: "可选轮次闭区间 {from,to}，省略为全会话" },
+      limit: { type: "integer", description: "取证条目数，默认 3，范围 1–10；统计仍覆盖指定范围" },
+      snapshot: { type: "string", description: "沿用先前返回的快照，保持多次查询一致" },
+      cursor: { type: "string", description: "照抄返回的游标，继续同一 view" },
+    },
+    output: OUTPUT,
+    execute: async (args, exec) => {
+      try { return await inspections.query(args, currentSessionId(ctx, exec), exec?.signal); }
+      catch (error) { return FAILED(error); }
+    },
+  });
+
+  register({
     name: "trajectory_read",
     description: "按 seq 区间取逐字原文(消息、工具调用、结果)。",
     parameters: {
@@ -1308,6 +1331,7 @@ export function apply(ctx, config = {}) {
       to: { type: "integer", description: "终点 seq(含);窗口上限 " + MAX_WINDOW },
       raw: { type: "boolean", description: "true=连没有正文的事件也给" },
       format: { type: "string", enum: ["text", "json"], description: "json=完整事件对象(信封/来源/stream 都在),默认 text=逐字正文" },
+      snapshot: { type: "string", description: "可选 inspect 快照，校验原文与取证时一致" },
     },
     output: OUTPUT,
     // 只读且定点:同一 step 里可以和其他调用并行。
@@ -1344,6 +1368,7 @@ export function apply(ctx, config = {}) {
     );
   }
   for (const dispose of disposers) ctx.effect(() => dispose, "trajectory-tools:tool");
+  ctx.effect(() => () => inspections.dispose(), 'trajectory-tools:inspection');
 
   // 查询纪律随工具一起注册(runtime skill,无需改 agent preset);skills 服务缺失时不影响工具。
   const skills = ctx.get("skills");

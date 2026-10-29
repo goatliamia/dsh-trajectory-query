@@ -19,7 +19,7 @@ facts instead of reconstructing them.
 
 ### Tools
 
-Three entries, split by the question rather than by data source. `view` is required on
+Four entries, split by the question rather than by data source. `view` is required on
 `trajectory_search` so a call never has to guess what you meant.
 
 | Tool | Question it answers |
@@ -27,6 +27,7 @@ Three entries, split by the question rather than by data source. `view` is requi
 | `trajectory_search` | what is there / where was it said / how much did it cost. `view`: `events` literal hits with a snippet centred on the match · `catalog` per-session counts and seq/time ranges, no content · `cost` per-request tokens and cache efficiency · `sessions` which sessions are queryable |
 | `trajectory_read` | give me the verbatim text of this `(session, seq range)` |
 | `trajectory_graph` | how are these related: event replacement / source / derived chain, or session lineage |
+| `trajectory_inspect` | collect official runtime statistics, representative evidence and ready-to-call original-record pointers; views: overview, latency, cost, repeats, io, context |
 
 Optional narrowing sits in one `filter` object whose keys depend on the view
 (`events`: types, from, to, timeFrom, timeTo, sessionCount, normalize, excludeInjected, excludeSelf;
@@ -78,14 +79,60 @@ is normalized — quoted evidence stays verbatim — and the response reports `n
 `view="cost"` folds `assistant/message.usage` — no new instrumentation. The numbers only; whether
 the spend was worth it stays the model's interpretation.
 
-- `input` is the part of the context that missed the cache this request (the genuinely new tokens);
-  `cacheRead` is the reused prefix. `cacheEfficiency` dropping below ~1.0 means the prefix was
-  rewritten or the sequence changed.
+- `input` is uncached input; `cacheRead` is cache-read input. A cache miss alone does not establish
+  that the prefix changed: investigate the request/model history before assigning a cause.
 - A request whose adapter reported no usage is `unknown`, never zero; a single missing field is
   `null` and stays out of the sums. `coverage` says how many requests reported each field — on the
   DeepSeek adapter `cacheWriteTokens` is usually absent, which means "not reported", not "no cache".
 
-### Data source
+### Diagnostic evidence
+
+`trajectory_inspect` defaults to the current session and three evidence entries. `turns: {from,to}`
+narrows the inclusive turn range; `limit` changes returned entries (1–10), never the accounting range.
+Use the returned `snapshot` across views and `nextCursor` to page the same view. Each result includes
+its selected investigation method; detailed methods are loaded with results rather than added to
+every initial model prompt. The tool returns facts and candidates, not an automatic judgment.
+
+Timing, tool counts and per-step usage execute the installed **official stats definitions and view
+builder unchanged**. Whole-session usage/context comes from the public detached
+`sessionProjections.restore` read face. Tool-schema estimates call the official
+`@deepseek-ai/dsh-token-meter/estimate` function; no substitute tokenizer or pricing formula is used.
+Missing/incompatible official sources are marked unavailable. The native evidence projection is
+synchronized with the path view by `node scripts/sync-inspect-models.mjs` (`--check` verifies parity).
+
+The cost view also returns declarations not called in the selected scope: standalone official
+schema estimates, observed request exposure samples, schema versions and actual invocation evidence.
+Transport calls remain visible to this check, so Code Mode's `run_code` is not falsely called unused.
+Largest declarations are returned even if they were called. Exposure counts cover recorded
+`request/context` samples only; older missing samples are not extrapolated to every step.
+These estimates are not additive per-tool bills or measured savings. A deferred declaration does
+not prove that a specific adapter loaded it lazily. Historical plugin ownership is unknown when
+the log does not record it; embedded Code Mode catalogs are not silently charged to header schemas.
+
+Four changes can be evaluated from this evidence:
+
+| Option | Appropriate evidence | Validation |
+| --- | --- | --- |
+| Shorter descriptions and schemas | Large definitions with duplicated rules or implementation details | Compare official first-request estimates, tool argument errors and task acceptance |
+| Task or phase tool sets | A task has a known capability boundary and many unused declarations | Preserve required tools; compare task acceptance and cache behavior |
+| Native deferred loading | Runtime and selected adapter support discovery/activation | Confirm actual prompt reduction and successful discovery/call, not only `deferLoading` |
+| A small discovery/dispatch entry | Many related long-tail tools with a reliable description and lookup path | Compare total prompt/response tokens, searches, calls and task correctness |
+
+Nothing is disabled because it was uncalled in one conversation. Failed attempts, normal polling,
+search fragments and context net changes retain their explicit evidence boundaries. Deep reads
+reuse `trajectory_read`; its optional `snapshot` validates both the cut and original event hashes.
+
+Inspection is on demand. It retains compact evidence, not raw logs, in at most four snapshots with
+a combined estimated 16 MiB budget and two-minute idle expiry. Cold inspection work is serialized;
+service disposal clears the snapshots. No background scan or extra model call is started.
+
+Validation: `node plugin/trajectory-tools/self-test.mjs`,
+`node plugin/trajectory-tools/inspect-test.mjs`, and `node scripts/sync-inspect-models.mjs --check`.
+The installed official estimator reports 388 → 569 tokens for the three previous native schemas
+versus the four current schemas (including the read-snapshot parameter): +181 estimated tokens.
+This excludes Code Mode system catalogs and runtime skill discovery text; it is not billed usage.
+
+### Historical read source
 
 Preferred: `ctx.sessionQuery.observeSession(id)` — the sanctioned path since DSH 0.1.6 deprecated the
 synchronous Session readers (`snapshotEvents` / `eventAt` / `ownEvents`). It returns a live-preferred
@@ -209,9 +256,9 @@ reply should end with the two lines, and the host log gains one `compaction reco
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.3.6.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.4.0.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.3.6.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.4.0.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. restart `dsh web`              # host plugins do not hot-reload reliably
@@ -236,7 +283,7 @@ override by id** in `~/.dsh/profiles/web/cordis.patch.yml` — never a second `i
 
 | File | Role |
 |---|---|
-| `lib/index.js` | host half: reads the log, registers the three tools, and wires the optional reconcile |
+| `lib/index.js` | host half: reads the log, registers the four tools, and wires the optional reconcile |
 | `lib/skill.js` | the `trajectory-query` runtime skill body |
 | `self-test.mjs` | 176 contract checks against a fake ctx + synthetic log (no real session) |
 | `cordis.patch.yml` | bundle layer that inserts the plugin row |
@@ -263,17 +310,18 @@ trajectory_search(view="cost", session=<id>)             # tokens + cache effici
 
 DSH 把每个会话都存成 append-only 事件日志,但模型平时只看到投影后的消息历史。一旦内容被
 compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理里,就只能靠记忆或让用户复述。
-这三个入口直接读日志,返回**逐字文本 + 指针**:模型解释事实,而不是凭印象重建事实。
+工具直接读日志和官方统计,返回**事实 + 指针**:模型依据证据解释。
 
 ### 工具
 
-按**问题**分三个入口,不按数据源分。`trajectory_search` 的 `view` 必填,免得一次调用去猜你想干什么。
+按**问题**分四个入口。`trajectory_search` 的 `view` 必填。
 
 | 工具 | 回答什么 |
 |---|---|
 | `trajectory_search` | 有什么 / 在哪说过 / 花了多少。`view`:`events` 字面命中 + 以命中点为中心的片段 · `catalog` 会话级计数与 seq/时间范围(不含正文) · `cost` 逐请求 token 与 cache 效率 · `sessions` 哪些会话可查 |
 | `trajectory_read` | 把 `(session, seq 区间)` 的原文逐字给我 |
 | `trajectory_graph` | 这些东西什么关系:事件替换 / 引用 / 派生链,或会话谱系 |
+| `trajectory_inspect` | 诊断取证：总览、耗时、消耗与工具定义、重复候选、工具文件、上下文变化；返回关联原文与可继续读取的参数 |
 
 可选维度收在一个 `filter` 对象里,键按 view 不同
 (`events`:types, from, to, timeFrom, timeTo, sessionCount, normalize, excludeInjected, excludeSelf;
@@ -313,8 +361,36 @@ compaction 覆盖,或者事情发生在很久以前 / 别的会话 / 子代理�
 
 `view="cost"` 只 fold `assistant/message.usage`,不新增埋点;只给数字,"这次花得值不值"仍是模型的解释。
 
-- `input` 是本次**没命中缓存**的那部分上下文(真正新增的 token),`cacheRead` 是复用的前缀;`cacheEfficiency` 掉到 1.0 以下就说明前缀被改写或换了序列。
+- `input` 是未缓存输入，`cacheRead` 是缓存读取。未命中本身不能证明前缀被改写，也不等于本次新增内容。
 - usage 整个缺失的请求记 `unknown`,不按 0;单字段缺失记 `null`,不进求和。`coverage` 说明每个字段有多少请求报了 —— DeepSeek 适配器基本不报 `cacheWriteTokens`,那是"没上报",不是"没写缓存"。
+
+### 诊断取证与常驻工具定义
+
+`trajectory_inspect` 默认查询当前会话，返回 3 条代表证据。`view` 可选 `overview`、`latency`、
+`cost`、`repeats`、`io`、`context`；`turns:{from,to}` 指定轮次闭区间，`limit` 只改变返回条数。
+返回的 `snapshot` 保持跨主题查询一致，`nextCursor` 用于同主题翻页。结果附有该主题的调查方法
+和可以直接调用的 `trajectory_read` 参数；读取时会校验快照范围和原始事件哈希。
+
+耗时、工具计数及步骤 usage 直接运行已安装的官方统计定义与 view builder；会话总量和上下文
+使用公共 `sessionProjections.restore` 的独立返回值。定义大小调用官方
+`@deepseek-ai/dsh-token-meter/estimate`，不新增 tokenizer 或金额计算。官方来源缺失或契约变化时
+明确报告不可用。高 token 量步骤的排序不代表实际费用排序。
+
+成本主题同时列出大定义和观察范围内未调用的定义，保留规模估算、版本、请求样本和调用次数。
+未调用只是检查线索；没有记录的插件归属保持未知。`deferLoading` 是请求延期加载，不证明适配器
+实际省了 token。Code Mode 的系统提示工具目录不强行归入 header schema。旧日志没有记录的
+请求样本也不补造。可评估以下四种方案：
+
+| 方案 | 适用证据 | 验证 |
+|---|---|---|
+| 精简描述和 schema | 大定义里存在重复规则或实现说明 | 官方首请求估算、参数错误率、任务验收 |
+| 按任务或阶段配置工具集 | 能确认任务边界及必需能力，存在大量闲置声明 | 能力完整性、任务验收、缓存变化 |
+| 官方延期加载 | 运行时和适配器支持发现与启用 | 实际输入减少、工具能被正确找到并调用 |
+| 小型发现与调用入口 | 同一领域有很多长尾工具，并有可靠检索说明 | 总 token、查找次数、调用次数和任务正确性 |
+
+不因为一次未调用就停用工具。新增声明按官方独立 schema 估算为 388 → 569 token，增加 181；
+不含 Code Mode 系统目录及 runtime skill 的发现文本，也不是实际账单。详细方法随结果返回。
+取证只在调用时运行；最多缓存 4 个紧凑快照，合计估算预算 16 MiB，闲置两分钟释放，不保留原始日志。
 
 ### 数据来源
 
@@ -415,9 +491,9 @@ export function apply(ctx, config = {}) {      // 不是 apply(ctx)
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.3.6.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.4.0.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.3.6.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.4.0.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新
@@ -431,7 +507,7 @@ export function apply(ctx, config = {}) {      // 不是 apply(ctx)
 
 | 文件 | 作用 |
 |---|---|
-| `lib/index.js` | host 半边:读日志、注册三个入口,并挂上可选的对账 |
+| `lib/index.js` | host 半边:读日志、注册四个入口,并挂上可选的对账 |
 | `lib/skill.js` | `trajectory-query` runtime skill 正文 |
 | `self-test.mjs` | 176 项契约检查(假 ctx + 合成日志,不连真实会话) |
 | `cordis.patch.yml` | 插入插件行的 bundle 层 |

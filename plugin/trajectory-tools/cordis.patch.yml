@@ -1,7 +1,7 @@
 # dsh-trajectory-tools bundle layer.
 #
 # Inserts the host row that registers the model-facing trajectory_* tools
-# (trajectory_search / trajectory_read / trajectory_graph) and the optional
+# (trajectory_search / trajectory_read / trajectory_graph / trajectory_inspect) and the optional
 # compaction-reconcile listener.
 # Host-only and read-only: no client half, no HTTP route, no writes to the log.
 #

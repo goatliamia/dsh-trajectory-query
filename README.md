@@ -4,7 +4,7 @@
 
 | 插件 | 位置 | 做什么 |
 |---|---|---|
-| `dsh-trajectory-tools` | host（模型工具） | 三个只读入口：查历史事件、取逐字窗口、看关系链 |
+| `dsh-trajectory-tools` | host（模型工具） | 四个只读入口：查历史事件、取逐字窗口、看关系链、诊断取证 |
 | `dsh-analysis-view` | 「分析」与「路径」 | 当前会话的轮次、花费、工具、incident、一次按需解读,以及完整的执行路径页 |
 | `dsh-conversation-search` | 右侧栏 | 在当前会话里搜关键词，点结果跳到对应轮次 |
 
@@ -32,8 +32,8 @@ cd ../conversation-search     && pnpm pack
 ```jsonc
 {
   "dependencies": {
-    "dsh-trajectory-tools": "file:/绝对路径/dsh-trajectory-tools-0.3.6.tgz",
-    "dsh-analysis-view": "file:/绝对路径/dsh-analysis-view-0.10.13.tgz",
+    "dsh-trajectory-tools": "file:/绝对路径/dsh-trajectory-tools-0.4.0.tgz",
+    "dsh-analysis-view": "file:/绝对路径/dsh-analysis-view-0.10.30.tgz",
     "dsh-conversation-search": "file:/绝对路径/dsh-conversation-search-0.2.1.tgz"
   },
   "dsh": {
@@ -58,13 +58,14 @@ cd ~/.dsh/profiles/web && pnpm install
 
 ### 历史查询工具
 
-三个入口按"问题"分，不按数据源分：
+四个入口按问题划分：
 
 | 工具 | 用途 |
 |---|---|
 | `trajectory_search` | `view` 必填：`events` 字面命中、`catalog` 计数与范围、`cost` token 成本、`sessions` 会话列表 |
 | `trajectory_read` | 按 `seq` 区间取逐字原文，可选 `format: "json"` |
 | `trajectory_graph` | 事件的替换 / 引用 / 派生关系，或会话谱系 |
+| `trajectory_inspect` | 基于官方统计取证：耗时、消耗与工具定义、重复调用、工具文件、上下文；支持有界结果和同一快照下的原文追查 |
 
 证据优先：每个结果带 `(session, seq@logId)`，引用原样；查不到就是可核验的"没有"。
 
@@ -91,7 +92,9 @@ Web GUI「对话 | 轨迹」旁边的第三个标签：
 ```text
 GET /analysis-view/digest?session=<id>      # 确定性事实，2 秒缓存，&fresh=1 强刷
 GET /analysis-view/interpret?session=<id>   # 按需解读，会消耗一次模型调用
-GET /analysis-view/trace?session=<id>       # 「路径」整页(自包含 HTML)，每次现读
+GET /analysis-view/trace?session=<id>       # 「路径」整页(自包含 HTML)，按日志版本缓存
+GET /analysis-view/trace?staged=1&session=<id> # 「路径」真实页面分层显示，正文和图层自动补齐
+GET /analysis-view/trace-data?session=<id>&stage=core # 分阶段数据；后续阶段携带同一个 cut
 ```
 
 ### 对话搜索
@@ -141,8 +144,8 @@ node plugin/conversation-search/self-test.mjs   # 对话搜索
 
 | 包 | 版本 |
 |---|---|
-| dsh-trajectory-tools | 0.3.6 |
-| dsh-analysis-view | 0.10.13 |
+| dsh-trajectory-tools | 0.4.0 |
+| dsh-analysis-view | 0.10.30 |
 | dsh-conversation-search | 0.2.1 |
 
 ## 许可证

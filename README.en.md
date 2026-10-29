@@ -4,7 +4,7 @@ Three DSH plugins that make a session already written to the log retrievable, re
 
 | Plugin | Where | What it does |
 |---|---|---|
-| `dsh-trajectory-tools` | host (model tools) | Three read-only entries: search past events, read a verbatim window, walk relations |
+| `dsh-trajectory-tools` | host (model tools) | Four read-only entries: search past events, read a verbatim window, walk relations, inspect diagnostic evidence |
 | `dsh-analysis-view` | "Analysis" tab | Turns, spend, tools, incidents, plus an on-demand interpretation |
 | `dsh-conversation-search` | right sidebar | Search the current conversation and jump to the matching turn |
 
@@ -32,8 +32,8 @@ Copy the `.tgz` files somewhere stable (e.g. `~/Documents/plugins/`), then in `~
 ```jsonc
 {
   "dependencies": {
-    "dsh-trajectory-tools": "file:/absolute/path/dsh-trajectory-tools-0.3.6.tgz",
-    "dsh-analysis-view": "file:/absolute/path/dsh-analysis-view-0.3.19.tgz",
+    "dsh-trajectory-tools": "file:/absolute/path/dsh-trajectory-tools-0.4.0.tgz",
+    "dsh-analysis-view": "file:/absolute/path/dsh-analysis-view-0.10.30.tgz",
     "dsh-conversation-search": "file:/absolute/path/dsh-conversation-search-0.2.1.tgz"
   },
   "dsh": {
@@ -58,13 +58,14 @@ Restart `dsh web`. Host plugins do not hot-reload reliably; client-only changes 
 
 ### Trajectory query tools
 
-Three entries grouped by the question, not by the data source:
+Four entries grouped by the question:
 
 | Tool | Purpose |
 |---|---|
 | `trajectory_search` | `view` required: `events` literal hits, `catalog` counts and ranges, `cost` token spend, `sessions` session list |
 | `trajectory_read` | verbatim window by `seq` range, optionally `format: "json"` |
 | `trajectory_graph` | replacement / reference / derivation relations, or session lineage |
+| `trajectory_inspect` | official statistics with bounded evidence for latency, token consumption and declarations, repeated calls, tool/file access and context changes |
 
 Every result carries `(session, seq@logId)` and quotes the original text; an empty result is a verifiable "no such fact". The plugin also registers the `trajectory-query` skill.
 
@@ -136,8 +137,8 @@ node plugin/conversation-search/self-test.mjs
 
 | Package | Version |
 |---|---|
-| dsh-trajectory-tools | 0.3.6 |
-| dsh-analysis-view | 0.3.19 |
+| dsh-trajectory-tools | 0.4.0 |
+| dsh-analysis-view | 0.10.30 |
 | dsh-conversation-search | 0.2.1 |
 
 ## License

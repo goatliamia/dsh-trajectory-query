@@ -1,17 +1,18 @@
-# trajectory-query(查询纪律 v5)
+# trajectory-query(查询纪律 v6)
 
-> 由 `plugin/trajectory-tools/` 随工具一起注册为 runtime skill(`lib/skill.js`),不需要改任何 agent preset。本文件是同一份正文的仓库副本。
+> 由 plugin/trajectory-tools/ 随工具注册为 runtime skill；本文件是 lib/skill.js 正文的仓库副本。
 
 需要过去的信息时(被 compaction 覆盖、很久以前、其他会话/子代理):**不要猜,先查**。
 
 - `trajectory_search` — 查事实与数字,`view` 必填:
-  `events` 按字面词搜事件(返回 `(session, seq, type, time)` 与逐字片段 + `matchAt`);
-  `catalog` 会话的计数与 seq / 时间范围(不含正文);
-  `cost` 逐请求 token 与 cache 效率;
-  `sessions` 可查会话列表。
+  `events` 按字面词搜事件(返回 `(session, seq, type, time)` 与逐字片段 + `matchAt`;`offset` 翻页,返回 `nextOffset`);
+  `catalog` 会话的计数与 seq / 时间范围(不含正文);要按事件类型 / 工具细分时加 `filter.breakdown:true`;
+  `cost` 逐请求 token 与 cache 效率(`coverage` 只在有请求没报全时出现);
+  `sessions` 可查会话列表(带标题)。
   可选维度收在 `filter` 里,键按 view 不同(传错会告诉你这个 view 能用哪些)。
-- `trajectory_read` — 按 `(session, seq 区间)` 逐字取原文;默认只给有正文的事件,`raw:true` 给区间内全部。
+- `trajectory_read` — 按 `(session, seq 区间)` 逐字取原文;默认只给有正文的事件,`raw:true` 给区间内全部;`format:"json"` 给完整事件对象(信封/来源都在),log 身份照样带。
 - `trajectory_graph` — 事件关系链(替换/引用/派生)或会话谱系;链默认只给计数与首尾,`full:true` 给完整数组。
+- `trajectory_inspect` — 运行诊断取证：先取总览或指定主题，得到官方统计、必要的关联原文和可继续调用的读取入口；按返回的调查方法分析。多次查询沿用返回的 snapshot。
 
 默认行为:
 
@@ -22,7 +23,7 @@
 成本纪律:
 
 - 数字是**确定性事实**,工具只给数;"这次花得值不值"是你的解释,不要混进数字里。
-- 读成本看三个量:`input`(本次真正新增的上下文)、`cacheRead`(复用掉的前缀)、`cacheEfficiency`(掉到 1.0 以下就说明前缀被改写或换了序列)。
+- 读成本区分 `input`(未缓存输入)、`cacheRead`(缓存读取)和输出。缓存率变化是待调查现象，单靠未命中不能确定前缀变化；工具定义估算也不能直接当作可节省的金额。
 - `unknown` 是"适配器没上报",不是 0;不要把它当成成本为零。
 
 引用纪律:

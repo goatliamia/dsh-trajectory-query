@@ -3,7 +3,7 @@
 // 运行(必须能解析 @deepseek-ai/dsh-tools,即从安装后的包目录运行):
 //   cd ~/.dsh/profiles/web/node_modules/dsh-trajectory-tools && node self-test.mjs
 //
-// 覆盖:注册 3 个入口(search/read/graph)、参数校验、字面量检索(大小写/空白/转义归一)、
+// 覆盖:注册 4 个入口(search/read/graph/inspect)、参数校验、字面量检索(大小写/空白/转义归一)、
 // seq 区间与类型过滤、filter 契约(未知键给出可用键)、
 // 存活/已持久化两条读取路径、窗口上限、trace 有界渲染、目录统计、成本 fold、logId append-stable、
 // 可选功能「压缩后对账」(压缩才说话 / 一次压缩只对一次账 / 子会话跳过 / 自定义句子 / 可关闭 /
@@ -311,7 +311,7 @@ const ctx = strictCtx(rawCtx);
 apply(ctx, {});
 
 /* ---------------- 注册 ---------------- */
-eq("registers 3 tools", [...registered.keys()].sort(), ["trajectory_graph", "trajectory_read", "trajectory_search"]);
+eq("registers 4 tools", [...registered.keys()].sort(), ["trajectory_graph", "trajectory_inspect", "trajectory_read", "trajectory_search"]);
 
 /* 并发:只读定点的 read / graph 可以进并行组;search 会读多份会话,保持独占。 */
 check("并发: read 可加入并行组", registered.get("trajectory_read").isConcurrencySafe({ session: "s" }) === true);
@@ -338,7 +338,7 @@ const ctxConfigLines = pluginSource
   .filter(([, line]) => /ctx\.config/.test(line) && !/^\s*(\/\/|\*)/.test(line));
 check("源码里不得出现 ctx.config(配置走第二参)", ctxConfigLines.length === 0, JSON.stringify(ctxConfigLines.slice(0, 3)));
 
-eq("registers one disposer per tool + one for the skill", disposed.filter((label) => label === "trajectory-tools:tool" || label === "trajectory-tools:skill").length, 4);
+eq("registers one disposer per tool + one for the skill", disposed.filter((label) => label === "trajectory-tools:tool" || label === "trajectory-tools:skill").length, 5);
 eq("reconcile 默认挂 3 个监听", [...listeners.keys()].sort(), ["agent/turn-stopping", "session/disposed", "session/event"]);
 eq("reconcile 的监听各自登记 disposer", disposed.filter((label) => label === "trajectory-tools:reconcile").length, 3);
 eq("registers the runtime skill", [...skillsRegistered.keys()], ["trajectory-query"]);
@@ -346,7 +346,7 @@ const skill = skillsRegistered.get("trajectory-query");
 check("skill carries a description", typeof skill.description === "string" && skill.description.length > 0);
 check(
   "skill body names every tool",
-  ["trajectory_search", "trajectory_read", "trajectory_graph"].every((name) => skill.content.includes(name)),
+  ["trajectory_search", "trajectory_read", "trajectory_graph", "trajectory_inspect"].every((name) => skill.content.includes(name)),
 );
 check("skill body pins the citation convention", skill.content.includes("(session, seq@logId)"));
 
@@ -367,7 +367,7 @@ apply(strictCtx({
     return name === "skills" ? undefined : services[name];
   },
 }), {});
-eq("tools register without the skills service", toolOnly.size, 3);
+eq("tools register without the skills service", toolOnly.size, 4);
 
 // 重名(常见于上一个进程遗留的动态插件注册)必须显式失败,而不是静默注册一半。
 let conflictError = null;
