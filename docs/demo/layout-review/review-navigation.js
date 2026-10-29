@@ -102,9 +102,9 @@
     }, { passive: false });
   }
   function reviewStepContext(t, step) {
-    const index = reviewContextData.requests.findIndex(r => r.turn === t.number && r.step === step.number);
-    if (index < 0) return null;
-    const current = reviewContextData.requests[index], prior = reviewContextData.requests[index - 1];
+    const index = reviewContextStepIndex.get(t.number + ':' + step.number);
+    if (index === undefined) return null;
+    const current = reviewContextRequests[index], prior = reviewContextRequests[index - 1];
     const total = CONTEXT_CATEGORIES.reduce((sum, c) => sum + (current[c.key] || 0), 0);
     const parts = Object.fromEntries(CONTEXT_CATEGORIES.map(c => [c.key, (current[c.key] || 0) - (prior?.[c.key] || 0)]));
     const amount = Object.values(parts).reduce((sum, value) => sum + value, 0);

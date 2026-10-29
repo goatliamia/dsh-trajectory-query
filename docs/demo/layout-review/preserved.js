@@ -1,7 +1,7 @@
   let reviewBranchesNow = [], reviewRetriesNow = [], reviewStress = false;
   let reviewOverviewBookmark = null;
-  const reviewRealEpisodes = session.overview.episodes;
-  const reviewRetryEvents = data.context?.retries || session.turns.flatMap(t => t.steps.flatMap(s => s.retries.map(r => ({
+  let reviewRealEpisodes = session.overview.episodes;
+  let reviewRetryEvents = data.context?.retries || session.turns.flatMap(t => t.steps.flatMap(s => s.retries.map(r => ({
     ...r, turn: t.number, step: s.number, responded: s.assistantTime !== null && s.assistantTime >= r.time,
   }))));
   let reviewRowIndex = { key: null, rows: new Map() };

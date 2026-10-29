@@ -4,7 +4,12 @@ export function fileIdentity(path) {
   const normalized = slash.replace(/\/{2,}/g, '/').replace(/^\//, slash.startsWith('//') ? '//' : '/');
   return /^(?:[a-z]:\/|\/\/)/i.test(String(path).replace(/\\/g, '/')) ? normalized.toLowerCase() : normalized;
 }
+const fileObjectCache = new WeakMap();
 export function fileObjects(operations, turns = null) {
+  const cacheKey = turns ? [...turns].sort((a, b) => a - b).join(',') : '*';
+  let cache = fileObjectCache.get(operations);
+  if (cache?.length === operations.length && cache.values.has(cacheKey)) return cache.values.get(cacheKey);
+  if (!cache || cache.length !== operations.length) { cache = { length: operations.length, values: new Map() }; fileObjectCache.set(operations, cache); }
   const groups = new Map();
   for (const operation of operations) {
     if (turns && !turns.has(operation.turn)) continue;
@@ -23,14 +28,19 @@ export function fileObjects(operations, turns = null) {
     file.lane = file.changes.length || !file.reads.length && file.operations.some(o => o.kind === 'change') ? 'change' : 'read';
     file.label = file.path.replace(/\\/g, '/').split('/').at(-1);
   }
+  const suffixes = new Map();
   for (const file of files) {
-    const parts = file.path.replace(/\\/g, '/').split('/');
-    let count = 1;
-    while (count < parts.length && files.some(other => other.id !== file.id &&
-      other.path.replace(/\\/g, '/').split('/').slice(-count).join('/').toLowerCase() === parts.slice(-count).join('/').toLowerCase())) count++;
-    file.label = parts.slice(-count).join('/');
+    file.parts = file.path.replace(/\\/g, '/').split('/');
+    for (let n = 1; n <= file.parts.length; n++) { const key = file.parts.slice(-n).join('/').toLowerCase(); suffixes.set(key, (suffixes.get(key) || 0) + 1); }
   }
-  return files.sort((a, b) => a.operations[0].seq - b.operations[0].seq);
+  for (const file of files) {
+    let count = 1;
+    while (count < file.parts.length && suffixes.get(file.parts.slice(-count).join('/').toLowerCase()) > 1) count++;
+    file.label = file.parts.slice(-count).join('/'); delete file.parts;
+  }
+  files.sort((a, b) => a.operations[0].seq - b.operations[0].seq);
+  if (cache.values.size >= 16) cache.values.clear(); cache.values.set(cacheKey, files);
+  return files;
 }
 export function packFileObjects(items, { left, right, measure, label, obstacles = [], gap = 8 }) {
   if (!items.length) return [];

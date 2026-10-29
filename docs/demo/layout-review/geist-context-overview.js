@@ -1,4 +1,4 @@
-  const geistContextSnapshot = data.officialStats?.context;
+  let geistContextSnapshot = data.officialStats?.context;
   const geistContextNumber = n => n == null ? '未记录' : n >= 1000000 ? (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n));
   function geistContextCategory(key) {
     return CONTEXT_CATEGORIES.find(c => c.key === key) || { key: 'messages', label: '对话内容', color: 'var(--chart-assistant)' };
@@ -23,10 +23,10 @@
     const model = route?.model ? (route.provider ? route.provider + ' · ' : '') + route.model + (route.reasoningEffort ? ' (' + route.reasoningEffort + ')' : '') : '';
     const share = value => value < .1 ? '<0.1%' : value.toFixed(1) + '%';
     const name = item => geistContextCategory(item.key).label;
-    region.innerHTML = '<header><h2>当前上下文 <small title="此 Demo 的最新会话快照；查看历史步骤不会改写当前总量">第 ' + session.turns.at(-1).number + ' 轮末</small></h2><span class="geist-context-model">' + esc(model) + '</span></header>' +
+    region.innerHTML = '<header><h2>当前上下文 <small title="查看历史步骤不会改写当前总量">' + (session.turns.length ? '第 ' + session.turns.at(-1).number + ' 轮末' : '正在读取会话') + '</small></h2><span class="geist-context-model">' + esc(model) + '</span></header>' +
       '<div class="geist-context-total"><div><strong>' + geistContextNumber(summary.used) + '</strong><span>' + (summary.capacity ? ' / ' + geistContextNumber(summary.capacity) + ' tokens' : ' tokens · 容量未记录') + '</span></div><span>' + (summary.percent == null ? '占用未记录' : '<b>' + summary.percent.toFixed(1) + '%</b> 已用') + '</span></div>' +
       '<div class="geist-context-meter" role="img" aria-label="' + esc(summary.percent == null ? '上下文占用未记录' : '上下文已用 ' + summary.used + ' / ' + summary.capacity + ' tokens，分段按估算来源比例展示') + '">' +
       '<div class="geist-context-occupied" style="width:' + (summary.fill ?? 0) + '%">' + summary.categories.map(item => '<span style="width:' + item.share + '%;background:' + geistContextCategory(item.key).color + '" title="' + esc(name(item) + ' ≈' + geistContextNumber(item.value) + ' tokens') + '"></span>').join('') + '</div></div>' +
-      '<div class="geist-context-sources" aria-label="估算来源构成，与路径颜色一致">' + summary.categories.map(item => '<button data-current-source="' + item.key + '" title="' + esc(name(item) + '，约占构成 ' + share(item.share) + '；点击查看说明') + '"><i style="background:' + geistContextCategory(item.key).color + '"></i><span>' + name(item) + '</span><b>≈' + geistContextNumber(item.value) + '</b></button>').join('') + '</div>';
+      '<div class="geist-context-sources" aria-label="估算来源构成，与路径颜色一致">' + summary.categories.map(item => '<button data-current-source="' + item.key + '" title="' + esc(name(item) + '，约占构成 ' + share(item.share) + '；点击查看说明') + '"><i style="background:' + geistContextCategory(item.key).color + '"></i><span>' + name(item) + '</span><b>≈' + geistContextNumber(item.value) + ' <span class="geist-context-share">' + esc(share(item.share)) + '</span></b></button>').join('') + '</div>';
     region.querySelectorAll('[data-current-source]').forEach(el => el.onclick = () => geistShowCurrentSource(el.dataset.currentSource, summary));
   }

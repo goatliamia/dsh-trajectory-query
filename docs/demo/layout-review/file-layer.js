@@ -1,4 +1,4 @@
-  const reviewFileOperations = data.context?.fileOperations || [];
+  let reviewFileOperations = data.context?.fileOperations || [];
   let reviewFileSelection = null, reviewFileGroups = [], reviewFilesInScope = [], reviewFilePoints = [], reviewFileTouchGroups = [];
   let reviewFilePositions = new Map(), reviewFileGeometry = null;
   let reviewActionFileFrame = null, reviewFilesFramePending = false;

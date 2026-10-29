@@ -76,8 +76,41 @@
     }else layer.innerHTML=`<path d="M${fork} ${p.mainY+5} V${p.mainBottom+6} H${target} V${y-3}" fill="none" stroke="var(--tool)" stroke-opacity=".65" stroke-width="1.2"/>`;
   }
   function tlClearRelation(){if($('tl-relation'))$('tl-relation').innerHTML='';}
+  // 绘制对账:同一窗口下的相同节点不再重建,只替换真正变化的那一段。
+  // window.__sceneDiff = false 时退回整块 innerHTML,一行回退。
+  // 未启用的对账实现:逐节点序列化比较在 455 轮样本上让 p95 从 18ms 升到 50ms,
+  // 比整块 innerHTML 更贵;平移要真省成本必须改成"内容坐标 + 容器 translate",不能靠逐节点 diff。
+  function paintScene(root, html) {
+    if (typeof window === 'undefined' || window.__sceneDiff === false) { root.innerHTML = html; return { mode: 'innerhtml', added: root.childElementCount, removed: 0, kept: 0 }; }
+    // 必须在 SVG 命名空间里解析:用 <template> 会把 clipPath 之类降成 HTML 未知元素。
+    const scratch = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    scratch.innerHTML = html;
+    const nextNodes = [...scratch.children];
+    const oldNodes = [...root.children];
+    if (oldNodes.length === nextNodes.length) {
+      let same = true;
+      for (let i = 0; i < oldNodes.length; i++) if (oldNodes[i].outerHTML !== nextNodes[i].outerHTML) { same = false; break; }
+      if (same) return { mode: 'same', added: 0, removed: 0, kept: oldNodes.length };
+    }
+    let prefix = 0;
+    while (prefix < oldNodes.length && prefix < nextNodes.length && oldNodes[prefix].outerHTML === nextNodes[prefix].outerHTML) prefix++;
+    let suffix = 0;
+    while (suffix < oldNodes.length - prefix && suffix < nextNodes.length - prefix &&
+      oldNodes[oldNodes.length - 1 - suffix].outerHTML === nextNodes[nextNodes.length - 1 - suffix].outerHTML) suffix++;
+    const oldMiddle = oldNodes.slice(prefix, oldNodes.length - suffix);
+    for (const node of oldMiddle) node.remove();
+    const anchor = suffix > 0 ? oldNodes[oldNodes.length - suffix] : null;
+    const middle = nextNodes.slice(prefix, nextNodes.length - suffix);
+    const fragment = document.createDocumentFragment();
+    for (const node of middle) fragment.appendChild(node);
+    root.insertBefore(fragment, anchor);
+    const stats = { mode: 'diff', added: middle.length, removed: oldMiddle.length, kept: prefix + suffix };
+    window.__paintStats = stats;
+    return stats;
+  }
   function tlBindScroll(){
     if(tlScrollBound)return;tlScrollBound=true;let frame=0;
-    $('graph-scroll').addEventListener('scroll',()=>{if(view!=='overview'||frame)return;frame=requestAnimationFrame(()=>{frame=0;if(view==='overview')renderOverview({plotOnly:true});});});
+    let lastSignature='';
+    $('graph-scroll').addEventListener('scroll',()=>{if(view!=='overview'||frame)return;frame=requestAnimationFrame(()=>{frame=0;if(view!=='overview')return;const vp=$('graph-scroll');const signature=[overviewScale,vp.scrollLeft,vp.clientWidth].join(':');if(signature===lastSignature)return;lastSignature=signature;renderOverview({plotOnly:true});});});
   }
 

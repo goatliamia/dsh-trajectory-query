@@ -1,17 +1,35 @@
-  const geistOfficialStats = data.officialStats?.snapshot;
-  const geistStatsByStep = new Map((geistOfficialStats?.turns || []).flatMap(t => t.steps.map(s => [t.turn + ':' + s.step, s])));
-  const geistOutcomes = collectToolResults(session, reviewContextData.callFacts || {}, reviewFileOperations);
+  let geistOfficialStats = data.officialStats?.snapshot;
+  let geistStatsByStep = new Map((geistOfficialStats?.turns || []).flatMap(t => t.steps.map(s => [t.turn + ':' + s.step, s])));
+  let geistOutcomes = collectToolResults(session, reviewContextData.callFacts || {}, reviewFileOperations);
   let geistOutcomeBranches = [];
   const geistOutcomeLayoutCache = new Map();
   const geistReportIcon = '<path d="M-4-6h5l3 3v9h-8zM1-6v3h3M-1-0.5h3M-1 2.5h3"/>';
+  const geistOperationKindBase = callKind;
+  callKind = function(call) { const family = reviewContextData.callFacts?.[call.seq]?.operation?.family; return ({ read: 'read', write: 'write', search: 'query', web: 'query', command: 'run', process: 'run' })[family] || geistOperationKindBase(call); };
+  const geistOperationIconBase = stepIcon;
+  stepIcon = function(step) { const family = reviewContextData.callFacts?.[step.calls[0]?.seq]?.operation?.family; return family === 'read' ? geistReportIcon : family === 'search' ? STEP_ICON.read : geistOperationIconBase(step); };
+  const geistOperationStepLabelBase = reviewActionStepLabel;
+  reviewActionStepLabel = function(step) {
+    if (!step.calls.some(call => reviewContextData.callFacts?.[call.seq]?.operation)) return geistOperationStepLabelBase(step);
+    const names = [...new Set(step.calls.map(call => call.name))];
+    return names.slice(0, 2).join(' / ') + (names.length > 2 ? ' 等' : '');
+  };
   function geistOutcomeText(members) {
     if (members.length === 1) {
       const r = members[0].result;
       const text = r.kind === 'incident' ? reviewBranchLabel([{ e: r.incident }]) : toolResultLabel(r);
-      return shorten(view === 'path' ? text.replace(/^\d+\s*·\s*/, '') : text, 17);
+      return shorten(view === 'path' ? text.replace(/^\d+\s*·\s*/, '') : text, r.recorded ? 22 : 17);
     }
     const errors = members.filter(m => ['incident', 'error'].includes(m.result.kind)).length;
     const recovered = members.filter(m => m.result.kind === 'incident' && m.result.incident.complete).length;
+    if (members.some(m => m.result.recorded)) {
+      const calls = members.flatMap(m => m.result.calls), counts = new Map();
+      for (const call of calls) counts.set(call.name, (counts.get(call.name) || 0) + 1);
+      const labels = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([name, n]) => n === 1 ? compactToolLabel(calls.find(c => c.name === name)) : name + ' ×' + n);
+      if (errors) labels.push(errors + (recovered === errors ? ' 处已恢复' : ' 处受阻'));
+      if (members.some(m => m.result.kind === 'pending')) labels.push('有待返回');
+      return labels.join(' · ');
+    }
     const names = { read: '取回内容', change: '文件改动', check: '检查输出', query: '查询结果' };
     const kinds = ['check', 'change', 'read', 'query'].filter(kind => members.some(m => m.result.kind === kind)).slice(0, errors ? 1 : 2);
     return kinds.map(kind => names[kind]).join(' · ') + (errors ? (kinds.length ? ' · ' : '') + errors + (recovered === errors ? ' 处已恢复' : ' 处受阻') : '');
@@ -22,6 +40,11 @@
     }
     if (result.kind === 'error') return brCap(x, y);
     if (result.kind === 'recovered') return brCap(x, y);
+    if (result.recorded) {
+      const kind = result.kind === 'pending' ? 'pending' : result.family || result.kind;
+      const glyph = kind === 'read' ? geistReportIcon : kind === 'write' ? STEP_ICON.write : kind === 'search' ? STEP_ICON.read : kind === 'command' ? STEP_ICON.run : kind === 'pending' || kind === 'process' ? '<circle r="5"/><path d="M0-3v3l2 1"/>' : kind === 'coordination' ? '<path d="M-4-5v7q0 3 4 3h4M-4-1h5q3 0 3-4"/><circle cx="-4" cy="-5" r="1"/><circle cx="4" cy="-5" r="1"/>' : STEP_ICON.query;
+      return '<g transform="translate(' + x + ' ' + y + ')" class="geist-result-glyph ' + (kind === 'write' ? 'change' : kind) + '">' + glyph + '</g>';
+    }
     if (result.kind === 'check') {
       const failed = result.calls.some(c => /^命令输出报告：FAIL\b/i.test(c.fact?.outcome || '') || /^\s*FAIL\b/im.test(c.result?.text || ''));
       return '<g transform="translate(' + x + ' ' + y + ')" class="geist-result-glyph ' + (failed ? 'error' : 'check') + '">' + geistReportIcon + '</g>';
@@ -31,13 +54,8 @@
   function geistResultBranchBody(p, base) {
     const y = base + p.dy, sign = p.dy > 0 ? 1 : -1;
     const twig = 'M' + p.x + ' ' + (base + sign * 2) + 'V' + (y - sign * 10) + 'Q' + p.x + ' ' + y + ' ' + (p.x + 10) + ' ' + y + 'H' + (p.x + 14);
-    let glyph;
-    if (p.members.length === 1) glyph = geistOutcomeGlyph(p.members[0].result, p.x + 20, y);
-    else {
-      const kinds = [...new Set(p.members.map(m => ['incident', 'error'].includes(m.result.kind) ? 'error' : m.result.kind))].sort((a, b) => (b === 'error') - (a === 'error')).slice(0, 3);
-      const recovered = p.members.filter(m => ['incident', 'error'].includes(m.result.kind)).every(m => m.result.kind === 'incident' && m.result.incident.complete);
-      glyph = kinds.slice(0, 2).map((kind, i) => geistOutcomeGlyph({ kind: kind === 'error' && recovered ? 'recovered' : kind, calls: p.members.flatMap(m => m.result.calls) }, p.x + 18 + i * 18, y)).join('');
-    }
+    const endpoint = toolResultEndpoint(p.members);
+    const glyph = '<g class="geist-branch-tip" data-endpoint-kind="' + endpoint.kind + '" aria-hidden="true">' + geistOutcomeGlyph(endpoint, p.x + 20, y) + '</g>';
     const body = '<rect class="br-hit" x="' + (p.left - 4) + '" y="' + (base + p.top - 3) + '" width="' + (p.right - p.left + 8) + '" height="' + (p.bottom - p.top + 6) + '"/>' +
       '<path d="' + twig + '" class="br-connector"/>' + glyph + brText(p.cx, p.dy > 0 ? y + 21 : y - 14, p.label, 'br-label');
     return body;
@@ -98,16 +116,18 @@
       el.classList.toggle('branch-related', group.members.some(m => m.file.operations.some(op => seqs.has(op.seq))));
     });
     if (result.kind === 'incident') { reviewOpenBranch([result.incident]); return; }
-    const names = { read: '取回文件内容', change: '文件修改', query: '查询结果', check: '检查输出', error: '操作受阻' };
-    const paths = [...new Set(result.calls.map(c => c.file).filter(Boolean))];
+    const names = { read: '取回文件内容', change: '文件修改', query: '查询结果', check: '检查输出', error: '操作受阻', command: '命令输出', process: '后台任务', web: '网页返回', coordination: '协作返回', pending: '等待工具返回', other: '工具返回' };
+    const paths = [...new Set(result.calls.flatMap(c => c.files?.length ? c.files.map(file => file.path) : [c.file]).filter(Boolean))];
     let html = result.calls.map(call => '<div class="geist-outcome-record"><strong>' + esc(call.fact?.title || call.name) + '</strong><p>' + esc(call.fact?.outcome || '工具结果已记录') + '</p>' +
-      (call.fact?.preview ? '<button class="geist-text-action" data-result-diff="' + call.seq + '">' + (call.fact.tone === 'bad' || call.fact.tone === 'unknown' ? '查看原计划' : '查看改动片段') + ' ↗</button>' : '') + '</div>').join('');
+      (call.fact?.preview ? '<button class="geist-text-action" data-result-diff="' + call.seq + '">' + (call.fact.tone === 'bad' || call.fact.tone === 'unknown' ? '查看原计划' : '查看改动片段') + ' ↗</button>' : '') +
+      (result.recorded ? '<p class="review-quiet">' + (call.inner ? '内部工具 · ' : '') + 'seq ' + call.seq + (call.rootSeq != null ? ' · 外层调用 #' + call.rootSeq : '') + '</p>' + callEntry(call) : '') + '</div>').join('');
     if (paths.length) html += '<div class="geist-outcome-files">' + paths.map((path, i) => '<button class="geist-text-action" data-result-file="' + i + '">' + esc(path.split(/[\\/]/).at(-1)) + ' · 全程记录 ↗</button>').join('') + '</div>';
     const embedded = window.parent !== window;
     html += '<div class="drawer-actions"><button class="action-button primary" id="geist-result-step">在行动路径中查看 ↗</button><button class="action-button" id="geist-result-context">本轮上下文变化</button>' +
       (embedded ? '<button class="action-button" id="geist-result-chat">跳到第 ' + result.turn + ' 轮对话 ↗</button>' : '') + '</div>';
     if (result.kind === 'check') html += '<p class="review-quiet">按检查命令实际输出展示，不代表整个任务已经完成。</p>';
-    openDrawer(names[result.kind], '第 ' + result.turn + ' 轮 · 第 ' + result.step + ' 步 · ' + result.calls.length + ' 项操作', html);
+    if (result.calls.some(call => call.name === 'grep')) html += '<p class="review-quiet">搜索记录关联实际返回的匹配片段，不表示读入了整份文件。</p>';
+    openDrawer(result.recorded ? toolResultLabel(result) : names[result.kind], '第 ' + result.turn + ' 轮 · 第 ' + result.step + ' 步 · ' + result.calls.length + ' 项操作', html);
     $('geist-result-step').onclick = () => { closeDrawer(); reviewEnterPath(result.turn, result.step); };
     $('geist-result-context').onclick = () => reviewOpenContext(result.turn);
     // 跳到对话由宿主视图完成(切到对话并滚到该轮),页面只把轮次交出去。

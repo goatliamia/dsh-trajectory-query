@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>执行路径 · 工具行为试作</title>
+  <link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><button id="nav-toggle" aria-label="浏览轮次与文件" aria-expanded="false"><svg viewBox="0 0 16 16"><path d="M2 4h12M2 8h12M2 12h12"/></svg></button><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h7c4 0 2-12 7-12h2M4 18h7c4 0 2-6 7-6h2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="20" cy="12" r="2"/></svg><strong>执行路径</strong><span class="edition">工具行为试作</span></div>
+    <div class="top-meta"><span class="snapshot-dot"></span>真实对话快照<span class="divider"></span><span id="session-count">正在读取记录</span></div>
+  </header>
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="session-heading"><span class="eyebrow">当前对话</span><h1 id="session-title">LRC16 Lean 形式化推进与见证</h1><p id="source-count">正在整理实际工具返回…</p></div>
+      <div class="sidebar-tabs" role="tablist" aria-label="浏览记录"><button role="tab" aria-selected="true" data-nav="turns">轮次</button><button role="tab" aria-selected="false" data-nav="files">文件 <span id="file-count"></span></button></div>
+      <label class="search"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><path d="m10 10 3.5 3.5"/></svg><input id="search" placeholder="查找轮次或工具" aria-label="查找记录"></label>
+      <nav id="record-list" aria-label="轮次与文件"><p class="loading-copy">正在读取记录…</p></nav>
+      <div class="sidebar-foot"><span class="snapshot-dot"></span>本地预览<span>不会更改会话</span></div>
+    </aside>
+    <main>
+      <section class="view-heading"><div><div class="breadcrumbs"><button id="all-turns">完整对话</button><span>/</span><span id="view-crumb">工具行为</span></div><h2 id="view-title">读取工具执行记录</h2><p id="view-subtitle">沿用真实轮次与步骤，展开实际执行的工具。</p></div><div class="example-controls"><span>看一段</span><button id="preset-mixed">搜索与读取 <span>↗</span></button><button id="preset-commands">命令与修改 <span>↗</span></button></div></section>
+      <section class="chart-section" aria-label="执行路径可视化">
+        <div class="chart-toolbar"><div class="chart-tabs" role="tablist" aria-label="路径范围"><button role="tab" id="mode-turn" aria-selected="true">逐轮行动</button><button role="tab" id="mode-all" aria-selected="false">全程概览</button></div><div class="chart-options"><label><input type="checkbox" id="show-context" checked>上下文增量</label><button id="zoom-out" aria-label="缩小">−</button><button id="zoom-fit">适合窗口</button><button id="zoom-in" aria-label="放大">＋</button></div></div>
+        <div class="graph-scroll" id="graph-scroll" tabindex="0" aria-label="执行路径画布，可左右拖动"><div id="graph-wrap"><svg id="graph" role="group" aria-label="工具操作分支"></svg></div></div>
+        <div class="chart-caption"><span><i class="rail-key"></i>主干为步骤，分支为工具操作</span><span id="chart-note">正在读取真实记录</span></div>
+      </section>
+      <section class="family-strip" aria-label="工具类别"><div class="family-strip-head"><span class="eyebrow">本轮工具</span><button id="clear-filter" hidden>清除筛选 ×</button></div><div id="family-items"></div></section>
+      <section class="operation-list"><div class="section-title"><h3 id="operations-title">本轮操作</h3><span id="operations-count"></span></div><div id="operation-rows"></div></section>
+    </main>
+    <aside class="inspector" id="inspector" aria-label="操作详情"><div class="inspector-placeholder"><span class="eyebrow">操作详情</span><h2>从枝条读到原文</h2><p>点击工具分支，查看具体对象、返回结果与调用参数。</p></div></aside>
+  </div>
+  <div id="live-status" class="sr-only" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

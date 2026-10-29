@@ -1,0 +1,11 @@
+.trace-progress{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:10px;color:var(--muted);white-space:nowrap}
+.trace-progress[hidden]{display:none}.trace-progress button{border:0;background:transparent;color:inherit;text-decoration:underline;cursor:pointer}
+.trace-progress.is-loading:before,.trace-detail-loading:before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;animation:trace-breathe 1.3s ease-in-out infinite}
+.trace-detail-loading{display:flex;align-items:center;gap:9px;color:var(--muted)}
+.trace-stage-enter{animation:trace-enter .18s ease-out}
+.trace-context-coverage{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:5px 0;color:var(--muted);font-size:10px}.trace-context-coverage[hidden]{display:none}
+.trace-context-coverage button{font:inherit;color:inherit;border:0;background:transparent;text-decoration:underline;cursor:pointer}
+.trace-render-error{padding:10px;color:#a00;white-space:pre-wrap}#turn-heading:empty{display:none}
+@keyframes trace-breathe{50%{opacity:.25}}@keyframes trace-enter{from{opacity:.35}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.trace-progress:before,.trace-detail-loading:before,.trace-stage-enter{animation:none}}
+@media(max-width:850px){.trace-progress{max-width:190px;overflow:hidden;text-overflow:ellipsis}}

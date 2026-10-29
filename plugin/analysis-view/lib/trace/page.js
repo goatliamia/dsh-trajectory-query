@@ -4,8 +4,10 @@ window.__geistBoot = () => {
   const data = window.__geistPayload;
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const clock = t => new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(t);
-  const day = t => new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'}).format(t);
+  const clockFormat = new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const dayFormat = new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'});
+  const clock = t => clockFormat.format(t);
+  const day = t => dayFormat.format(t);
   const dur = ms => { if (ms == null) return '未记录'; if (ms < 1000) return (ms < 100 ? '<0.1' : (ms / 1000).toFixed(1)) + ' 秒'; const s = ms / 1000; if (s < 60) return s.toFixed(s < 10 ? 1 : 0) + ' 秒'; const m = Math.floor(s / 60), r = Math.round(s % 60); return r === 60 ? `${m+1} 分` : `${m} 分${r ? ` ${r} 秒` : ''}`; };
   const elapsed = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
   const shorten = (s,n) => String(s).replace(/\s+/g,' ').slice(0,n) + (String(s).replace(/\s+/g,' ').length > n ? '…' : '');
@@ -29,6 +31,13 @@ window.__geistBoot = () => {
     return result;
   }
   function header() {
+    for (const id of ['review-rounds','review-path','review-in','review-out','review-fit','path-button','overview-button','previous','next']) if ($(id)) $(id).disabled = !session.turns.length;
+    if (!session.turns.length) {
+      $('page-title').textContent = session.title || '执行路径';
+      $('session-name').textContent = '正在读取会话记录';
+      $('strip-total').textContent = '读取中'; $('rail-count').textContent = '';
+      $('review-state').textContent = '正在读取轮次'; return;
+    }
     $('parent-button').hidden = !returnState;
     $('page-title').textContent = session.parentSession ? '子任务执行路径' : session.title;
     $('session-name').textContent = session.parentSession ? session.title : `${day(session.turns[0].start)} — ${day(endOf(session.turns.at(-1)))} · 本地对话记录`;
@@ -596,9 +605,42 @@ window.__geistBoot = () => {
     }else layer.innerHTML=`<path d="M${fork} ${p.mainY+5} V${p.mainBottom+6} H${target} V${y-3}" fill="none" stroke="var(--tool)" stroke-opacity=".65" stroke-width="1.2"/>`;
   }
   function tlClearRelation(){if($('tl-relation'))$('tl-relation').innerHTML='';}
+  // 绘制对账:同一窗口下的相同节点不再重建,只替换真正变化的那一段。
+  // window.__sceneDiff = false 时退回整块 innerHTML,一行回退。
+  // 未启用的对账实现:逐节点序列化比较在 455 轮样本上让 p95 从 18ms 升到 50ms,
+  // 比整块 innerHTML 更贵;平移要真省成本必须改成"内容坐标 + 容器 translate",不能靠逐节点 diff。
+  function paintScene(root, html) {
+    if (typeof window === 'undefined' || window.__sceneDiff === false) { root.innerHTML = html; return { mode: 'innerhtml', added: root.childElementCount, removed: 0, kept: 0 }; }
+    // 必须在 SVG 命名空间里解析:用 <template> 会把 clipPath 之类降成 HTML 未知元素。
+    const scratch = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    scratch.innerHTML = html;
+    const nextNodes = [...scratch.children];
+    const oldNodes = [...root.children];
+    if (oldNodes.length === nextNodes.length) {
+      let same = true;
+      for (let i = 0; i < oldNodes.length; i++) if (oldNodes[i].outerHTML !== nextNodes[i].outerHTML) { same = false; break; }
+      if (same) return { mode: 'same', added: 0, removed: 0, kept: oldNodes.length };
+    }
+    let prefix = 0;
+    while (prefix < oldNodes.length && prefix < nextNodes.length && oldNodes[prefix].outerHTML === nextNodes[prefix].outerHTML) prefix++;
+    let suffix = 0;
+    while (suffix < oldNodes.length - prefix && suffix < nextNodes.length - prefix &&
+      oldNodes[oldNodes.length - 1 - suffix].outerHTML === nextNodes[nextNodes.length - 1 - suffix].outerHTML) suffix++;
+    const oldMiddle = oldNodes.slice(prefix, oldNodes.length - suffix);
+    for (const node of oldMiddle) node.remove();
+    const anchor = suffix > 0 ? oldNodes[oldNodes.length - suffix] : null;
+    const middle = nextNodes.slice(prefix, nextNodes.length - suffix);
+    const fragment = document.createDocumentFragment();
+    for (const node of middle) fragment.appendChild(node);
+    root.insertBefore(fragment, anchor);
+    const stats = { mode: 'diff', added: middle.length, removed: oldMiddle.length, kept: prefix + suffix };
+    window.__paintStats = stats;
+    return stats;
+  }
   function tlBindScroll(){
     if(tlScrollBound)return;tlScrollBound=true;let frame=0;
-    $('graph-scroll').addEventListener('scroll',()=>{if(view!=='overview'||frame)return;frame=requestAnimationFrame(()=>{frame=0;if(view==='overview')renderOverview({plotOnly:true});});});
+    let lastSignature='';
+    $('graph-scroll').addEventListener('scroll',()=>{if(view!=='overview'||frame)return;frame=requestAnimationFrame(()=>{frame=0;if(view!=='overview')return;const vp=$('graph-scroll');const signature=[overviewScale,vp.scrollLeft,vp.clientWidth].join(':');if(signature===lastSignature)return;lastSignature=signature;renderOverview({plotOnly:true});});});
   }
 
 
@@ -979,7 +1021,12 @@ function fileIdentity(path) {
   const normalized = slash.replace(/\/{2,}/g, '/').replace(/^\//, slash.startsWith('//') ? '//' : '/');
   return /^(?:[a-z]:\/|\/\/)/i.test(String(path).replace(/\\/g, '/')) ? normalized.toLowerCase() : normalized;
 }
+const fileObjectCache = new WeakMap();
 function fileObjects(operations, turns = null) {
+  const cacheKey = turns ? [...turns].sort((a, b) => a - b).join(',') : '*';
+  let cache = fileObjectCache.get(operations);
+  if (cache?.length === operations.length && cache.values.has(cacheKey)) return cache.values.get(cacheKey);
+  if (!cache || cache.length !== operations.length) { cache = { length: operations.length, values: new Map() }; fileObjectCache.set(operations, cache); }
   const groups = new Map();
   for (const operation of operations) {
     if (turns && !turns.has(operation.turn)) continue;
@@ -998,14 +1045,19 @@ function fileObjects(operations, turns = null) {
     file.lane = file.changes.length || !file.reads.length && file.operations.some(o => o.kind === 'change') ? 'change' : 'read';
     file.label = file.path.replace(/\\/g, '/').split('/').at(-1);
   }
+  const suffixes = new Map();
   for (const file of files) {
-    const parts = file.path.replace(/\\/g, '/').split('/');
-    let count = 1;
-    while (count < parts.length && files.some(other => other.id !== file.id &&
-      other.path.replace(/\\/g, '/').split('/').slice(-count).join('/').toLowerCase() === parts.slice(-count).join('/').toLowerCase())) count++;
-    file.label = parts.slice(-count).join('/');
+    file.parts = file.path.replace(/\\/g, '/').split('/');
+    for (let n = 1; n <= file.parts.length; n++) { const key = file.parts.slice(-n).join('/').toLowerCase(); suffixes.set(key, (suffixes.get(key) || 0) + 1); }
   }
-  return files.sort((a, b) => a.operations[0].seq - b.operations[0].seq);
+  for (const file of files) {
+    let count = 1;
+    while (count < file.parts.length && suffixes.get(file.parts.slice(-count).join('/').toLowerCase()) > 1) count++;
+    file.label = file.parts.slice(-count).join('/'); delete file.parts;
+  }
+  files.sort((a, b) => a.operations[0].seq - b.operations[0].seq);
+  if (cache.values.size >= 16) cache.values.clear(); cache.values.set(cacheKey, files);
+  return files;
 }
 function packFileObjects(items, { left, right, measure, label, obstacles = [], gap = 8 }) {
   if (!items.length) return [];
@@ -1071,8 +1123,8 @@ function fileChangeHistory(operations, path) {
 
   let reviewBranchesNow = [], reviewRetriesNow = [], reviewStress = false;
   let reviewOverviewBookmark = null;
-  const reviewRealEpisodes = session.overview.episodes;
-  const reviewRetryEvents = data.context?.retries || session.turns.flatMap(t => t.steps.flatMap(s => s.retries.map(r => ({
+  let reviewRealEpisodes = session.overview.episodes;
+  let reviewRetryEvents = data.context?.retries || session.turns.flatMap(t => t.steps.flatMap(s => s.retries.map(r => ({
     ...r, turn: t.number, step: s.number, responded: s.assistantTime !== null && s.assistantTime >= r.time,
   }))));
   let reviewRowIndex = { key: null, rows: new Map() };
@@ -1331,9 +1383,16 @@ function fileChangeHistory(operations, path) {
   }
 
   const reviewContextData = data.context || { requests: [], boundaries: [] };
-  const reviewContextRows = contextByTurn(reviewContextData.requests);
-  const reviewContextMap = new Map(reviewContextRows.map(row => [row.turn, row]));
-  const reviewContextScale = contextDisplayScale(reviewContextRows);
+  let reviewContextRequests = [...new Map([...(reviewContextData.historyRequests || []), ...(reviewContextData.requests || [])].map(row => [row.seq, row])).values()].sort((a, b) => a.seq - b.seq);
+  function reviewIndexContextSteps(rows) {
+    const byStep = new Map();
+    rows.forEach((row, index) => { const key = row.turn + ':' + row.step; if (!byStep.has(key)) byStep.set(key, index); });
+    return byStep;
+  }
+  let reviewContextStepIndex = reviewIndexContextSteps(reviewContextRequests);
+  let reviewContextRows = contextByTurn(reviewContextRequests);
+  let reviewContextMap = new Map(reviewContextRows.map(row => [row.turn, row]));
+  let reviewContextScale = contextDisplayScale(reviewContextRows);
   let reviewContextSelected = reviewContextRows.at(-1)?.turn ?? null;
   overviewLayers.add('context'); overviewLayers.add('files');
   const reviewTokens = value => Math.abs(value) >= 1000 ? (value / 1000).toFixed(1) + 'k' : Math.round(value).toLocaleString();
@@ -1370,8 +1429,12 @@ function fileChangeHistory(operations, path) {
     if (last && visible(last.end)) html += '<path d="M' + last.end + ' 96V' + (mainHeight - 38) + '" class="review-turn-divider"/>';
     return html;
   }
-  function reviewContextNote(row) {
-    if (!row) return '没有这轮的构成记录';
+  function reviewContextMissing(number) {
+    const first = Math.min(...(reviewContextData.requests || []).map(row => row.turn));
+    return number < first && Number.isFinite(first) ? '本轮早于当前返回的历史范围；当前增量从第 ' + first + ' 轮开始' : '没有这轮的请求构成记录';
+  }
+  function reviewContextNote(row, number) {
+    if (!row) return reviewContextMissing(number);
     if (row.isBaseline) return '首轮已有 ' + reviewTokens(row.total) + ' · 看开始时的构成';
     return '第 ' + row.turn + ' 轮 · ' + (row.net >= 0 ? '净增 ' : '净减 ') + reviewTokens(Math.abs(row.net));
   }
@@ -1415,7 +1478,7 @@ function fileChangeHistory(operations, path) {
           overflowLabels.push({ x, sign, turn: row.turn, baseline: row.isBaseline, value: sign > 0 ? amounts.increase : -amounts.decrease });
         }
       }
-      const note = reviewContextNote(row);
+      const note = reviewContextNote(row, l.turn.number);
       html += brGroup('class="review-context-turn" data-context-turn="' + l.turn.number + '"', body, note + (row && !row.isBaseline ? '；增加 ' + reviewTokens(row.increase) + '，减少 ' + reviewTokens(row.decrease) : '；显示末次请求已有构成，作为后续轮次的比较基线') + (positive.overflow || negative.overflow ? '；实际量超过本图 ' + reviewTokens(scale.limit) + ' 显示范围，柱高已收起，不表示模型上下文超限' : ''));
     }
     for (const sign of [1, -1]) {
@@ -1464,9 +1527,13 @@ function fileChangeHistory(operations, path) {
   }
   function reviewOpenContext(turnNumber) {
     const row = reviewContextMap.get(turnNumber);
-    if (!row) { openDrawer('暂无上下文构成记录', '第 ' + turnNumber + ' 轮', '<p class="review-explain">这一轮没有可用于比较的请求构成，不能把缺失当成零。</p>'); return; }
+    if (!row) {
+      openDrawer('上下文增量尚未包含本轮', '第 ' + turnNumber + ' 轮', '<p class="review-explain">' + reviewContextMissing(turnNumber) + '。缺失不表示零。</p>');
+      $('drawer').dataset.contextTurn = turnNumber;
+      geistContextCoverage(); return;
+    }
     reviewContextSelected = turnNumber;
-    const first = reviewContextData.requests.find(r => r.turn === row.turn);
+    const first = reviewContextRequests.find(r => r.turn === row.turn);
     const max = Math.max(1, ...CONTEXT_CATEGORIES.map(c => Math.abs(row.parts[c.key][row.isBaseline ? 'after' : 'delta'])));
     let html = '<div class="review-context-headline"><strong>' + (row.isBaseline ? reviewTokens(row.total) : reviewSigned(row.net)) + '</strong><span>' + (row.isBaseline ? '首轮末次请求 · 已有上下文' : 'tokens · 净变化') + '</span></div>';
     if (row.isBaseline) html += '<p class="review-context-change-note">首次请求已经带着约 ' + reviewTokens(CONTEXT_CATEGORIES.reduce((n, c) => n + (first[c.key] || 0), 0)) + ' tokens，并不是空白。下面同时列出首次请求与本轮末次请求的构成。</p>';
@@ -1660,9 +1727,9 @@ function fileChangeHistory(operations, path) {
     }, { passive: false });
   }
   function reviewStepContext(t, step) {
-    const index = reviewContextData.requests.findIndex(r => r.turn === t.number && r.step === step.number);
-    if (index < 0) return null;
-    const current = reviewContextData.requests[index], prior = reviewContextData.requests[index - 1];
+    const index = reviewContextStepIndex.get(t.number + ':' + step.number);
+    if (index === undefined) return null;
+    const current = reviewContextRequests[index], prior = reviewContextRequests[index - 1];
     const total = CONTEXT_CATEGORIES.reduce((sum, c) => sum + (current[c.key] || 0), 0);
     const parts = Object.fromEntries(CONTEXT_CATEGORIES.map(c => [c.key, (current[c.key] || 0) - (prior?.[c.key] || 0)]));
     const amount = Object.values(parts).reduce((sum, value) => sum + value, 0);
@@ -1777,7 +1844,7 @@ function fileChangeHistory(operations, path) {
       } });
   }
 
-  const reviewFileOperations = data.context?.fileOperations || [];
+  let reviewFileOperations = data.context?.fileOperations || [];
   let reviewFileSelection = null, reviewFileGroups = [], reviewFilesInScope = [], reviewFilePoints = [], reviewFileTouchGroups = [];
   let reviewFilePositions = new Map(), reviewFileGeometry = null;
   let reviewActionFileFrame = null, reviewFilesFramePending = false;
@@ -2126,7 +2193,7 @@ function fileChangeHistory(operations, path) {
       part+=`<rect class="br-hit" x="${Math.max(left,a)-5}" y="${y-28}" width="${Math.max(20,Math.min(right,b)-Math.max(left,a)+10)}" height="62"/>`;
       html+=brGroup(`class="br-child" data-br-child="${child.id}"`,part,`${m.label||'子 Agent'} · ${dur(endOf(child.turns.at(-1))-child.turns[0].start)} · ${reports.length} 条主动回报已送达`);
     }
-    const mainH=Math.max(geistOverviewFrame.height,bottom+72),h=mainH,axisY=mainH-24;html=reviewTimeLayer(layout,visible,left,right,mainH,mapTime)+reviewContextLayer(layout,base,left,right,visible)+reviewCompactionLayer(mapTime,left,right,mainH)+html+reviewOverviewFiles(layout,mapTime,base,left,right,mainH);
+    const mainH=Math.max(geistOverviewFrame.height,bottom+72),h=mainH,axisY=mainH-24;html=reviewTimeLayer(layout,visible,left,right,mainH,mapTime)+'<g id="trace-context-layer">'+reviewContextLayer(layout,base,left,right,visible)+'</g>'+reviewCompactionLayer(mapTime,left,right,mainH)+html+reviewOverviewFiles(layout,mapTime,base,left,right,mainH);
     let axis=`<path d="M${left} ${axisY} H${right}" class="br-rule"/>`;
     const span=(right-left)/factor,step=[100,200,500,1000,2000,5000,10000,30000,60000,120000,300000,600000,1200000].find(v=>v>=span/7)||1200000;
     let lastTick=-Infinity;
@@ -2202,25 +2269,28 @@ function collectToolResults(session, facts, fileOperations) {
     seqs.forEach(seq => covered.add(seq));
     return { id: 'incident:' + e.id, kind: 'incident', turn: e.turn, step: e.steps?.[0], time: e.firstError, seqs, incident: e, calls: [] };
   });
-  const files = new Map(fileOperations.map(op => [op.seq, op]));
+  const files = new Map();
+  for (const op of fileOperations) { if (!files.has(op.seq)) files.set(op.seq, []); files.get(op.seq).push(op); }
   for (const t of session.turns) for (const step of t.steps) {
     const groups = new Map();
     for (const call of step.calls) {
       if (covered.has(call.seq)) continue;
-      const fact = facts[call.seq], file = files.get(call.seq);
+      const fact = facts[call.seq], records = files.get(call.seq) || [], file = records[0], operation = fact?.operation;
       let kind = null;
       if (call.status === 'error' || fact?.tone === 'bad') kind = 'error';
-      else if (call.status !== 'returned' || call.resultSeq == null) continue;
+      else if (call.status !== 'returned' || call.resultSeq == null) { if (operation) kind = 'pending'; else continue; }
+      else if (operation) kind = ({ write: 'change', search: 'query' })[operation.family] || operation.family;
       else if (/^命令输出报告：(?:PASS|FAIL|Tests? (?:passed|failed)|Test Files)\b/i.test(fact?.outcome || '')) kind = 'check';
       else if (file?.kind === 'change') kind = 'change';
       else if (file?.kind === 'read') kind = 'read';
       else if (/^(?:trajectory|session|session_event)_(?:read|search)$/.test(call.name) && /(?:返回|命中) \d+ 条/.test(fact?.outcome || '')) kind = 'query';
       else if (['grep', 'glob', 'web_search', 'web_fetch'].includes(call.name) && fact?.outcome && !/已收到工具返回|工具已返回/.test(fact.outcome)) kind = 'query';
       if (!kind) continue;
-      let group = groups.get(kind);
-      if (!group) { group = { id: t.number + ':' + step.number + ':' + kind, kind, turn: t.number, step: step.number, time: call.end ?? call.start, seqs: [], calls: [] }; groups.set(kind, group); }
+      const key = operation ? call.name + ':' + kind : kind;
+      let group = groups.get(key);
+      if (!group) { group = { id: t.number + ':' + step.number + ':' + key, kind, family: operation?.family, recorded: !!operation, turn: t.number, step: step.number, time: call.end ?? call.start, seqs: [], calls: [] }; groups.set(key, group); }
       group.seqs.push(call.seq);
-      group.calls.push({ ...call, file: file?.path ?? null, fact });
+      group.calls.push({ ...call, file: file?.path ?? null, files: records, fact });
       group.time = Math.max(group.time, call.end ?? call.start);
     }
     results.push(...groups.values());
@@ -2231,6 +2301,21 @@ function collectToolResults(session, facts, fileOperations) {
 function toolResultLabel(result) {
   if (result.kind === 'incident') return null;
   const calls = result.calls, paths = [...new Set(calls.map(c => c.file).filter(Boolean))];
+  if (result.recorded) {
+    const call = calls[0], operation = call.fact?.operation;
+    if (result.kind === 'pending') return call.name + (calls.length > 1 ? ' ×' + calls.length : '') + ' · 待返回';
+    if (result.kind === 'error') return call.name + ' · 受阻';
+    if (calls.length > 1) return call.name + ' ×' + calls.length;
+    if (call.name === 'grep') return 'grep · ' + (operation?.search?.total ?? operation?.search?.shown ?? '?') + ' 处匹配';
+    if (call.name === 'glob') return 'glob · 发现路径';
+    if (operation?.family === 'read') return 'read · ' + (operation.metrics.find(([key]) => key === '返回行数')?.[1] || '取回内容');
+    if (operation?.family === 'write') return call.name + ' · ' + (paths[0]?.split(/[\\/]/).at(-1) || '文件修改');
+    if (operation?.family === 'command') {
+      const program = operation.subject.match(/\b(?:node|python3?|lean|lake|git|rg|pnpm|npm|Get-Content|Select-String)\b/)?.[0];
+      return call.name + ' · ' + (program || '命令输出');
+    }
+    return call.name + ' · ' + ({ process: '后台输出', web: '网页返回', coordination: '协作返回' }[operation?.family] || '工具返回');
+  }
   if (result.kind === 'error') return calls.length > 1 ? calls.length + ' 次受阻' : '操作受阻';
   if (result.kind === 'read') {
     const range = calls.length === 1 && calls[0].fact?.outcome?.match(/返回第 (\d+)–(\d+) 行/);
@@ -2252,6 +2337,19 @@ function toolResultLabel(result) {
     return outcome.match(/(?:返回|命中) \d+ 条(?:事件记录|记录)?/)?.[0] || '取回查询结果';
   }
   return calls.length + ' 项查询结果';
+}
+
+function compactToolLabel(call) {
+  const operation = call.fact?.operation;
+  if (call.name === 'grep') return 'grep ' + (operation?.search?.total ?? operation?.search?.shown ?? '?') + '处';
+  if (operation?.family === 'read') return 'read ' + (operation.metrics.find(([key]) => key === '返回行数')?.[1] || '内容').replace(/\s+/g, '');
+  if (operation?.family === 'command') { const program = operation.subject.match(/\b(?:node|python3?|lean|lake|git|rg|pnpm|npm)\b/)?.[0]; return program ? call.name + '/' + program : call.name; }
+  return call.name === 'job_output' ? '后台输出' : call.name;
+}
+
+function toolResultEndpoint(members) {
+  const priority = result => result.kind === 'error' || result.kind === 'incident' && !result.incident.complete ? 3 : result.kind === 'pending' ? 2 : 1;
+  return members.reduce((chosen, member) => priority(member.result) > priority(chosen) ? member.result : chosen, members[0].result);
 }
 
 // Native measurements are kept intact. Inconsistent historical timing is not drawn as a ratio.
@@ -2458,7 +2556,9 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
     const visibleRounds = () => history.rounds.filter(round => operationsOf(round).length);
     const counts = round => {
       const operations = operationsOf(round), failed = operations.filter(op => op.status === 'error').length, pending = operations.filter(op => op.status !== 'returned' && op.status !== 'error').length;
-      return [round.changes ? round.changes + ' 次写入/修改' : '', failed ? failed + ' 次受阻' : '', state.reads && round.reads ? round.reads + ' 次读取' : '', pending ? pending + ' 次待确认' : ''].filter(Boolean).join(' · ');
+      const direct = operations.filter(op => op.kind === 'read' && op.access !== 'match' && op.status === 'returned').length;
+      const matches = operations.filter(op => op.access === 'match' && op.status === 'returned').length;
+      return [round.changes ? round.changes + ' 次写入/修改' : '', failed ? failed + ' 次受阻' : '', state.reads && direct ? direct + ' 次直接读取' : '', state.reads && matches ? matches + ' 次匹配片段' : '', pending ? pending + ' 次待确认' : ''].filter(Boolean).join(' · ');
     };
     const excerpt = fact => {
       if (!fact?.preview) return '';
@@ -2469,7 +2569,7 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
     const renderOperation = op => {
       const fact = factFor(op), planned = op.status !== 'returned' || fact?.tone === 'bad' || fact?.tone === 'unknown';
       const outcome = fact?.outcome || (op.status === 'returned' ? '工具已返回' : op.status === 'error' ? '操作受阻' : '结果未记录');
-      return '<div class="geist-history-operation" data-history-operation="' + op.seq + '"><div class="geist-history-operation-title"><strong class="' + (op.kind === 'read' ? 'read' : op.status === 'error' ? 'failed' : 'change') + '">' + (op.kind === 'read' ? '读取' : changeName(op)) + '</strong><span>第 ' + op.step + ' 步</span>' + (op.status === 'error' ? '<span class="failed">受阻</span>' : '') + '</div><p>' + esc(outcome) + '</p>' +
+      return '<div class="geist-history-operation" data-history-operation="' + op.seq + '"><div class="geist-history-operation-title"><strong class="' + (op.kind === 'read' ? 'read' : op.status === 'error' ? 'failed' : 'change') + '">' + (op.access === 'match' ? '匹配片段' : op.kind === 'read' ? '读取' : changeName(op)) + '</strong><span>第 ' + op.step + ' 步</span>' + (op.status === 'error' ? '<span class="failed">受阻</span>' : '') + '</div><p>' + esc(outcome) + '</p>' +
         (!planned ? excerpt(fact) : '') + '<div class="geist-history-operation-links">' +
         (fact?.preview ? '<button class="geist-text-action" data-history-diff="' + op.seq + '">' + (planned ? '查看原计划' : '查看改动片段') + ' ↗</button>' : '') +
         '<button class="geist-text-action quiet" data-history-step="' + op.seq + '">定位到这一步 ↗</button></div></div>';
@@ -2480,7 +2580,8 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
       const line = '<svg class="geist-history-map" viewBox="0 0 620 52" role="group" aria-label="文件全程记录，按轮次顺序排列"><path d="M24 17H596" class="geist-history-rail"/>' +
         rounds.map((round, i) => '<g role="button" tabindex="0" data-history-jump="' + round.turn + '" aria-label="第 ' + round.turn + ' 轮，' + counts(round) + '"><title>第 ' + round.turn + ' 轮 · ' + counts(round) + '</title><circle cx="' + x(i) + '" cy="17" r="' + hitRadius + '" fill="transparent"/><circle cx="' + x(i) + '" cy="17" r="' + Math.min(hitRadius, round.turn === originTurn ? 4 : 3) + '" class="geist-history-dot ' + (round.failed ? 'failed' : round.changes ? 'change' : 'read') + (round.turn === originTurn ? ' current' : '') + '"/></g>').join('') +
         '<text x="24" y="43">第 ' + rounds[0].turn + ' 轮</text>' + (rounds.length > 1 ? '<text x="596" y="43" text-anchor="end">第 ' + rounds.at(-1).turn + ' 轮</text>' : '') + '</svg>';
-      return '<div class="geist-history-overview"><p><strong>' + (hasChanges ? history.changeRounds.length + ' 轮涉及写入/修改' : history.rounds.length + ' 轮有文件记录') + '</strong><span>' + (history.changes.length ? '修改已返回 ' + history.changes.length + ' 次 · ' : '') + '读取 ' + history.reads.length + ' 次' + (history.failed.length ? ' · 受阻 ' + history.failed.length + ' 次' : '') + '</span></p>' + line +
+      const matches = history.reads.filter(op => op.access === 'match').length;
+      return '<div class="geist-history-overview"><p><strong>' + (hasChanges ? history.changeRounds.length + ' 轮涉及写入/修改' : history.rounds.length + ' 轮有文件记录') + '</strong><span>' + (history.changes.length ? '修改已返回 ' + history.changes.length + ' 次 · ' : '') + '直接读取 ' + (history.reads.length - matches) + ' 次' + (matches ? ' · 搜索片段 ' + matches + ' 次' : '') + (history.failed.length ? ' · 受阻 ' + history.failed.length + ' 次' : '') + '</span></p>' + line +
         '<div class="geist-history-controls"><span>全程文件工具记录 · 按轮次顺序</span>' + (originTurn && rounds.some(r => r.turn === originTurn) ? '<button class="geist-text-action" data-history-jump="' + originTurn + '">定位第 ' + originTurn + ' 轮</button>' : '') +
         '<button id="review-history-reads" class="geist-text-action"' + (!hasChanges ? ' disabled' : '') + ' aria-pressed="' + state.reads + '">' + (state.reads ? '✓ 包含读取' : '包含读取') + '</button></div></div>' +
         '<div class="geist-history-rounds">' + rounds.map(round => '<details class="geist-history-round" data-history-tone="' + (operationsOf(round).some(op => op.status === 'error') ? 'failed' : round.changes ? 'change' : 'read') + '" data-history-round="' + round.turn + '"' + (state.open.has(round.turn) ? ' open' : '') + '><summary><strong>第 ' + round.turn + ' 轮</strong><span>' + counts(round) + '</span>' + (round.turn === originTurn ? '<em>图中位置</em>' : '') + '</summary><div class="geist-history-round-content">' + operationsOf(round).map(renderOperation).join('') + '</div></details>').join('') + '</div>' +
@@ -2527,7 +2628,7 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
     detail.html = render(); reviewOpenDetail(detail);
   };
 
-  const geistContextSnapshot = data.officialStats?.context;
+  let geistContextSnapshot = data.officialStats?.context;
   const geistContextNumber = n => n == null ? '未记录' : n >= 1000000 ? (n / 1000000).toFixed(1) + 'M' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n));
   function geistContextCategory(key) {
     return CONTEXT_CATEGORIES.find(c => c.key === key) || { key: 'messages', label: '对话内容', color: 'var(--chart-assistant)' };
@@ -2552,11 +2653,11 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
     const model = route?.model ? (route.provider ? route.provider + ' · ' : '') + route.model + (route.reasoningEffort ? ' (' + route.reasoningEffort + ')' : '') : '';
     const share = value => value < .1 ? '<0.1%' : value.toFixed(1) + '%';
     const name = item => geistContextCategory(item.key).label;
-    region.innerHTML = '<header><h2>当前上下文 <small title="此 Demo 的最新会话快照；查看历史步骤不会改写当前总量">第 ' + session.turns.at(-1).number + ' 轮末</small></h2><span class="geist-context-model">' + esc(model) + '</span></header>' +
+    region.innerHTML = '<header><h2>当前上下文 <small title="查看历史步骤不会改写当前总量">' + (session.turns.length ? '第 ' + session.turns.at(-1).number + ' 轮末' : '正在读取会话') + '</small></h2><span class="geist-context-model">' + esc(model) + '</span></header>' +
       '<div class="geist-context-total"><div><strong>' + geistContextNumber(summary.used) + '</strong><span>' + (summary.capacity ? ' / ' + geistContextNumber(summary.capacity) + ' tokens' : ' tokens · 容量未记录') + '</span></div><span>' + (summary.percent == null ? '占用未记录' : '<b>' + summary.percent.toFixed(1) + '%</b> 已用') + '</span></div>' +
       '<div class="geist-context-meter" role="img" aria-label="' + esc(summary.percent == null ? '上下文占用未记录' : '上下文已用 ' + summary.used + ' / ' + summary.capacity + ' tokens，分段按估算来源比例展示') + '">' +
       '<div class="geist-context-occupied" style="width:' + (summary.fill ?? 0) + '%">' + summary.categories.map(item => '<span style="width:' + item.share + '%;background:' + geistContextCategory(item.key).color + '" title="' + esc(name(item) + ' ≈' + geistContextNumber(item.value) + ' tokens') + '"></span>').join('') + '</div></div>' +
-      '<div class="geist-context-sources" aria-label="估算来源构成，与路径颜色一致">' + summary.categories.map(item => '<button data-current-source="' + item.key + '" title="' + esc(name(item) + '，约占构成 ' + share(item.share) + '；点击查看说明') + '"><i style="background:' + geistContextCategory(item.key).color + '"></i><span>' + name(item) + '</span><b>≈' + geistContextNumber(item.value) + '</b></button>').join('') + '</div>';
+      '<div class="geist-context-sources" aria-label="估算来源构成，与路径颜色一致">' + summary.categories.map(item => '<button data-current-source="' + item.key + '" title="' + esc(name(item) + '，约占构成 ' + share(item.share) + '；点击查看说明') + '"><i style="background:' + geistContextCategory(item.key).color + '"></i><span>' + name(item) + '</span><b>≈' + geistContextNumber(item.value) + ' <span class="geist-context-share">' + esc(share(item.share)) + '</span></b></button>').join('') + '</div>';
     region.querySelectorAll('[data-current-source]').forEach(el => el.onclick = () => geistShowCurrentSource(el.dataset.currentSource, summary));
   }
 
@@ -2594,9 +2695,21 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
 
   // Visual adaptation only: semantic categories and recorded values remain unchanged.
   for (const category of CONTEXT_CATEGORIES) category.color = 'var(--chart-' + category.key + ')';
+  let geistMeasureFont = '';
+  const geistMeasureWidths = new Map();
+  function geistSyncMeasureFont() {
+    const font = '12px ' + getComputedStyle(document.body).getPropertyValue('--sans');
+    if (font !== geistMeasureFont) { geistMeasureFont = font; geistMeasureWidths.clear(); }
+  }
   reviewMeasure = function(text) {
-    tlContext.font = '12px ' + getComputedStyle(document.body).getPropertyValue('--sans');
-    return tlContext.measureText(String(text)).width;
+    if (!geistMeasureFont) geistSyncMeasureFont();
+    const key = String(text);
+    if (geistMeasureWidths.has(key)) return geistMeasureWidths.get(key);
+    tlContext.font = geistMeasureFont;
+    const width = tlContext.measureText(key).width;
+    if (geistMeasureWidths.size > 4096) geistMeasureWidths.clear();
+    geistMeasureWidths.set(key, width);
+    return width;
   };
   let geistLegendOpen = false;
   // 开合状态只有一个来源:图例的 hidden 与按钮的 aria-expanded 都从这里同步。
@@ -2638,30 +2751,49 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
     geistSyncLegend();
   }
   const geistOverviewBase = renderOverview;
-  renderOverview = function(...args) { const value = geistOverviewBase(...args); geistArrangeCaption(); return value; };
+  renderOverview = function(...args) { geistSyncMeasureFont(); const value = geistOverviewBase(...args); geistArrangeCaption(); return value; };
   const geistActionBase = renderActionPath;
-  renderActionPath = function(...args) { const value = geistActionBase(...args); geistArrangeCaption(); return value; };
+  renderActionPath = function(...args) { geistSyncMeasureFont(); const value = geistActionBase(...args); geistArrangeCaption(); return value; };
   // Re-measure labels once the self-hosted font is ready; preserve the viewport.
   document.fonts.ready.then(() => {
+    geistMeasureWidths.clear();
     const vp = $('graph-scroll'), left = vp.scrollLeft, top = vp.scrollTop;
     if (view === 'path') renderActionPath(); else renderOverview({ plotOnly: true });
     vp.scrollLeft = left; vp.scrollTop = top;
   });
 
-  const geistOfficialStats = data.officialStats?.snapshot;
-  const geistStatsByStep = new Map((geistOfficialStats?.turns || []).flatMap(t => t.steps.map(s => [t.turn + ':' + s.step, s])));
-  const geistOutcomes = collectToolResults(session, reviewContextData.callFacts || {}, reviewFileOperations);
+  let geistOfficialStats = data.officialStats?.snapshot;
+  let geistStatsByStep = new Map((geistOfficialStats?.turns || []).flatMap(t => t.steps.map(s => [t.turn + ':' + s.step, s])));
+  let geistOutcomes = collectToolResults(session, reviewContextData.callFacts || {}, reviewFileOperations);
   let geistOutcomeBranches = [];
   const geistOutcomeLayoutCache = new Map();
   const geistReportIcon = '<path d="M-4-6h5l3 3v9h-8zM1-6v3h3M-1-0.5h3M-1 2.5h3"/>';
+  const geistOperationKindBase = callKind;
+  callKind = function(call) { const family = reviewContextData.callFacts?.[call.seq]?.operation?.family; return ({ read: 'read', write: 'write', search: 'query', web: 'query', command: 'run', process: 'run' })[family] || geistOperationKindBase(call); };
+  const geistOperationIconBase = stepIcon;
+  stepIcon = function(step) { const family = reviewContextData.callFacts?.[step.calls[0]?.seq]?.operation?.family; return family === 'read' ? geistReportIcon : family === 'search' ? STEP_ICON.read : geistOperationIconBase(step); };
+  const geistOperationStepLabelBase = reviewActionStepLabel;
+  reviewActionStepLabel = function(step) {
+    if (!step.calls.some(call => reviewContextData.callFacts?.[call.seq]?.operation)) return geistOperationStepLabelBase(step);
+    const names = [...new Set(step.calls.map(call => call.name))];
+    return names.slice(0, 2).join(' / ') + (names.length > 2 ? ' 等' : '');
+  };
   function geistOutcomeText(members) {
     if (members.length === 1) {
       const r = members[0].result;
       const text = r.kind === 'incident' ? reviewBranchLabel([{ e: r.incident }]) : toolResultLabel(r);
-      return shorten(view === 'path' ? text.replace(/^\d+\s*·\s*/, '') : text, 17);
+      return shorten(view === 'path' ? text.replace(/^\d+\s*·\s*/, '') : text, r.recorded ? 22 : 17);
     }
     const errors = members.filter(m => ['incident', 'error'].includes(m.result.kind)).length;
     const recovered = members.filter(m => m.result.kind === 'incident' && m.result.incident.complete).length;
+    if (members.some(m => m.result.recorded)) {
+      const calls = members.flatMap(m => m.result.calls), counts = new Map();
+      for (const call of calls) counts.set(call.name, (counts.get(call.name) || 0) + 1);
+      const labels = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([name, n]) => n === 1 ? compactToolLabel(calls.find(c => c.name === name)) : name + ' ×' + n);
+      if (errors) labels.push(errors + (recovered === errors ? ' 处已恢复' : ' 处受阻'));
+      if (members.some(m => m.result.kind === 'pending')) labels.push('有待返回');
+      return labels.join(' · ');
+    }
     const names = { read: '取回内容', change: '文件改动', check: '检查输出', query: '查询结果' };
     const kinds = ['check', 'change', 'read', 'query'].filter(kind => members.some(m => m.result.kind === kind)).slice(0, errors ? 1 : 2);
     return kinds.map(kind => names[kind]).join(' · ') + (errors ? (kinds.length ? ' · ' : '') + errors + (recovered === errors ? ' 处已恢复' : ' 处受阻') : '');
@@ -2672,6 +2804,11 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
     }
     if (result.kind === 'error') return brCap(x, y);
     if (result.kind === 'recovered') return brCap(x, y);
+    if (result.recorded) {
+      const kind = result.kind === 'pending' ? 'pending' : result.family || result.kind;
+      const glyph = kind === 'read' ? geistReportIcon : kind === 'write' ? STEP_ICON.write : kind === 'search' ? STEP_ICON.read : kind === 'command' ? STEP_ICON.run : kind === 'pending' || kind === 'process' ? '<circle r="5"/><path d="M0-3v3l2 1"/>' : kind === 'coordination' ? '<path d="M-4-5v7q0 3 4 3h4M-4-1h5q3 0 3-4"/><circle cx="-4" cy="-5" r="1"/><circle cx="4" cy="-5" r="1"/>' : STEP_ICON.query;
+      return '<g transform="translate(' + x + ' ' + y + ')" class="geist-result-glyph ' + (kind === 'write' ? 'change' : kind) + '">' + glyph + '</g>';
+    }
     if (result.kind === 'check') {
       const failed = result.calls.some(c => /^命令输出报告：FAIL\b/i.test(c.fact?.outcome || '') || /^\s*FAIL\b/im.test(c.result?.text || ''));
       return '<g transform="translate(' + x + ' ' + y + ')" class="geist-result-glyph ' + (failed ? 'error' : 'check') + '">' + geistReportIcon + '</g>';
@@ -2681,13 +2818,8 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
   function geistResultBranchBody(p, base) {
     const y = base + p.dy, sign = p.dy > 0 ? 1 : -1;
     const twig = 'M' + p.x + ' ' + (base + sign * 2) + 'V' + (y - sign * 10) + 'Q' + p.x + ' ' + y + ' ' + (p.x + 10) + ' ' + y + 'H' + (p.x + 14);
-    let glyph;
-    if (p.members.length === 1) glyph = geistOutcomeGlyph(p.members[0].result, p.x + 20, y);
-    else {
-      const kinds = [...new Set(p.members.map(m => ['incident', 'error'].includes(m.result.kind) ? 'error' : m.result.kind))].sort((a, b) => (b === 'error') - (a === 'error')).slice(0, 3);
-      const recovered = p.members.filter(m => ['incident', 'error'].includes(m.result.kind)).every(m => m.result.kind === 'incident' && m.result.incident.complete);
-      glyph = kinds.slice(0, 2).map((kind, i) => geistOutcomeGlyph({ kind: kind === 'error' && recovered ? 'recovered' : kind, calls: p.members.flatMap(m => m.result.calls) }, p.x + 18 + i * 18, y)).join('');
-    }
+    const endpoint = toolResultEndpoint(p.members);
+    const glyph = '<g class="geist-branch-tip" data-endpoint-kind="' + endpoint.kind + '" aria-hidden="true">' + geistOutcomeGlyph(endpoint, p.x + 20, y) + '</g>';
     const body = '<rect class="br-hit" x="' + (p.left - 4) + '" y="' + (base + p.top - 3) + '" width="' + (p.right - p.left + 8) + '" height="' + (p.bottom - p.top + 6) + '"/>' +
       '<path d="' + twig + '" class="br-connector"/>' + glyph + brText(p.cx, p.dy > 0 ? y + 21 : y - 14, p.label, 'br-label');
     return body;
@@ -2748,16 +2880,18 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
       el.classList.toggle('branch-related', group.members.some(m => m.file.operations.some(op => seqs.has(op.seq))));
     });
     if (result.kind === 'incident') { reviewOpenBranch([result.incident]); return; }
-    const names = { read: '取回文件内容', change: '文件修改', query: '查询结果', check: '检查输出', error: '操作受阻' };
-    const paths = [...new Set(result.calls.map(c => c.file).filter(Boolean))];
+    const names = { read: '取回文件内容', change: '文件修改', query: '查询结果', check: '检查输出', error: '操作受阻', command: '命令输出', process: '后台任务', web: '网页返回', coordination: '协作返回', pending: '等待工具返回', other: '工具返回' };
+    const paths = [...new Set(result.calls.flatMap(c => c.files?.length ? c.files.map(file => file.path) : [c.file]).filter(Boolean))];
     let html = result.calls.map(call => '<div class="geist-outcome-record"><strong>' + esc(call.fact?.title || call.name) + '</strong><p>' + esc(call.fact?.outcome || '工具结果已记录') + '</p>' +
-      (call.fact?.preview ? '<button class="geist-text-action" data-result-diff="' + call.seq + '">' + (call.fact.tone === 'bad' || call.fact.tone === 'unknown' ? '查看原计划' : '查看改动片段') + ' ↗</button>' : '') + '</div>').join('');
+      (call.fact?.preview ? '<button class="geist-text-action" data-result-diff="' + call.seq + '">' + (call.fact.tone === 'bad' || call.fact.tone === 'unknown' ? '查看原计划' : '查看改动片段') + ' ↗</button>' : '') +
+      (result.recorded ? '<p class="review-quiet">' + (call.inner ? '内部工具 · ' : '') + 'seq ' + call.seq + (call.rootSeq != null ? ' · 外层调用 #' + call.rootSeq : '') + '</p>' + callEntry(call) : '') + '</div>').join('');
     if (paths.length) html += '<div class="geist-outcome-files">' + paths.map((path, i) => '<button class="geist-text-action" data-result-file="' + i + '">' + esc(path.split(/[\\/]/).at(-1)) + ' · 全程记录 ↗</button>').join('') + '</div>';
     const embedded = window.parent !== window;
     html += '<div class="drawer-actions"><button class="action-button primary" id="geist-result-step">在行动路径中查看 ↗</button><button class="action-button" id="geist-result-context">本轮上下文变化</button>' +
       (embedded ? '<button class="action-button" id="geist-result-chat">跳到第 ' + result.turn + ' 轮对话 ↗</button>' : '') + '</div>';
     if (result.kind === 'check') html += '<p class="review-quiet">按检查命令实际输出展示，不代表整个任务已经完成。</p>';
-    openDrawer(names[result.kind], '第 ' + result.turn + ' 轮 · 第 ' + result.step + ' 步 · ' + result.calls.length + ' 项操作', html);
+    if (result.calls.some(call => call.name === 'grep')) html += '<p class="review-quiet">搜索记录关联实际返回的匹配片段，不表示读入了整份文件。</p>';
+    openDrawer(result.recorded ? toolResultLabel(result) : names[result.kind], '第 ' + result.turn + ' 轮 · 第 ' + result.step + ' 步 · ' + result.calls.length + ' 项操作', html);
     $('geist-result-step').onclick = () => { closeDrawer(); reviewEnterPath(result.turn, result.step); };
     $('geist-result-context').onclick = () => reviewOpenContext(result.turn);
     // 跳到对话由宿主视图完成(切到对话并滚到该轮),页面只把轮次交出去。
@@ -2897,7 +3031,7 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
     }
   };
 
-  const geistActors = actorRecords(data), geistSkills = skillObjects(geistActors.skills);
+  let geistActors = actorRecords(data), geistSkills = skillObjects(geistActors.skills);
   let geistSkillSelected = null;
   const geistActorLayers = { skills: true, agents: true };
   let geistActorResultGroups = [];
@@ -3157,13 +3291,14 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
     }).join('');
   }
 
-  const geistSkillAnalysis = data.context?.skillAnalysis;
+  let geistSkillAnalysis = data.context?.skillAnalysis;
   const geistSkillScopeCache = new Map();
   function geistSkillScope(name = geistSkillSelected) {
     if (!geistSkillAnalysis || !name) return null;
     if (geistSkillScopeCache.has(name)) return geistSkillScopeCache.get(name);
     const records = geistSkillAnalysis.records.filter(s => s.name === name); if (!records.length) return null;
     const intervals = records.flatMap(r => r.intervals);
+    if (!intervals.length) return null;
     const contains = time => intervals.some(i => time >= i.from && time < i.to);
     const calls = session.turns.flatMap(t => t.steps.flatMap(step => step.calls.filter(call => contains(call.start)).map(call => ({ ...call, turn: t.number, step: step.number }))));
     const seqs = new Set(calls.map(c => c.seq));
@@ -3306,6 +3441,238 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
       body.append(row);
     };
   })();
+
+  // Keep one renderer and one set of interaction state while data arrives.
+  // The demo and legacy standalone page still start with complete data.
+  let geistUpdateFrame = 0, geistDetailIntent = 0, geistHeaderDirty = false;
+  const geistMerge = (target, patch) => {
+    for (const [key, value] of Object.entries(patch)) {
+      if (value && typeof value === 'object' && !Array.isArray(value) && target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])) geistMerge(target[key], value);
+      else target[key] = value;
+    }
+  };
+  function geistHydrateTurn(target, source) {
+    const steps = target.steps;
+    const byNumber = new Map((steps || []).map(row => [row.number, row]));
+    Object.assign(target, source);
+    if (steps && source.steps) target.steps = source.steps.map(row => {
+      const current = byNumber.get(row.number);
+      return current ? Object.assign(current, row) : row;
+    });
+  }
+  function geistProgressStatus() {
+    if (!data.traceStage) return;
+    let status = $('trace-progress');
+    if (!status) {
+      status = document.createElement('span'); status.id = 'trace-progress'; status.className = 'trace-progress';
+      status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+      document.querySelector('.canvas-bar').append(status);
+    }
+    const names = { core: '主干', details: '原文与文件', actors: '子代理', context: '上下文', history: '早期增量', refresh: '记录校验' }, states = { ...data.traceStage, ...data.traceStatus };
+    if (reviewContextRows.length) states.context = 'ready';
+    const pending = Object.keys(names).filter(key => states[key] === 'loading');
+    const failed = Object.keys(names).filter(key => ['error', 'unavailable', 'partial'].includes(states[key]));
+    status.hidden = !pending.length && !failed.length;
+    status.classList.toggle('is-loading', !!pending.length);
+    status.replaceChildren(document.createTextNode(pending.length ? '正在补齐 · ' + pending.map(key => names[key]).join(' / ') : states.actors === 'partial' ? '部分子代理记录未完成' : failed.map(key => names[key]).join(' / ') + '暂不可用'));
+    if (failed.some(key => key !== 'context')) {
+      const retry = document.createElement('button'); retry.textContent = '重新加载';
+      retry.onclick = () => window.dispatchEvent(new Event('analysis-trace-retry'));
+      status.append(retry);
+    }
+  }
+  // Suppress inferred branches made from short first-frame previews. Their
+  // complete inputs are already being prefetched and replace this trunk soon.
+  const geistProgressBranches = reviewBranches;
+  if (data.traceStage && data.traceStage.details !== 'ready') geistOutcomes = [];
+  reviewBranches = function(...args) {
+    return data.traceStage && data.traceStage.details !== 'ready' ? { html: '', bottom: args[1] + 42 } : geistProgressBranches(...args);
+  };
+  const geistProgressClose = closeDrawer;
+  closeDrawer = function(...args) { geistDetailIntent++; return geistProgressClose(...args); };
+  const geistProgressOpen = openDrawer;
+  openDrawer = function(...args) { delete $('drawer').dataset.contextTurn; return geistProgressOpen(...args); };
+  function geistWithTurn(number, action) {
+    if (!window.__traceEnsureTurn || window.__traceTurnReady(number)) return action();
+    const intent = ++geistDetailIntent;
+    openDrawer('正在载入原始记录', '第 ' + number + ' 轮', '<p class="trace-detail-loading">正在优先读取这一轮的参数与结果…</p>');
+    window.__traceEnsureTurn(number).then(() => {
+      if (intent === geistDetailIntent && turn().number === number && $('canvas').classList.contains('drawer-open')) action();
+    }).catch(() => {
+      if (intent !== geistDetailIntent) return;
+      $('drawer-body').innerHTML = '<p>这一轮的记录读取失败。</p><button class="action-button" id="trace-turn-retry">重试</button>';
+      $('trace-turn-retry').onclick = () => geistWithTurn(number, action);
+    });
+  }
+  const geistProgressStep = showStep;
+  showStep = function(index) { const number = turn().number; return geistWithTurn(number, () => geistProgressStep(index)); };
+  const geistProgressGroup = showGroup;
+  showGroup = function(index) { return geistWithTurn(turn().number, () => geistProgressGroup(index)); };
+  const geistProgressPrompts = showPrompts;
+  showPrompts = function(...args) { return geistWithTurn(turn().number, () => geistProgressPrompts(...args)); };
+  const geistProgressStepDetail = reviewOpenStepDetail;
+  reviewOpenStepDetail = function(t, step) {
+    return geistWithTurn(t.number, () => {
+      if ($('canvas').classList.contains('drawer-open')) geistProgressClose();
+      geistProgressStepDetail(t, step, stepInsight(t, step, session.overview.episodes, reviewContextData.callFacts), reviewStepContext(t, step));
+    });
+  };
+  const geistProgressSummary = reviewRenderStepSummary;
+  reviewRenderStepSummary = function(t, step) {
+    const value = geistProgressSummary(t, step);
+    if (window.__traceEnsureTurn && !window.__traceTurnReady(t.number)) window.__traceEnsureTurn(t.number).catch(() => {});
+    return value;
+  };
+  function geistContextCoverage() {
+    if (!session.turns.length) return;
+    let note = $('trace-context-coverage');
+    if (!note) { note = document.createElement('div'); note.id = 'trace-context-coverage'; note.className = 'trace-context-coverage'; $('geist-context-overview').append(note); }
+    const recent = reviewContextData.requests || [], history = reviewContextData.historyRequests || [];
+    const first = Math.min(...recent.map(row => row.turn));
+    const oldFirst = history.length ? Math.min(...history.map(row => row.turn)) : first;
+    note.hidden = !recent.length || first <= session.turns[0].number;
+    if (note.hidden) return;
+    note.replaceChildren(document.createTextNode((history.length ? '已补充历史 ' + oldFirst + '–' + Math.max(...history.map(row => row.turn)) + ' 轮；' : '') + '当前增量记录从第 ' + first + ' 轮开始。'));
+    if (oldFirst > session.turns[0].number && data.traceCapabilities?.history) {
+      const button = document.createElement('button'); button.textContent = data.traceStatus?.history === 'loading' ? '正在读取更早增量…' : '读取更早增量';
+      button.disabled = data.traceStatus?.history === 'loading';
+      button.onclick = () => window.__traceLoadHistory(oldFirst); note.append(button);
+    } else if (!history.length) note.append(document.createTextNode('更早记录超出当前返回范围。'));
+    if (data.traceStatus?.history === 'error') note.append(document.createTextNode(' 历史回补暂不可用。'));
+  }
+  // The actual page stays present while the first log is read. No separate
+  // illustration or synthetic branch stands in for recorded execution.
+  window.__geistShell = function() {
+    header(); geistRenderContextOverview(); geistProgressStatus();
+    $('turn-heading').textContent = '正在读取主干，已有上下文会先显示';
+  };
+  const geistPendingOverview = renderOverview, geistPendingPath = renderActionPath;
+  renderOverview = function(...args) { if (!session.turns.length) return window.__geistShell(); return geistPendingOverview(...args); };
+  renderActionPath = function(...args) { if (!session.turns.length) return window.__geistShell(); return geistPendingPath(...args); };
+  geistProgressStatus();
+
+  // Merge arrivals cheaply, then rebuild only the indices whose inputs changed.
+  // Several arrivals in one frame share the same index and graph work.
+  const geistDirty = new Set();
+  const geistUpdateCounts = window.__traceUpdates = { context: 0, outcomes: 0, actors: 0, stats: 0, graph: 0, contextLayer: 0, summary: 0 };
+  const geistArrived = new Set();
+  window.__geistUpdate = (patch, options = {}) => {
+    const before = { requests: reviewContextData.requests, history: reviewContextData.historyRequests,
+      files: reviewContextData.fileOperations, facts: reviewContextData.callFacts,
+      branches: reviewContextData.agentBranches, skills: reviewContextData.skillEvents, analysis: reviewContextData.skillAnalysis,
+      stats: data.officialStats?.snapshot };
+    if (patch.sessions) {
+      for (const incoming of patch.sessions) {
+        const current = data.sessions.find(row => row.id === incoming.id);
+        if (!current) { data.sessions.push(incoming); continue; }
+        const empty = !current.turns.length, selected = current === session ? turn()?.number : null;
+        const turns = new Map(current.turns.map(turn => [turn.number, turn]));
+        for (const [key, value] of Object.entries(incoming)) if (key !== 'turns') current[key] = value;
+        for (const row of incoming.turns || []) {
+          const target = turns.get(row.number);
+          if (target) geistHydrateTurn(target, row); else current.turns.push(row);
+        }
+        if (options.stage === 'details' || options.stage === 'core') {
+          const available = new Set((incoming.turns || []).map(row => row.number));
+          current.turns = current.turns.filter(row => available.has(row.number));
+          if (current === session && selected != null) turnIndex = Math.max(0, current.turns.findIndex(row => row.number === selected));
+        }
+        if (empty && current === session) turnIndex = Math.max(0, current.turns.findIndex(t => t.number === 6));
+      }
+      geistDirty.add('session'); geistHeaderDirty = true;
+    }
+    const rest = { ...patch }; delete rest.sessions; geistMerge(data, rest);
+    if (options.stage && options.stage !== 'turn' && data.traceStage) data.traceStage[options.stage] = 'ready';
+    Object.assign(reviewContextData, data.context || {});
+    if (reviewContextData.requests !== before.requests || reviewContextData.historyRequests !== before.history) geistDirty.add('context');
+    if (reviewContextData.fileOperations !== before.files || patch.context?.fileOperations) geistDirty.add('files');
+    if (reviewContextData.callFacts !== before.facts || patch.context?.callFacts) geistDirty.add('facts');
+    if (reviewContextData.agentBranches !== before.branches || reviewContextData.skillEvents !== before.skills || reviewContextData.skillAnalysis !== before.analysis) geistDirty.add('actors');
+    if (data.officialStats?.snapshot !== before.stats || patch.officialStats?.snapshot) geistDirty.add('stats');
+    if (patch.context?.current || patch.context?.route || patch.officialStats?.context) geistDirty.add('summary');
+    geistProgressStatus();
+    if (!geistDirty.size) { geistContextCoverage(); return; }
+    if (geistUpdateFrame) return;
+    geistUpdateFrame = requestAnimationFrame(() => {
+      geistUpdateFrame = 0;
+      const dirty = new Set(geistDirty); geistDirty.clear();
+      const changed = name => dirty.has(name), sessionChanged = changed('session');
+      if (sessionChanged) {
+        reviewRealEpisodes = session.overview.episodes;
+        reviewRetryEvents = reviewContextData.retries || session.turns.flatMap(t => t.steps.flatMap(s => s.retries.map(r => ({ ...r, turn: t.number, step: s.number }))));
+      }
+      if (changed('context')) {
+        const bySeq = new Map([...(reviewContextData.historyRequests || []), ...(reviewContextData.requests || [])].map(row => [row.seq, row]));
+        reviewContextRequests = [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+        reviewContextStepIndex = reviewIndexContextSteps(reviewContextRequests);
+        reviewActionScales.clear();
+        reviewContextRows = contextByTurn(reviewContextRequests);
+        reviewContextMap = new Map(reviewContextRows.map(row => [row.turn, row]));
+        reviewContextScale = contextDisplayScale(reviewContextRows);
+        reviewContextSelected ??= reviewContextRows.at(-1)?.turn ?? null;
+        geistUpdateCounts.context++;
+      }
+      if (changed('files')) reviewFileOperations = reviewContextData.fileOperations || [];
+      if (sessionChanged || changed('facts') || changed('files')) {
+        geistOutcomes = data.traceStage && data.traceStage.details !== 'ready' ? [] : collectToolResults(session, reviewContextData.callFacts || {}, reviewFileOperations);
+        geistUpdateCounts.outcomes++;
+      }
+      if (changed('actors')) {
+        geistActors = actorRecords(data); geistSkills = skillObjects(geistActors.skills);
+        geistSkillAnalysis = reviewContextData.skillAnalysis;
+        geistUpdateCounts.actors++;
+      }
+      if (changed('actors') || changed('files') || sessionChanged) geistSkillScopeCache.clear();
+      if (changed('stats')) {
+        geistOfficialStats = data.officialStats?.snapshot;
+        geistStatsByStep = new Map((geistOfficialStats?.turns || []).flatMap(t => t.steps.map(s => [t.turn + ':' + s.step, s])));
+        geistUpdateCounts.stats++;
+      }
+      const graph = sessionChanged || ['context', 'files', 'facts', 'actors', 'stats'].some(changed);
+      if (sessionChanged || changed('summary') || changed('stats')) {
+        geistContextSnapshot = data.officialStats?.context;
+        if ($('geist-context-overview')) delete $('geist-context-overview').dataset.ready;
+        geistRenderContextOverview(); geistActorControls(); geistUpdateCounts.summary++;
+      }
+      const contextOnly = changed('context') && !sessionChanged && !['files','facts','actors','stats'].some(changed)
+        && view === 'overview' && $('trace-context-layer') && overviewProjection;
+      if (contextOnly) {
+        const p = overviewProjection, visible = (a, b = a) => b >= p.visibleLeft - 90 && a <= p.visibleRight + 90;
+        $('trace-context-layer').innerHTML = reviewContextLayer(p.layout, p.mainY, p.visibleLeft, p.visibleRight, visible);
+        reviewContextBind();
+        if ($('review-context-scale-note')) $('review-context-scale-note').textContent = '柱高至 ±' + reviewTokens(reviewContextScale.limit) + ' · …收起更大量';
+        geistUpdateCounts.contextLayer++;
+      } else if (graph && session.turns.length) {
+        geistOutcomeLayoutCache.clear();
+        if ($('step-panel')) delete $('step-panel').dataset.detailKey;
+        const vp = $('graph-scroll'), left = vp.scrollLeft, top = vp.scrollTop;
+        const focused = document.activeElement, focusId = focused?.id;
+        const attribute = ['data-turn', 'data-step', 'data-inspector-nav'].find(key => focused?.hasAttribute(key));
+        const value = attribute && focused.getAttribute(attribute);
+        if (geistHeaderDirty) {
+          geistHeaderDirty = false;
+          const list = $('turn-list'), y = list.scrollTop, x = list.scrollLeft;
+          header(); list.scrollTop = y; list.scrollLeft = x;
+        }
+        if (view === 'path') renderActionPath(); else renderOverview({ plotOnly: true });
+        vp.scrollLeft = left; vp.scrollTop = top;
+        if (focused && !focused.isConnected) (focusId ? $(focusId) : attribute ? [...document.querySelectorAll('[' + attribute + ']')].find(node => node.getAttribute(attribute) === value) : null)?.focus({ preventScroll: true });
+        geistUpdateCounts.graph++;
+      }
+      for (const [name, ready, selector] of [['core', session.turns.length, '.br-trunk'], ['context', reviewContextRows.length, '#trace-context-layer'], ['actors', geistActors.branches.length, '.actor-layer']]) {
+        if (!ready || geistArrived.has(name)) continue;
+        const nodes = [...$('graph').querySelectorAll(selector)];
+        if (!nodes.length) continue;
+        geistArrived.add(name); nodes.forEach(node => node.classList.add('trace-stage-enter'));
+        setTimeout(() => nodes.forEach(node => node.classList.remove('trace-stage-enter')), 200);
+      }
+      geistProgressStatus(); geistContextCoverage();
+      const selected = Number($('drawer').dataset.contextTurn);
+      if (changed('context') && selected && $('canvas').classList.contains('drawer-open')) reviewOpenContext(selected);
+    });
+  };
+  const geistCoverageArrange = geistArrangeCaption;
+  geistArrangeCaption = function(...args) { const value = geistCoverageArrange(...args); geistContextCoverage(); return value; };
 
   $('review-return').onclick=reviewReturnOverview;$('review-path').onclick=()=>reviewEnterPath(turn().number);$('review-rounds').onclick=()=>reviewOpenDurations();$('review-stress').onclick=reviewToggleStress;$('review-fit').onclick=reviewFitAll;$('review-in').onclick=()=>setOverviewScale(overviewScale*2);$('review-out').onclick=reviewZoomOut;reviewBindPathZoom();
   render();$('turn-list').querySelector('[aria-current=true]')?.scrollIntoView({block:'nearest'});

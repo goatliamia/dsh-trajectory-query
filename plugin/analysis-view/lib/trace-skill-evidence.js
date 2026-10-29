@@ -22,17 +22,26 @@ export function directlyInvokedScripts(command) {
 }
 
 export function replaySkillEvidence(events, loads, requestSeqs, SurfaceManager) {
+  const result = { source: '@deepseek-ai/dsh-session/surface', basis: 'canonical-model-visible-history', records: [] };
+  if (!loads.length) return result;
   const bySeq = new Map(events.map(e => [e.seq, e])), requests = new Set(requestSeqs);
   const toolNames = [...new Set(events.filter(e => e.type === 'request/header').flatMap(e => (e.data.header?.tools || []).map(t => t.name)))];
   const textOf = message => (message?.content || []).filter(b => b.type === 'text').map(b => b.text || '').join('\n');
   const records = loads.map(load => ({ ...load, ...skillContents(textOf(bySeq.get(load.resultSeq)?.data.message), toolNames), intervals: [], mentions: [], matches: [] }));
   const log = [], surface = new SurfaceManager(log), open = new Map();
+  let replaceGeneration = -1, contentGeneration = -1;
   for (const event of events) {
     if (requests.has(event.seq)) for (const interval of open.values()) interval.requests++;
     log.push(event);
-    const nodes = new Set(surface.nodes);
+    // The official manager folds the new event. Ordinary appends cannot remove
+    // an existing skill body; recheck only its load or a replacement/projection.
+    const nodes = surface.nodes;
+    const replaced = surface.replaceGeneration, projected = surface.contentGeneration;
+    const changed = typeof replaced !== 'number' || typeof projected !== 'number'
+      || replaced !== replaceGeneration || projected !== contentGeneration;
     for (const skill of records) {
-      const retained = nodes.has(skill.resultSeq) && textOf(surface.deriveEventMessage(bySeq.get(skill.resultSeq))).includes(skill.body);
+      if (!changed && event.seq !== skill.resultSeq) continue;
+      const retained = nodes.includes(skill.resultSeq) && textOf(surface.deriveEventMessage(bySeq.get(skill.resultSeq))).includes(skill.body);
       if (retained && !open.has(skill.id)) {
         const interval = { from: event.time, fromSeq: event.seq, turn: event.data.turn ?? skill.turn, requests: 0, to: null, toSeq: null, endReason: null };
         open.set(skill.id, interval); skill.intervals.push(interval);
@@ -40,6 +49,7 @@ export function replaySkillEvidence(events, loads, requestSeqs, SurfaceManager) 
         Object.assign(open.get(skill.id), { to: event.time, toSeq: event.seq, endReason: event.surfaceOp?.op === 'replace' ? 'surface-replaced' : 'content-changed' }); open.delete(skill.id);
       }
     }
+    replaceGeneration = replaced; contentGeneration = projected;
   }
   const last = events.at(-1);
   for (const interval of open.values()) Object.assign(interval, { to: last.time, toSeq: last.seq, endReason: 'snapshot-end' });
@@ -62,5 +72,5 @@ export function replaySkillEvidence(events, loads, requestSeqs, SurfaceManager) 
     const executed = directlyInvokedScripts(command);
     for (const script of skill.scripts) if (executed.includes(script.path)) skill.matches.push({ seq: event.seq, turn: event.data.turn, step: event.data.step, time: event.time, tool: event.data.name, basis: 'documented-script-command', path: script.path, quote: script.quote });
   }
-  return { source: '@deepseek-ai/dsh-session/surface', basis: 'canonical-model-visible-history', records };
+  return { ...result, records };
 }

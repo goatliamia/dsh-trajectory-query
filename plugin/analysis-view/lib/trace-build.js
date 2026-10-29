@@ -6,7 +6,12 @@ import { createHash } from 'node:crypto';
 const isReplacement = e => e.surfaceOp && typeof e.surfaceOp === 'object';
 const key = (turn, step, id) => JSON.stringify([turn, step, id]);
 const textOf = content => (content || []).filter(b => b.type === 'text').map(b => b.text || '').join('\n');
-const excerpt = (text, limit = 1800) => ({ text: String(text || '').slice(0, limit), omitted: Math.max(0, String(text || '').length - limit) });
+const excerpt = (text, limit = 1800) => {
+  const value = String(text || ''), part = value.slice(0, limit);
+  // A V8 sliced string can otherwise keep a multi-megabyte tool result alive
+  // through a tiny cached excerpt. UTF-16 preserves even a split surrogate.
+  return { text: value.length > limit * 4 ? Buffer.from(part, 'utf16le').toString('utf16le') : part, omitted: Math.max(0, value.length - limit) };
+};
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(k => [k, canonical(value[k])])) : value;
 const argumentSignature = (name, args) => {
   let normalized;
@@ -23,6 +28,8 @@ const argumentTarget = args => {
     return /^[A-Za-z]:\//.test(normalized)?normalized.toLowerCase():normalized;
   } catch { return null; }
 };
+const argumentText = args => typeof args === 'string' ? args : JSON.stringify(args ?? {});
+const codeMode = name => /^run_?code$/i.test(name || '');
 
 export function projectSession(rows, source = {}) {
   const header = rows.find(e => e.type === 'session');
@@ -30,6 +37,7 @@ export function projectSession(rows, source = {}) {
   if (header.version !== 4) throw new Error('Use a normalized session.v4.jsonl.zstd source');
   const events = rows.filter(e => Number.isFinite(e.seq)).sort((a, b) => a.seq - b.seq);
   const turns = [], turnIndex = new Map(), steps = new Map(), calls = new Map();
+  const roots = new Map(), dispatches = new Map(), hasChildren = new Set();
   const diagnostics = { replacementEventsExcluded: 0, unmatchedResults: 0, duplicateResults: 0, unresolvedCalls: 0 };
   let currentTurn;
   const getStep = (turn, step) => steps.get(key(turn, step, 'step'));
@@ -39,6 +47,28 @@ export function projectSession(rows, source = {}) {
     if (e.type === 'turn/start') {
       currentTurn = { number: d.turn, seq: e.seq, start: e.time, end: null, endSeq: null, reason: null, prompts: [], steps: [], markers: [] };
       turns.push(currentTurn); turnIndex.set(d.turn, currentTurn);
+      continue;
+    }
+    if (e.type === 'tool/ptc-dispatch-start' || e.type === 'tool/ptc-dispatch') {
+      const root = roots.get(d.rootCallId);
+      if (!root || !d.subCallId || !d.name) continue;
+      const dispatchId = JSON.stringify([d.rootCallId, d.subCallId]);
+      let call = dispatches.get(dispatchId);
+      if (call?.resultSeq != null) { diagnostics.duplicateResults++; continue; }
+      if (!call) {
+        call = { id: d.subCallId, seq: e.seq, name: d.name, signature: argumentSignature(d.name, d.arguments),
+          target: argumentTarget(d.arguments), args: excerpt(argumentText(d.arguments), 6000), start: e.time,
+          end: null, resultSeq: null, status: 'unknown', error: null, result: null, inner: true,
+          rootSeq: root.call.seq, startSeq: e.type === 'tool/ptc-dispatch-start' ? e.seq : null };
+        root.step.calls.push(call); dispatches.set(dispatchId, call);
+      }
+      hasChildren.add(d.rootCallId); hasChildren.add(d.parentCallId);
+      if (e.type === 'tool/ptc-dispatch') {
+        Object.assign(call, { seq: e.seq, name: d.name, signature: argumentSignature(d.name, d.arguments),
+          target: argumentTarget(d.arguments), args: excerpt(argumentText(d.arguments), 6000), end: e.time,
+          resultSeq: e.seq, status: d.isError || d.error ? 'error' : 'returned', error: d.error || null,
+          result: excerpt(textOf(d.content), 8000) });
+      }
       continue;
     }
     const turn = turnIndex.get(d.turn) || currentTurn;
@@ -69,8 +99,8 @@ export function projectSession(rows, source = {}) {
       if (!step) throw new Error(`Call outside a step at seq ${e.seq}`);
       const id = key(d.turn, d.step, d.callId);
       if (calls.has(id)) throw new Error(`Duplicate call at seq ${e.seq}`);
-      const call = { id: d.callId, seq: e.seq, name: d.name, signature: argumentSignature(d.name, d.arguments), target: argumentTarget(d.arguments), args: excerpt(d.arguments, 2200), start: e.time, end: null, resultSeq: null, status: 'unknown', error: null, result: null };
-      step.calls.push(call); calls.set(id, call);
+      const call = { id: d.callId, seq: e.seq, name: d.name, signature: argumentSignature(d.name, d.arguments), target: argumentTarget(d.arguments), args: excerpt(argumentText(d.arguments), 2200), start: e.time, end: null, resultSeq: null, status: 'unknown', error: null, result: null };
+      step.calls.push(call); calls.set(id, call); roots.set(d.callId, { call, step });
     } else if (e.type === 'tool/result') {
       const id = d.message?.toolCallId ?? d.message?.source?.callId ?? d.callId;
       const call = calls.get(key(d.turn, d.step, id));
@@ -93,6 +123,9 @@ export function projectSession(rows, source = {}) {
   }
   for (const turn of turns) {
     for (const step of turn.steps) {
+      // Match official statistics: unwrap Code Mode only when native child
+      // events exist. Keep a wrapper's own recorded failure and pure code runs.
+      step.calls = step.calls.filter(call => !codeMode(call.name) || !hasChildren.has(call.id) || call.status === 'error').sort((a, b) => a.seq - b.seq);
       step.endObserved = step.end !== null;
       if (step.end === null) step.end = Math.max(step.start, step.assistantTime || step.start, ...step.calls.map(c => c.end || c.start));
       if (step.end < step.start) throw new Error('Negative step duration');
@@ -109,7 +142,7 @@ export function projectSession(rows, source = {}) {
     content: excerpt(textOf(e.data.content), 1800),
   }));
   return { id: header.id, title, parentSession: header.parentSession || null, source, firstSeq: events[0]?.seq, lastSeq: events.at(-1)?.seq, eventCount: events.length, diagnostics, turns, communications,
-    totals: { turns: turns.length, steps: turns.reduce((n, t) => n + t.steps.length, 0), calls: calls.size, errors: [...calls.values()].filter(c => c.status === 'error').length } };
+    totals: { turns: turns.length, steps: turns.reduce((n, t) => n + t.steps.length, 0), calls: turns.reduce((n, t) => n + t.calls, 0), errors: turns.reduce((n, t) => n + t.errors, 0) } };
 }
 
 // Deterministic execution units. No viewport, prompt summary or model judgment.
@@ -204,9 +237,9 @@ export function analyzeTraceOverview(session) {
 }
 
 /** 把同一场会话的事件投影成页面数据(主会话;子会话暂不展开)。 */
-export function buildTracePayload(events, sessionId) {
+export function buildTracePayload(events, sessionId, source = {}) {
   const rows = [{ type: "session", id: sessionId, version: 4, parentSession: null }, ...(events || [])];
-  const session = projectSession(rows, { session: sessionId });
+  const session = projectSession(rows, { session: sessionId, ...source });
   session.overview = analyzeTraceOverview(session);
   return { schema: 1, generatedAt: new Date().toISOString(), mainSession: session.id, sessions: [session] };
 }

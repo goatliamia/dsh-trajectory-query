@@ -1,4 +1,4 @@
-  const geistActors = actorRecords(data), geistSkills = skillObjects(geistActors.skills);
+  let geistActors = actorRecords(data), geistSkills = skillObjects(geistActors.skills);
   let geistSkillSelected = null;
   const geistActorLayers = { skills: true, agents: true };
   let geistActorResultGroups = [];

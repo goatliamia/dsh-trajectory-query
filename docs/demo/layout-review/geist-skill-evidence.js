@@ -1,10 +1,11 @@
-  const geistSkillAnalysis = data.context?.skillAnalysis;
+  let geistSkillAnalysis = data.context?.skillAnalysis;
   const geistSkillScopeCache = new Map();
   function geistSkillScope(name = geistSkillSelected) {
     if (!geistSkillAnalysis || !name) return null;
     if (geistSkillScopeCache.has(name)) return geistSkillScopeCache.get(name);
     const records = geistSkillAnalysis.records.filter(s => s.name === name); if (!records.length) return null;
     const intervals = records.flatMap(r => r.intervals);
+    if (!intervals.length) return null;
     const contains = time => intervals.some(i => time >= i.from && time < i.to);
     const calls = session.turns.flatMap(t => t.steps.flatMap(step => step.calls.filter(call => contains(call.start)).map(call => ({ ...call, turn: t.number, step: step.number }))));
     const seqs = new Set(calls.map(c => c.seq));

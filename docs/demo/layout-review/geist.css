@@ -46,7 +46,9 @@ body.geist-review{font:14px/1.5 var(--sans);color:var(--ink);background:var(--su
 .geist-review .geist-context-sources button{display:flex;align-items:center;gap:7px;min-width:0;padding:0;border:0;background:none;font:13px/21px var(--sans);color:var(--ink);text-align:left;cursor:pointer}
 .geist-context-sources button:hover>span{text-decoration:underline;text-underline-offset:3px}
 .geist-context-sources i{width:8px;height:8px;border-radius:2px;flex:none}
-.geist-context-sources b{font:12px/21px var(--mono);font-weight:400;color:var(--muted);margin-left:auto;white-space:nowrap}
+.geist-context-sources button>span{white-space:nowrap;flex-shrink:0}
+.geist-context-sources b{font:12px/21px var(--mono);font-weight:400;color:var(--muted);margin-left:auto;min-width:0;white-space:normal;text-align:right}
+.geist-context-share{white-space:nowrap}
 .geist-context-footnote{display:flex;justify-content:space-between;gap:12px;font:10px/18px var(--sans);color:var(--muted);margin-top:8px}
 .geist-review .geist-legend .review-overlay-key{display:none}
 .geist-review .review-action-mode .graph-scroll{min-height:376px;flex:1 0 376px}
@@ -98,6 +100,9 @@ body.geist-review{font:14px/1.5 var(--sans);color:var(--ink);background:var(--su
 .geist-result-glyph.query{color:var(--review-retry)}
 .geist-result-glyph.check{color:var(--branch-good)}
 .geist-result-glyph.error{color:var(--branch-bad)}
+.geist-result-glyph.command,.geist-result-glyph.process,.geist-result-glyph.coordination{color:var(--branch-ink)}
+.geist-result-glyph.search,.geist-result-glyph.web{color:var(--review-retry)}
+.geist-result-glyph.pending{color:var(--review-unknown)}
 .geist-result-dot{fill:var(--file-read);stroke:var(--surface);stroke-width:.7}
 .geist-result-dot.change{fill:var(--file-change)}
 .geist-result-dot.query{fill:var(--review-retry)}

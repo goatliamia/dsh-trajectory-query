@@ -2,26 +2,39 @@
 // 通过 /analysis-view 的只读路由给出。
 
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { gzip } from "node:zlib";
+import { readFileSync, statSync } from "node:fs";
+import { gzip, gunzip } from "node:zlib";
 import { promisify } from "node:util";
 import { incident } from "./incident-shape.js";
 import { buildTracePayload } from "./trace-build.js";
 import { readContextTimeline, traceActors, traceContext } from "./trace-context.js";
+import { TraceCache, traceSource, observationSource } from "./trace-cache.js";
+import { TraceStages } from "./trace-stages.js";
+import { TraceResources, abortable, abortError } from "./trace-resources.js";
 
 const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
 
 const ROUTE_PATH = "/analysis-view";
 const TRACE_FONTS = { "Geist-Variable.woff2": "font/woff2", "GeistMono-Variable.woff2": "font/woff2" };
 
-/** 「执行路径」页面:模板 + 渲染器 + 本次会话的数据,拼成一份自包含 HTML。每次现读,改样式不用重启。 */
-export function renderTracePage(payload) {
-  const read = (name) => readFileSync(new URL("./trace/" + name, import.meta.url), "utf8");
+let traceAssets;
+function readTraceAssets() {
+  const files = ["page.html", "page.js"].map(name => new URL("./trace/" + name, import.meta.url));
+  const version = files.map(file => { const s = statSync(file); return [s.mtimeMs, s.ctimeMs, s.size].join(":"); }).join("|");
+  if (traceAssets?.version !== version) {
+    traceAssets = { version, template: readFileSync(files[0], "utf8"), renderer: readFileSync(files[1], "utf8") };
+  }
+  return traceAssets;
+}
+
+/** 模板与渲染器按文件版本复用,仍支持改样式后直接刷新。 */
+export function renderTracePage(payload, assets = readTraceAssets()) {
   const json = JSON.stringify(payload).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
   // 一次性替换两个占位符:会话正文里可能出现同样的字符串,分批替换会把它替换进数据里。
-  const renderer = read("page.js");
-  return read("page.html").replace(/\/\*__TRACE_DATA__\*\/|\/\*__TRACE_RENDERER__\*\//g,
-    token => (token === "/*__TRACE_DATA__*/" ? json : renderer));
+  const template = payload.traceLoad ? assets.template.replace('<body class="geist-review">', '<body class="geist-review trace-pending">') : assets.template;
+  return template.replace(/\/\*__TRACE_DATA__\*\/|\/\*__TRACE_RENDERER__\*\//g,
+    token => (token === "/*__TRACE_DATA__*/" ? json : assets.renderer));
 }
 
 /**
@@ -486,34 +499,53 @@ function disposeObservation(observation) {
  * synchronous Session readers (snapshotEvents/eventAt/ownEvents). Fallbacks keep older deployments
  * working: in-memory snapshot, persistence handle, legacy inspect().
  */
-async function loadEvents(ctx, sessionId) {
+async function observeEvents(ctx, sessionId, signal) {
+  const persistence = ctx.get("sessionPersistence");
   const query = ctx.get("sessionQuery");
   if (query && typeof query.observeSession === "function") {
-    const observation = await query.observeSession(sessionId, { projectionMode: "none" });
-    try {
-      return observation.events || [];
-    } finally {
-      disposeObservation(observation);
-    }
+    const observation = await query.observeSession(sessionId, { projectionMode: "none", ...(signal ? { signal } : {}) });
+    if (signal?.aborted) { disposeObservation(observation); signal.throwIfAborted(); }
+    return observation;
   }
   const sessions = ctx.get("sessions");
   const live = sessions && typeof sessions.get === "function" ? sessions.get(sessionId) : void 0;
-  if (live && typeof live.snapshotEvents === "function") return live.snapshotEvents();
-  const persistence = ctx.get("sessionPersistence");
+  if (live && typeof live.snapshotEvents === "function") return { events: live.snapshotEvents() };
+  return readPersistedEvents(persistence, sessionId, signal);
+}
+
+async function readPersistedEvents(persistence, sessionId, signal) {
   if (persistence && typeof persistence.open === "function") {
-    const handle = await persistence.open(sessionId, "read");
+    const handle = await persistence.open(sessionId, "read", signal ? { signal } : undefined);
     try {
-      const result = await handle.read();
-      return (result && result.events) || [];
+      const result = await handle.read(0, undefined, signal ? { signal } : undefined);
+      signal?.throwIfAborted();
+      return { events: (result && result.events) || [] };
     } finally {
       if (handle && typeof handle.close === "function") await handle.close();
     }
   }
   if (persistence && typeof persistence.inspect === "function") {
     const loaded = await persistence.inspect(sessionId);
-    return (loaded && loaded.events) || [];
+    return { events: (loaded && loaded.events) || [] };
   }
   throw new Error("no session source available (sessionQuery/sessions/sessionPersistence)");
+}
+
+async function loadEvents(ctx, sessionId) {
+  const observation = await observeEvents(ctx, sessionId);
+  try { return observation.events || []; }
+  finally { disposeObservation(observation); }
+}
+
+function withAbortTimeout(run, ms, parentSignal) {
+  parentSignal?.throwIfAborted();
+  const controller = new AbortController();
+  const stop = () => controller.abort(parentSignal.reason || abortError());
+  if (parentSignal?.aborted) stop();
+  else parentSignal?.addEventListener("abort", stop, { once: true });
+  const timer = setTimeout(() => controller.abort(), ms);
+  return withTimeout(abortable(Promise.resolve().then(() => run(controller.signal)), controller.signal), ms)
+    .finally(() => { clearTimeout(timer); parentSignal?.removeEventListener("abort", stop); });
 }
 
 /** Fail fast instead of letting an HTTP request hang forever. */
@@ -545,48 +577,27 @@ function shrinkTracePayload(payload) {
   return payload;
 }
 
-// 同一会话、同一个尾 seq 的重复打开不必重算界面,也不必重传 5MB。
-const traceCache = new Map();
-const TRACE_CACHE_MAX = 4;
-
-/** 活着的会话直接读尾 seq;拿不到就说明这份缓存不能凭 seq 判断。 */
-function liveTraceSeq(ctx, sessionId) {
-  try {
-    const sessions = ctx.get("sessions");
-    const session = sessions && typeof sessions.get === "function" ? sessions.get(sessionId) : undefined;
-    return session && typeof session.seq === "number" ? session.seq : null;
-  } catch {
-    return null;
-  }
-}
-
-function cachedTrace(sessionId, seq) {
-  const hit = traceCache.get(sessionId);
-  if (!hit || hit.seq !== seq) return undefined;
-  traceCache.delete(sessionId);
-  traceCache.set(sessionId, hit);
-  return hit;
-}
-
 /** 10MB 的页面对本机也一样贵:客户端说支持 gzip 就压一次,压好的留在缓存里。 */
-async function sendHtml(res, req, headers, entry, sessionId) {
+async function sendHtml(res, req, headers, entry) {
   const accepts = String(req.headers["accept-encoding"] || "").includes("gzip");
+  if (entry.html === null) {
+    const compressed = await entry.gz;
+    const body = accepts ? compressed : await gunzipAsync(compressed);
+    res.writeHead(200, { ...headers, ...(accepts ? { "content-encoding": "gzip" } : {}), "content-length": body.length });
+    res.end(body); return;
+  }
   if (!accepts || entry.html.length < 256 * 1024) {
     res.writeHead(200, headers);
     res.end(entry.html);
     return;
   }
-  if (!entry.gz) entry.gz = await gzipAsync(Buffer.from(entry.html, "utf8"));
-  const hit = traceCache.get(sessionId);
-  if (hit && hit.etag === entry.etag) hit.gz = entry.gz;
-  res.writeHead(200, { ...headers, "content-encoding": "gzip", "content-length": entry.gz.length });
-  res.end(entry.gz);
-}
-
-function rememberTrace(sessionId, entry) {
-  traceCache.delete(sessionId);
-  traceCache.set(sessionId, entry);
-  while (traceCache.size > TRACE_CACHE_MAX) traceCache.delete(traceCache.keys().next().value);
+  if (!entry.gz) entry.gz = gzipAsync(Buffer.from(entry.html, "utf8"), { level: entry.gzipLevel ?? 6 });
+  const compressed = await entry.gz;
+  if (entry.retainCompressed) {
+    entry.html = null; entry.encodedBytes = compressed.length; entry.changed?.();
+  }
+  res.writeHead(200, { ...headers, "content-encoding": "gzip", "content-length": compressed.length });
+  res.end(compressed);
 }
 
 function clipText(value, max) {
@@ -1095,6 +1106,13 @@ export function apply(ctx) {
   const webServer = ctx.get("webServer");
   if (webServer === undefined) return;
   registerAnalysisContext(ctx);
+  const traceResources = new TraceResources();
+  const traceCache = new TraceCache(ctx, 4, traceResources);
+  const traceStages = new TraceStages(ctx, {
+    observe: (id, signal) => observeEvents(ctx, id, signal), dispose: disposeObservation, timeout: withAbortTimeout,
+    resources: traceResources,
+  });
+  ctx.effect(() => () => { traceStages.dispose(); traceResources.dispose(); }, "analysis-view: trace resources");
   // 面板每次切回「分析」都会拉一次;同一会话 2 秒内的重复请求复用上一次结果。
   const digestCache = new Map();
   const DIGEST_TTL_MS = 2000;
@@ -1103,6 +1121,9 @@ export function apply(ctx) {
     kind: "prefix",
     path: ROUTE_PATH,
     handler: async (req, res) => {
+      const disconnected = new AbortController();
+      const disconnect = () => { if (!res.writableFinished) disconnected.abort(abortError()); };
+      req.once("aborted", disconnect); res.once("close", disconnect);
       const send = (status, body) => {
         res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         res.end(JSON.stringify(body));
@@ -1123,44 +1144,89 @@ export function apply(ctx) {
         }
         const sessionId = url.searchParams.get("session");
         if (!sessionId) return send(400, { error: "missing session" });
-        if (url.pathname === ROUTE_PATH + "/trace") {
+        if (url.pathname === ROUTE_PATH + "/trace" && url.searchParams.get("staged") === "1") {
+          const html = renderTracePage({ traceLoad: { sessionId } });
+          await sendHtml(res, req, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }, { html });
+          return;
+        }
+        if (url.pathname === ROUTE_PATH + "/trace-data") {
+          const stage = url.searchParams.get("stage") || "core";
+          if (!["core", "details", "actors", "turn", "history", "release"].includes(stage)) return send(400, { error: "invalid stage" });
+          const viewer = url.searchParams.get("view")?.slice(0, 128) || "anonymous";
+          const entry = stage === "core" ? await traceStages.load(sessionId, readTraceAssets().version, disconnected.signal, viewer)
+            : traceStages.cut(sessionId, url.searchParams.get("cut"));
+          if (stage === "release") { if (entry) traceStages.release(entry, viewer); return send(200, { released: true }); }
+          if (!entry) return send(409, { error: "trace cut expired" });
+          traceStages.view(entry, viewer);
+          const key = stage === "turn" ? stage + ":" + url.searchParams.get("turn") : stage;
+          let body = entry.bodies.get(key);
+          if (!body) {
+            body = (async () => {
+              const payload = await traceStages.stage(entry, stage, Number(url.searchParams.get("turn")));
+              if (!payload) return null;
+              return traceResources.encoding.run(async () => {
+                const text = JSON.stringify({ sessionId, cut: entry.token, payload });
+                const gzip = await gzipAsync(Buffer.from(text), { level: 1 });
+                if (stage !== "turn" && stage !== "history") {
+                  entry.encodedBytes += gzip.length;
+                  if (stage === "core") entry.core = null;
+                  traceResources.update(entry);
+                }
+                return { gzip };
+              }, entry.controller.signal, stage === "core" || stage === "turn" ? 0 : 1);
+            })();
+            // Turn responses are small and transient; don't retain a second
+            // serialized copy of every round in a very long conversation.
+            if (stage !== "turn" && stage !== "history") entry.bodies.set(key, body);
+          }
+          const encoded = await body;
+          if (!encoded) return send(404, { error: "turn not found" });
+          if (res.destroyed) return;
+          const accepts = String(req.headers["accept-encoding"] || "").includes("gzip");
+          const bytes = accepts ? encoded.gzip : await gunzipAsync(encoded.gzip);
+          res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", vary: "accept-encoding",
+            ...(accepts ? { "content-encoding": "gzip" } : {}), "content-length": bytes.length,
+            "server-timing": Object.entries(entry.timing).map(([name, ms]) => name + ";dur=" + ms).join(", ") });
+          res.end(bytes);
+          return;
+        }
+        if (url.pathname === ROUTE_PATH + "/trace-version" && url.searchParams.get("staged") === "1") {
+          const assets = readTraceAssets().version;
+          const entry = await traceStages.current(sessionId, assets);
+          return send(200, { version: entry?.version ?? null, assets });
+        }
+        if (url.pathname === ROUTE_PATH + "/trace" || url.pathname === ROUTE_PATH + "/trace-version") {
           const started = Date.now();
           const sendTiming = (extra) => Object.entries(extra).map(([name, ms]) => name + ";dur=" + ms).join(", ");
-          const seq = liveTraceSeq(ctx, sessionId);
-          const cached = seq === null ? undefined : cachedTrace(sessionId, seq);
-          if (cached !== undefined) {
-            const headers = {
-              "content-type": "text/html; charset=utf-8",
-              "cache-control": "private, no-cache",
-              etag: cached.etag,
-              "server-timing": sendTiming({ cache: Date.now() - started }),
-            };
-            if (req.headers["if-none-match"] === cached.etag) { res.writeHead(304, headers); res.end(); return; }
-            await sendHtml(res, req, headers, cached, sessionId);
-            return;
-          }
-          const events = await withTimeout(loadEvents(ctx, sessionId), 8000);
-          const loaded = Date.now();
-          const payload = buildTracePayload(events, sessionId);
-          // 事件里能推出的层先给;官方统计由视图侧通过官方 hook 补上。
-          payload.context = traceContext(events, payload, readContextTimeline(ctx, sessionId));
-          // 子代理支线是锦上添花:读不到就少这一层,绝不把整页拖到超时。
-          try {
-            Object.assign(payload.context, await withTimeout(
-              traceActors(events, payload, payload.context.skillEvents, id => withTimeout(loadEvents(ctx, id), 1200)), 2500));
-          } catch { /* 子代理与 Skill 回放失败不影响主图 */ }
-          const html = renderTracePage(shrinkTracePayload(payload));
-          const etag = '"' + createHash("sha1").update(html).digest("hex").slice(0, 16) + '"';
-          const version = seq !== null ? seq : events.at(-1)?.seq ?? 0;
-          rememberTrace(sessionId, { seq: version, html, etag, gz: null });
+          const assets = readTraceAssets();
+          const source = await withAbortTimeout(signal => traceSource(ctx, sessionId, signal), 1500).catch(() => null);
+          const cached = await traceCache.get(sessionId, source, assets.version);
+          if (url.pathname.endsWith("/trace-version")) return send(200, { version: cached?.version ?? null });
+          const entry = cached || await traceCache.build(sessionId, source, assets.version, async () => {
+            const viewer = "html:" + Date.now() + ":" + Math.random();
+            const snapshot = await traceStages.load(sessionId, assets.version, undefined, viewer);
+            try {
+              const details = await traceStages.stage(snapshot, "details");
+              const actors = await traceStages.stage(snapshot, "actors");
+              const data = structuredClone({ ...details, context: { ...details.context, ...actors.context }, traceVersion: snapshot.version });
+              const html = renderTracePage(shrinkTracePayload(data), assets);
+              const entry = { html, etag: 'W/"' + createHash("sha1").update(html).digest("hex").slice(0, 16) + '"', gz: null,
+                resourceKey: "html:" + sessionId + ":" + snapshot.version, encodedBytes: 0, retainCompressed: true, gzipLevel: 1,
+                source: snapshot.source, assets: assets.version, children: new Map(snapshot.children), version: snapshot.version,
+                retryAt: snapshot.retryAt, timing: snapshot.timing };
+              entry.changed = () => traceResources.update(entry);
+              return entry;
+            } finally { traceStages.release(snapshot, viewer); }
+          });
           const headers = {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "private, no-cache",
-            etag,
-            "server-timing": sendTiming({ load: loaded - started, build: Date.now() - loaded }),
+            vary: "accept-encoding",
+            etag: entry.etag,
+            "server-timing": sendTiming(cached ? { cache: Date.now() - started } : entry.timing),
           };
-          if (req.headers["if-none-match"] === etag) { res.writeHead(304, headers); res.end(); return; }
-          await sendHtml(res, req, headers, { html, etag, gz: null }, sessionId);
+          if (req.headers["if-none-match"] === entry.etag) { res.writeHead(304, headers); res.end(); return; }
+          await sendHtml(res, req, headers, entry);
           return;
         }
         if (url.pathname === ROUTE_PATH + "/digest") {
@@ -1183,7 +1249,8 @@ export function apply(ctx) {
         }
         return send(404, { error: "not found" });
       } catch (error) {
-        return send(500, { error: String((error && error.message) || error) });
+        if (res.destroyed || res.writableEnded) return;
+        return send(error?.name === "AbortError" || error?.message === "trace cut expired" ? 409 : 500, { error: String((error && error.message) || error) });
       }
     }
   }), "analysis-view: digest route");

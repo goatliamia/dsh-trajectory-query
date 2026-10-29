@@ -96,8 +96,10 @@ body{margin:0;background:var(--bg)}
   const data = JSON.parse(document.getElementById('trace-data').textContent);
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const clock = t => new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(t);
-  const day = t => new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'}).format(t);
+  const clockFormat = new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  const dayFormat = new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'});
+  const clock = t => clockFormat.format(t);
+  const day = t => dayFormat.format(t);
   const dur = ms => { if (ms == null) return '未记录'; if (ms < 1000) return (ms < 100 ? '<0.1' : (ms / 1000).toFixed(1)) + ' 秒'; const s = ms / 1000; if (s < 60) return s.toFixed(s < 10 ? 1 : 0) + ' 秒'; const m = Math.floor(s / 60), r = Math.round(s % 60); return r === 60 ? `${m+1} 分` : `${m} 分${r ? ` ${r} 秒` : ''}`; };
   const elapsed = ms => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
   const shorten = (s,n) => String(s).replace(/\s+/g,' ').slice(0,n) + (String(s).replace(/\s+/g,' ').length > n ? '…' : '');
@@ -121,6 +123,13 @@ body{margin:0;background:var(--bg)}
     return result;
   }
   function header() {
+    for (const id of ['review-rounds','review-path','review-in','review-out','review-fit','path-button','overview-button','previous','next']) if ($(id)) $(id).disabled = !session.turns.length;
+    if (!session.turns.length) {
+      $('page-title').textContent = session.title || '执行路径';
+      $('session-name').textContent = '正在读取会话记录';
+      $('strip-total').textContent = '读取中'; $('rail-count').textContent = '';
+      $('review-state').textContent = '正在读取轮次'; return;
+    }
     $('parent-button').hidden = !returnState;
     $('page-title').textContent = session.parentSession ? '子任务执行路径' : session.title;
     $('session-name').textContent = session.parentSession ? session.title : `${day(session.turns[0].start)} — ${day(endOf(session.turns.at(-1)))} · 本地对话记录`;

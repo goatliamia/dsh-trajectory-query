@@ -4,15 +4,13 @@
 
 import { buildTracePayload } from "./trace-build.js";
 import { describeCall } from "./trace/models/step-insight.mjs";
+import { describeOperation } from "./trace/models/tool-operation-model.mjs";
 import { collectToolResults } from "./trace/models/tool-result-model.mjs";
 import { replaySkillEvidence } from "./trace-skill-evidence.js";
 
-const READS = new Set(["read", "read_image", "read_file", "read_text_file"]);
-const CHANGES = new Set(["edit", "write", "write_file", "multi_edit", "apply_patch"]);
-
 const fullCall = (call, native, result) => {
   const args = native?.data?.arguments;
-  const blocks = result?.data?.message?.content;
+  const blocks = result?.data?.message?.content ?? result?.data?.content;
   return {
     ...call,
     args: args === undefined ? call.args : { text: typeof args === "string" ? args : JSON.stringify(args), omitted: 0 },
@@ -20,14 +18,6 @@ const fullCall = (call, native, result) => {
       ? { text: blocks.filter(b => b?.type === "text").map(b => b.text || "").join("\n"), omitted: 0 }
       : call.result,
   };
-};
-
-const changeKind = (call, args) => {
-  if (READS.has(call.name)) return "read";
-  if (CHANGES.has(call.name)) return "change";
-  if (call.name !== "str_replace_editor") return null;
-  if (args?.command === "view") return "read";
-  return ["str_replace", "insert", "create"].includes(args?.command) ? "change" : null;
 };
 
 /**
@@ -52,26 +42,26 @@ export function readContextTimeline(ctx, sessionId) {
 export function traceContext(events, payload, timeline) {
   const session = payload.sessions[0];
   const bySeq = new Map(events.filter(e => Number.isFinite(e.seq)).map(e => [e.seq, e]));
-  const callBySeq = new Map(events.filter(e => e.type === "tool/call").map(e => [e.seq, e]));
   const callByCallId = new Map(events.filter(e => e.type === "tool/call").map(e => [e.data.callId, e]));
 
-  const callFacts = {};
-  for (const turn of session.turns) for (const step of turn.steps) for (const call of step.calls) {
-    callFacts[call.seq] = describeCall(fullCall(call, bySeq.get(call.seq), bySeq.get(call.resultSeq)));
-  }
-
-  // 文件操作只取直接的文件工具,不从 shell 命令里猜读写。
-  const fileOperations = [];
+  const callFacts = {}, fileOperations = [];
   for (const turn of session.turns) for (const step of turn.steps) for (const call of step.calls) {
     const native = bySeq.get(call.seq), result = bySeq.get(call.resultSeq);
+    const full = fullCall(call, native, result), fact = describeCall(full);
     let args = native?.data?.arguments;
     if (typeof args === "string") { try { args = JSON.parse(args); } catch { args = null; } }
-    const kind = changeKind(call, args);
-    const path = result?.data?.meta?.path || call.target || args?.file_path || args?.path;
-    if (!kind || typeof path !== "string" || !path) continue;
-    fileOperations.push({
+    const operation = describeOperation(call, args, full.result?.text || '', result?.data?.meta, session.source?.cwd);
+    callFacts[call.seq] = { ...fact,
+      title: operation.family === 'other' ? fact.title : operation.title + (operation.subject ? ' · ' + operation.subject : ''),
+      outcome: fact.tone === 'bad' || fact.tone === 'unknown' || operation.family === 'other' ? fact.outcome : operation.summary,
+      operation: { family: operation.family, subject: operation.subject, metrics: operation.metrics,
+        search: operation.search ? { total: operation.search.total, shown: operation.search.shown, truncated: operation.search.truncated } : null } };
+    // Search only associates actual returned match lines. It does not establish
+    // a full-file read or the runtime's fs-observed permission proof.
+    for (const file of operation.files) fileOperations.push({
       turn: turn.number, step: step.number, seq: call.seq, resultSeq: call.resultSeq,
-      time: call.end ?? call.start, kind, path, tool: call.name, status: call.status,
+      time: call.end ?? call.start, kind: file.access === 'write' ? 'change' : 'read', path: file.path,
+      tool: call.name, status: call.status, access: file.access, matchLines: file.lines?.length || 0,
       recordedPath: typeof result?.data?.meta?.path === "string",
     });
   }
@@ -181,37 +171,37 @@ export async function traceActors(events, payload, skillRecords, readEvents) {
   let skillAnalysis = null;
   try {
     // 官方 surface 回放只在 Skill 层用到;拿不到安装目录时其余层照常工作。
-    const { SurfaceManager } = await import("@deepseek-ai/dsh-session/surface");
-    skillAnalysis = replaySkillEvidence(events, skillRecords.filter(e => e.kind === "skill-tool-load"), requestSeqs, SurfaceManager);
+    const loads = skillRecords.filter(e => e.kind === "skill-tool-load");
+    const SurfaceManager = loads.length ? (await import("@deepseek-ai/dsh-session/surface")).SurfaceManager : undefined;
+    skillAnalysis = replaySkillEvidence(events, loads, requestSeqs, SurfaceManager);
   } catch {
     skillAnalysis = null;
   }
 
-  const agentBranches = [];
-  for (const catalog of events.filter(e => e.type === "subagent/catalog")) {
+  const catalogs = events.filter(e => e.type === "subagent/catalog"
+    && typeof e.data?.childId === "string" && /^[a-zA-Z0-9-]+$/.test(e.data.childId));
+  const launches = session.turns.flatMap(t => t.steps.flatMap(s =>
+    s.calls.filter(c => c.name === "subagent").map(c => ({ t, s, c }))));
+  const reads = new Map();
+  const branchOf = async catalog => {
     const id = catalog.data?.childId;
-    if (typeof id !== "string" || !/^[a-zA-Z0-9-]+$/.test(id)) continue;
     const reports = session.communications
       .filter(c => c.childId === id)
       .map(c => ({ time: c.time, kind: c.kind === "subagent-settled" ? "completed" : "report", text: (c.content.text || "").slice(0, 5000) }));
-    let child = null;
+    let child = null, childEvents;
     try {
-      const childEvents = await readEvents(id);
+      if (!reads.has(id)) reads.set(id, Promise.resolve().then(() => readEvents(id)));
+      childEvents = await reads.get(id);
       if (Array.isArray(childEvents) && childEvents.length) {
         child = buildTracePayload(childEvents.filter(e => e.time <= until), id).sessions[0];
       }
     } catch {
       child = null;
     }
-    const childCalls = child ? child.turns.flatMap(t => t.steps.flatMap(s => s.calls)) : [];
-    const childFacts = Object.fromEntries(childCalls.map(c => [c.seq, describeCall(c)]));
-    const childFiles = childCalls.flatMap(c => {
-      const kind = READS.has(c.name) ? "read" : CHANGES.has(c.name) ? "change" : null;
-      return kind && childFacts[c.seq]?.target ? [{ seq: c.seq, kind, path: childFacts[c.seq].target }] : [];
-    });
+    const childContext = child ? traceContext(childEvents, { sessions: [child] }) : null;
+    const childFacts = childContext?.callFacts || {}, childFiles = childContext?.fileOperations || [];
     const results = child ? collectToolResults(child, childFacts, childFiles) : [];
-    const launch = session.turns.flatMap(t => t.steps.flatMap(s => s.calls.map(c => ({ t, s, c }))))
-      .find(({ c }) => c.name === "subagent" && c.result?.text?.includes(id));
+    const launch = launches.find(({ c }) => c.result?.text?.includes(id));
     // 没有匹配到委派调用时,按目录事件的时间落到最近的轮次,不能留一个定位不到的支线。
     const locate = time => {
       const turn = session.turns.find(t => time <= (t.end ?? Infinity)) || session.turns.at(-1);
@@ -221,20 +211,32 @@ export async function traceActors(events, payload, skillRecords, readEvents) {
     const fallback = launch ? { turn: launch.t.number, step: launch.s.number } : locate(catalog.time);
     const steps = child ? child.turns.flatMap(t => t.steps.map(s => ({
       id: id + ":" + t.number + ":" + s.number, number: s.number, start: s.start, end: s.end,
-      label: s.calls.length ? s.calls.map(c => describeCall(c).title).join(" · ") : "整理回复",
+      label: s.calls.length ? s.calls.map(c => childFacts[c.seq].title).join(" · ") : "整理回复",
       kind: !s.calls.length ? "reply" : /read|grep|glob/.test(s.calls[0].name) ? "read" : /edit|write|patch/.test(s.calls[0].name) ? "write" : /search|query/.test(s.calls[0].name) ? "query" : "run",
       status: s.calls.some(c => c.status === "error") ? "error" : "returned",
       detail: s.calls.map(c => ({ seq: c.seq, name: c.name, target: c.target, status: c.status,
-        outcome: describeCall(c).outcome, result: c.result?.text?.slice(0, 1500) })),
+        outcome: childFacts[c.seq].outcome, result: c.result?.text?.slice(0, 1500) })),
     }))) : [];
-    agentBranches.push({
+    return {
       id, name: catalog.data.label || "子代理", title: catalog.data.label || "子任务",
       start: catalog.data.childCreatedAt || catalog.time, end: child?.turns.at(-1)?.end ?? null,
       returnTime: reports.at(-1)?.time ?? null,
       turn: fallback.turn, step: fallback.step, seq: launch?.c.seq ?? catalog.seq,
       status: reports.some(r => r.kind === "completed") ? "completed" : "unknown",
       steps, results, reports, source: "dsh-record",
-    });
-  }
+    };
+  };
+  // Limit disk/replay pressure, keep catalog order, and isolate each failure.
+  const agentBranches = new Array(catalogs.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(3, catalogs.length) }, async () => {
+    while (next < catalogs.length) {
+      const index = next++;
+      agentBranches[index] = await branchOf(catalogs[index]);
+      // Cached observations can resolve entirely in microtasks. Let ready HTTP
+      // bodies and priority turn requests run between batches of child folds.
+      if (next < catalogs.length) await new Promise(resolve => setImmediate(resolve));
+    }
+  }));
   return { skillAnalysis, agentBranches };
 }

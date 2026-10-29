@@ -21,7 +21,7 @@ branch = branch.replace("let html='';let bottom=base+42;", "reviewRetriesNow=[];
 branch = branch.replace('gutter=29', 'gutter=54');
 branch = branch.replace('base=142', 'base=232');
 branch = branch.replace("classList.remove('lane-mode','spine-scene')", "classList.remove('lane-mode','spine-scene','review-action-mode')");
-branch = branch.replace('const h=Math.max(332,bottom+73),axisY=h-35;', 'const mainH=Math.max(420,bottom+72),h=mainH,axisY=mainH-24;html=reviewTimeLayer(layout,visible,left,right,mainH,mapTime)+reviewContextLayer(layout,base,left,right,visible)+reviewCompactionLayer(mapTime,left,right,mainH)+html+reviewOverviewFiles(layout,mapTime,base,left,right,mainH);');
+branch = branch.replace('const h=Math.max(332,bottom+73),axisY=h-35;', `const mainH=Math.max(420,bottom+72),h=mainH,axisY=mainH-24;html=reviewTimeLayer(layout,visible,left,right,mainH,mapTime)+'<g id="trace-context-layer">'+reviewContextLayer(layout,base,left,right,visible)+'</g>'+reviewCompactionLayer(mapTime,left,right,mainH)+html+reviewOverviewFiles(layout,mapTime,base,left,right,mainH);`);
 const oldCompactionMarker = branch.split('\n').find(line => line.includes("for(const m of t.markers.filter(m=>m.type==='compaction/start'))"));
 if (!oldCompactionMarker) throw new Error('Compaction marker seam changed');
 branch = branch.replace(oldCompactionMarker, '');

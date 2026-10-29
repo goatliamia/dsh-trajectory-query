@@ -1,7 +1,14 @@
   const reviewContextData = data.context || { requests: [], boundaries: [] };
-  const reviewContextRows = contextByTurn(reviewContextData.requests);
-  const reviewContextMap = new Map(reviewContextRows.map(row => [row.turn, row]));
-  const reviewContextScale = contextDisplayScale(reviewContextRows);
+  let reviewContextRequests = [...new Map([...(reviewContextData.historyRequests || []), ...(reviewContextData.requests || [])].map(row => [row.seq, row])).values()].sort((a, b) => a.seq - b.seq);
+  function reviewIndexContextSteps(rows) {
+    const byStep = new Map();
+    rows.forEach((row, index) => { const key = row.turn + ':' + row.step; if (!byStep.has(key)) byStep.set(key, index); });
+    return byStep;
+  }
+  let reviewContextStepIndex = reviewIndexContextSteps(reviewContextRequests);
+  let reviewContextRows = contextByTurn(reviewContextRequests);
+  let reviewContextMap = new Map(reviewContextRows.map(row => [row.turn, row]));
+  let reviewContextScale = contextDisplayScale(reviewContextRows);
   let reviewContextSelected = reviewContextRows.at(-1)?.turn ?? null;
   overviewLayers.add('context');
   const reviewTokens = value => Math.abs(value) >= 1000 ? (value / 1000).toFixed(1) + 'k' : Math.round(value).toLocaleString();
@@ -38,8 +45,12 @@
     if (last && visible(last.end)) html += '<path d="M' + last.end + ' 96V' + (mainHeight - 38) + '" class="review-turn-divider"/>';
     return html;
   }
-  function reviewContextNote(row) {
-    if (!row) return '没有这轮的构成记录';
+  function reviewContextMissing(number) {
+    const first = Math.min(...(reviewContextData.requests || []).map(row => row.turn));
+    return number < first && Number.isFinite(first) ? '本轮早于当前返回的历史范围；当前增量从第 ' + first + ' 轮开始' : '没有这轮的请求构成记录';
+  }
+  function reviewContextNote(row, number) {
+    if (!row) return reviewContextMissing(number);
     if (row.isBaseline) return '首轮已有 ' + reviewTokens(row.total) + ' · 看开始时的构成';
     return '第 ' + row.turn + ' 轮 · ' + (row.net >= 0 ? '净增 ' : '净减 ') + reviewTokens(Math.abs(row.net));
   }
@@ -83,7 +94,7 @@
           overflowLabels.push({ x, sign, turn: row.turn, baseline: row.isBaseline, value: sign > 0 ? amounts.increase : -amounts.decrease });
         }
       }
-      const note = reviewContextNote(row);
+      const note = reviewContextNote(row, l.turn.number);
       html += brGroup('class="review-context-turn" data-context-turn="' + l.turn.number + '"', body, note + (row && !row.isBaseline ? '；增加 ' + reviewTokens(row.increase) + '，减少 ' + reviewTokens(row.decrease) : '；显示末次请求已有构成，作为后续轮次的比较基线') + (positive.overflow || negative.overflow ? '；实际量超过本图 ' + reviewTokens(scale.limit) + ' 显示范围，柱高已收起，不表示模型上下文超限' : ''));
     }
     for (const sign of [1, -1]) {
@@ -132,9 +143,13 @@
   }
   function reviewOpenContext(turnNumber) {
     const row = reviewContextMap.get(turnNumber);
-    if (!row) { openDrawer('暂无上下文构成记录', '第 ' + turnNumber + ' 轮', '<p class="review-explain">这一轮没有可用于比较的请求构成，不能把缺失当成零。</p>'); return; }
+    if (!row) {
+      openDrawer('上下文增量尚未包含本轮', '第 ' + turnNumber + ' 轮', '<p class="review-explain">' + reviewContextMissing(turnNumber) + '。缺失不表示零。</p>');
+      $('drawer').dataset.contextTurn = turnNumber;
+      geistContextCoverage(); return;
+    }
     reviewContextSelected = turnNumber;
-    const first = reviewContextData.requests.find(r => r.turn === row.turn);
+    const first = reviewContextRequests.find(r => r.turn === row.turn);
     const max = Math.max(1, ...CONTEXT_CATEGORIES.map(c => Math.abs(row.parts[c.key][row.isBaseline ? 'after' : 'delta'])));
     let html = '<div class="review-context-headline"><strong>' + (row.isBaseline ? reviewTokens(row.total) : reviewSigned(row.net)) + '</strong><span>' + (row.isBaseline ? '首轮末次请求 · 已有上下文' : 'tokens · 净变化') + '</span></div>';
     if (row.isBaseline) html += '<p class="review-context-change-note">首次请求已经带着约 ' + reviewTokens(CONTEXT_CATEGORIES.reduce((n, c) => n + (first[c.key] || 0), 0)) + ' tokens，并不是空白。下面同时列出首次请求与本轮末次请求的构成。</p>';

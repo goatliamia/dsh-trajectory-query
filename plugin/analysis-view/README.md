@@ -97,9 +97,9 @@ node analyzers/shape-law.mjs --mutate   # prove the laws bite: reasonable mistak
 Dynamic plugins are session-scoped and vanish on reload; this one is installed into the web profile.
 
 ```text
-1. pnpm pack                      # -> dsh-analysis-view-0.10.13.tgz
+1. pnpm pack                      # -> dsh-analysis-view-0.10.30.tgz
 2. add to ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.10.13.tgz"
+     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.10.30.tgz"
      dsh.profile.bundles: append "dsh-analysis-view"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. rebuild / restart `dsh web`    # so the new client module enters the bundle
@@ -107,10 +107,37 @@ Dynamic plugins are session-scoped and vanish on reload; this one is installed i
 
 ### The 路径 page
 
-The separate **路径** tab serves `GET /analysis-view/trace?session=<id>`: one self-contained page per
-request, assembled from `lib/trace/page.html` + `lib/trace/page.js` and the session payload. It is the
+The separate **路径** tab opens `GET /analysis-view/trace?staged=1&session=<id>`: the actual page starts
+immediately, followed by the real trunk, eagerly prefetched bodies/file layers, and sub-agent layers. All
+stages share one main-session observation and a captured cut; a selected turn gets a small priority
+request while bulk prefetch continues. Parameters/results retain the original projection's excerpts;
+the staged route does not apply the old extra 600-character clamp for long sessions. The standalone
+`GET /analysis-view/trace?session=<id>` remains a self-contained snapshot. Both use
+`lib/trace/page.html` + `lib/trace/page.js`. It is the
 Geist visual study from `docs/demo/layout-review`, ported back into the plugin — overview and per-turn
 action path, context composition, file objects, tool-result branches, sub-agents and Skill observation.
+
+The path projection includes native Code Mode dispatch events, folds successful wrappers when their
+children are recorded, and preserves pure code runs, wrapper failures and pending dispatches. Grep
+associates only returned match fragments; direct reads and search fragments are counted separately.
+Each twig has one endpoint symbol, with an exceptional state replacing the ordinary tool glyph.
+Context category counts also show their existing estimated composition percentage inline.
+
+Pages are cached against the official live cut or persistence revision, child revisions and renderer
+assets. Unchanged requests reuse HTML/gzip and support ETag/304. The parent observation stays pinned
+while up to two children are read; a child timeout preserves other branches and releases late leases.
+HTML and staged responses share four cache slots, an estimated 64 MiB budget and two-minute idle
+expiration (one oversized current snapshot may exceed the estimate). Only compressed responses are
+retained alongside parsed data. Main reads, actors and history replay have global concurrency limits.
+Leaving or hiding the page cancels unfinished enrichment. After leaving the path view, its hidden iframe expires after two minutes;
+quick re-entry reuses it and checks data/assets independently. Context summary updates do not redraw
+the graph; context history replaces only its own SVG layer. Layer updates keep viewport, zoom and selections;
+unready layers have local loading/error states rather than gating the first graph.
+Older context outside the official retention window is labeled and can be requested explicitly. History
+uses the public detached projection restore API in batches, without changing live projections or global
+retention settings. Each snapshot retains one history window of at most 1500 request records.
+Run `node plugin/analysis-view/perf-test.mjs`, `node plugin/analysis-view/resources-test.mjs` and `node plugin/analysis-view/stages-test.mjs` from the
+repository root for cache, replay, staged-read consistency, priority bodies and lease checks.
 
 Renderer sources are authored in the demo, not here. `node scripts/port-geist-page.mjs` splits the
 built demo page into those two runtime assets and copies the pure model modules into
@@ -124,8 +151,8 @@ Data arrives from two sides, because two families of values only exist in the vi
   query service).
 - View (`lib/client.js`): the official stats snapshot from the `stats` conversation target, plus
   `contextPressure` / `contextBreakdown` / `contextTimeline` read through the standard
-  `useProjection` hook seat. They arrive as one `postMessage` patch; the page boots only after it,
-  and falls back to the base graph after two seconds without one.
+  `useProjection` hook seat. They arrive as session-scoped `postMessage` patches and update an already
+  interactive graph; there is no 1.5/2-second boot gate for these optional values.
 
 Both halves degrade: absent projections or a missing stats target hide those layers, while the graph
 still renders. The `contextTimeline` value is also read on the Host when the session is live
@@ -138,6 +165,7 @@ still renders. The `contextTimeline` value is also read on the Host when the ses
 | `lib/client.js` | the client plugin; must self-register via `window.__ModuleLoader__.load({ id, factory })`; `require("react")` instead of a global |
 | `lib/index.js` | host half: computes incidents and serves `GET /analysis-view/digest?session=<id>` (facts + `log` identity), `GET /analysis-view/interpret?session=<id>` (model interpretation, called only when expanded), `GET /analysis-view/trace?session=<id>` (the 路径 page) and `/analysis-view/trace/fonts/*` |
 | `lib/trace-build.js` | session events → the page payload (turns, steps, calls, incidents, communications) |
+| `lib/trace-stages.js` | shared captured cut, lightweight trunk, eager detail/actor enrichment and priority turn reads |
 | `lib/trace-context.js` | the payload's extra layers: call facts, file operations, boundaries, retries, supplements, Skills, sub-agents |
 | `lib/trace-skill-evidence.js` | Skill text/retention evidence (a copy of `analyzers/dsh-skill-evidence.mjs`) |
 | `lib/trace/` | the generated page assets (`page.html`, `page.js`), pure model modules (`models/`) and the Geist fonts |
@@ -234,9 +262,9 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 动态插件是会话级、刷新即失;这个是装进 web profile 的常驻插件。
 
 ```text
-1. pnpm pack                      # 生成 dsh-analysis-view-0.10.13.tgz
+1. pnpm pack                      # 生成 dsh-analysis-view-0.10.30.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.10.13.tgz"
+     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.10.30.tgz"
      dsh.profile.bundles 追加 "dsh-analysis-view"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重建/重启 `dsh web`,让新的 client 模块进入前端包
@@ -244,8 +272,19 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 
 ### 路径页
 
-单独的「路径」标签取 `GET /analysis-view/trace?session=<id>`:每次请求现拼一份自包含页面,
-由 `lib/trace/page.html` + `lib/trace/page.js` 加本次会话的数据组成。它就是
+单独的「路径」标签取 `GET /analysis-view/trace?staged=1&session=<id>`:立即启动真实页面,
+先显示当前统计,主干就绪后立即显示,正文、文件与子代理图层随后主动补齐。所有阶段共享一次主日志观察和同一份 cut;
+预载期间选中某轮会优先读取该轮正文,参数与结果沿用原始投影的节选长度,不再额外缩到 600 字符。
+图层补齐保留缩放、位置与选择。原有 `GET /analysis-view/trace?session=<id>` 仍提供自包含快照。
+官方当前上下文更新只刷新摘要;历史增量更新只替换上下文 SVG 图层,不重建主干。
+切走或浏览器隐藏会取消未完成的补齐任务。切走后的隐藏 iframe 最多保留两分钟,到期释放;回到页面时重验数据与资产版本。
+HTML 与阶段数据共用最多四项、估算 64 MiB、空闲两分钟的缓存预算,仅一个超大当前快照可超过预算。
+缓存只保留压缩后的响应,不同时长期保留 JSON 字符串;主日志、子代理、历史回放各有全局并发限制。
+
+超长会话若超过 `dsh-context` 的历史保留范围,页面会标注当前覆盖范围并提供「回补更早增量」。
+点击后通过 Harness 公共 `sessionProjections.restore` 接口分批回放早期日志,不改动活跃投影或全局保留设置。
+每个快照只保留一个回补窗口;每个窗口最多 1500 条请求,继续点击可向前回补。工具正文仍主动预载,选中轮次会优先返回。
+两者由 `lib/trace/page.html` + `lib/trace/page.js` 组成。它就是
 `docs/demo/layout-review` 里那套 Geist 视觉试作搬回插件后的样子 —— 全景与逐轮行动路径、上下文构成、
 文件对象、工具结果枝条、子代理与 Skill 观察。
 
@@ -258,8 +297,8 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
   Skill 读入记录、Skill 正文存续(走官方 `SurfaceManager` 回放)、子代理支线(子会话同样通过
   Session 查询服务读取)。
 - 视图(`lib/client.js`):`stats` 会话目标里的官方统计快照,以及通过标准 `useProjection` 钩子位读到的
-  `contextPressure` / `contextBreakdown` / `contextTimeline`。这些作为**一次** `postMessage` 补丁送达,
-  页面收到后才启动;两秒内没收到就先用基础图启动。
+  `contextPressure` / `contextBreakdown` / `contextTimeline`。这些作为按会话隔离的 `postMessage` 补丁送达,
+  到达后重建对应索引并更新图层,主干启动不再等待它们;详情先到、后到都能正确保留。
 
 两边都可缺:投影没到、没有 stats 目标时,对应图层不出现,主图照常渲染。
 会话在本进程里活着时,host 也会直接读一次 `contextTimeline`(`ctx.sessionProjections.snapshot`),
@@ -272,6 +311,8 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 | `lib/client.js` | 客户端插件本体;必须以 `window.__ModuleLoader__.load({ id, factory })` 自注册,`require("react")` 而非全局 |
 | `lib/index.js` | host 半边:计算 incidents,提供 `GET /analysis-view/digest?session=<id>`(事实 + `log` 身份)、`GET /analysis-view/interpret?session=<id>`(AI 解读,仅展开时才调用)、`GET /analysis-view/trace?session=<id>`(路径页)与 `/analysis-view/trace/fonts/*` |
 | `lib/trace-build.js` | 会话事件 → 页面数据(轮次、步骤、调用、incident、通信) |
+| `lib/trace-stages.js` | 共用日志切点、轻量主干、主动预载正文和子代理、单轮优先读取 |
+| `lib/trace-resources.js` | 跨快照共享的容量预算、空闲淘汰、可取消队列与并发限制 |
 | `lib/trace-context.js` | 页面的补充图层:调用事实、文件操作、边界、重试、补充内容、Skill、子代理 |
 | `lib/trace-skill-evidence.js` | Skill 正文与存续证据(`analyzers/dsh-skill-evidence.mjs` 的副本) |
 | `lib/trace/` | 生成出来的页面资产(`page.html`、`page.js`)、纯模型模块(`models/`)与 Geist 字体 |
@@ -285,6 +326,7 @@ node analyzers/shape-law.mjs --mutate   # 证明法则会咬:合理的错法必�
 - 若空白:看浏览器控制台第一条报错。
 - 面板渲染:`node plugin/analysis-view/self-test.mjs`(必须输出 `ALL PASS (21 checks)`);
   它用一个 React 垫片真的执行组件树,不需要开浏览器。
+- 路径加载与资源边界:`node plugin/analysis-view/stages-test.mjs`、`node plugin/analysis-view/resources-test.mjs` 与 `node plugin/analysis-view/perf-test.mjs`。
 - 分析器语义:`node analyzers/self-test.mjs`(必须输出 `ALL PASS`)。
 - 形状契约:`node analyzers/shape-law.mjs` 与 `node analyzers/shape-law.mjs --mutate`
   (都要 `ALL PASS`;后者对每种变异打印 `CAUGHT`)。

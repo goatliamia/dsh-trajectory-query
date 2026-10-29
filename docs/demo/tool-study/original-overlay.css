@@ -1,0 +1,18 @@
+/* Original page owns the palette, typography and all graph geometry. */
+.geist-result-glyph.command,.geist-result-glyph.process{color:var(--branch-ink)}
+.geist-result-glyph.search,.geist-result-glyph.web{color:var(--review-retry)}
+.geist-result-glyph.coordination{color:var(--branch-ink)}
+.geist-result-glyph.pending{color:var(--review-unknown)}
+.tool-study-switches{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.tool-study-switches button{font:inherit;color:var(--muted)}
+.tool-study-switches button[aria-pressed=true]{color:var(--ink)}
+.tool-study-switches>span{font-size:11px;color:var(--muted);margin-right:3px}
+.study-file-match{font-size:11px;color:var(--muted)}
+.study-evidence-source{font-size:11px;color:var(--muted);margin:12px 0}
+.study-operation-detail{margin:18px 0;padding-bottom:15px;border-bottom:1px solid var(--line)}
+.study-operation-detail>strong{font-weight:550}
+.study-operation-detail>p{font-size:12px;line-height:1.7;margin:7px 0}
+.study-operation-detail details{margin-top:10px}
+.study-operation-detail summary{font-size:11px;color:var(--muted);cursor:pointer}
+.study-operation-detail .excerpt{max-height:260px;overflow:auto}
+@media(max-width:760px){.tool-study-switches>span{display:none}.tool-study-switches{gap:2px}.tool-study-switches button{font-size:11px;padding:4px!important}.geist-review .review-toolbar{flex-wrap:wrap;height:auto;min-height:36px;padding-top:3px;padding-bottom:3px}}

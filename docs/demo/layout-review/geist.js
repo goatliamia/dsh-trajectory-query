@@ -1,8 +1,20 @@
   // Visual adaptation only: semantic categories and recorded values remain unchanged.
   for (const category of CONTEXT_CATEGORIES) category.color = 'var(--chart-' + category.key + ')';
+  let geistMeasureFont = '';
+  const geistMeasureWidths = new Map();
+  function geistSyncMeasureFont() {
+    const font = '12px ' + getComputedStyle(document.body).getPropertyValue('--sans');
+    if (font !== geistMeasureFont) { geistMeasureFont = font; geistMeasureWidths.clear(); }
+  }
   reviewMeasure = function(text) {
-    tlContext.font = '12px ' + getComputedStyle(document.body).getPropertyValue('--sans');
-    return tlContext.measureText(String(text)).width;
+    if (!geistMeasureFont) geistSyncMeasureFont();
+    const key = String(text);
+    if (geistMeasureWidths.has(key)) return geistMeasureWidths.get(key);
+    tlContext.font = geistMeasureFont;
+    const width = tlContext.measureText(key).width;
+    if (geistMeasureWidths.size > 4096) geistMeasureWidths.clear();
+    geistMeasureWidths.set(key, width);
+    return width;
   };
   let geistLegendOpen = false;
   // 开合状态只有一个来源:图例的 hidden 与按钮的 aria-expanded 都从这里同步。
@@ -44,11 +56,12 @@
     geistSyncLegend();
   }
   const geistOverviewBase = renderOverview;
-  renderOverview = function(...args) { const value = geistOverviewBase(...args); geistArrangeCaption(); return value; };
+  renderOverview = function(...args) { geistSyncMeasureFont(); const value = geistOverviewBase(...args); geistArrangeCaption(); return value; };
   const geistActionBase = renderActionPath;
-  renderActionPath = function(...args) { const value = geistActionBase(...args); geistArrangeCaption(); return value; };
+  renderActionPath = function(...args) { geistSyncMeasureFont(); const value = geistActionBase(...args); geistArrangeCaption(); return value; };
   // Re-measure labels once the self-hosted font is ready; preserve the viewport.
   document.fonts.ready.then(() => {
+    geistMeasureWidths.clear();
     const vp = $('graph-scroll'), left = vp.scrollLeft, top = vp.scrollTop;
     if (view === 'path') renderActionPath(); else renderOverview({ plotOnly: true });
     vp.scrollLeft = left; vp.scrollTop = top;

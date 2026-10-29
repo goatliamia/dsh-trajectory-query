@@ -412,7 +412,9 @@ body.geist-review{font:14px/1.5 var(--sans);color:var(--ink);background:var(--su
 .geist-review .geist-context-sources button{display:flex;align-items:center;gap:7px;min-width:0;padding:0;border:0;background:none;font:13px/21px var(--sans);color:var(--ink);text-align:left;cursor:pointer}
 .geist-context-sources button:hover>span{text-decoration:underline;text-underline-offset:3px}
 .geist-context-sources i{width:8px;height:8px;border-radius:2px;flex:none}
-.geist-context-sources b{font:12px/21px var(--mono);font-weight:400;color:var(--muted);margin-left:auto;white-space:nowrap}
+.geist-context-sources button>span{white-space:nowrap;flex-shrink:0}
+.geist-context-sources b{font:12px/21px var(--mono);font-weight:400;color:var(--muted);margin-left:auto;min-width:0;white-space:normal;text-align:right}
+.geist-context-share{white-space:nowrap}
 .geist-context-footnote{display:flex;justify-content:space-between;gap:12px;font:10px/18px var(--sans);color:var(--muted);margin-top:8px}
 .geist-review .geist-legend .review-overlay-key{display:none}
 .geist-review .review-action-mode .graph-scroll{min-height:376px;flex:1 0 376px}
@@ -464,6 +466,9 @@ body.geist-review{font:14px/1.5 var(--sans);color:var(--ink);background:var(--su
 .geist-result-glyph.query{color:var(--review-retry)}
 .geist-result-glyph.check{color:var(--branch-good)}
 .geist-result-glyph.error{color:var(--branch-bad)}
+.geist-result-glyph.command,.geist-result-glyph.process,.geist-result-glyph.coordination{color:var(--branch-ink)}
+.geist-result-glyph.search,.geist-result-glyph.web{color:var(--review-retry)}
+.geist-result-glyph.pending{color:var(--review-unknown)}
 .geist-result-dot{fill:var(--file-read);stroke:var(--surface);stroke-width:.7}
 .geist-result-dot.change{fill:var(--file-change)}
 .geist-result-dot.query{fill:var(--review-retry)}
@@ -842,6 +847,17 @@ body { display: flex; flex-direction: column; align-items: stretch; }
 .skill-scope-tools{display:flex;flex-wrap:wrap;gap:8px 18px;font:12px/22px var(--mono);margin-bottom:20px}.skill-scope-tools b{font-weight:400;color:var(--muted)}
 .skill-scope-source{padding:12px 0;border-bottom:1px solid var(--line);font:12px/21px var(--sans)}.skill-scope-source p{margin:5px 0;overflow-wrap:anywhere;white-space:pre-wrap}.skill-scope-source strong{font-weight:500}.skill-scope-source summary{cursor:pointer}
 .geist-review .canvas{scrollbar-gutter:stable}
+.trace-progress{margin-left:auto;display:inline-flex;align-items:center;gap:7px;font-size:10px;color:var(--muted);white-space:nowrap}
+.trace-progress[hidden]{display:none}.trace-progress button{border:0;background:transparent;color:inherit;text-decoration:underline;cursor:pointer}
+.trace-progress.is-loading:before,.trace-detail-loading:before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;animation:trace-breathe 1.3s ease-in-out infinite}
+.trace-detail-loading{display:flex;align-items:center;gap:9px;color:var(--muted)}
+.trace-stage-enter{animation:trace-enter .18s ease-out}
+.trace-context-coverage{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:5px 0;color:var(--muted);font-size:10px}.trace-context-coverage[hidden]{display:none}
+.trace-context-coverage button{font:inherit;color:inherit;border:0;background:transparent;text-decoration:underline;cursor:pointer}
+.trace-render-error{padding:10px;color:#a00;white-space:pre-wrap}#turn-heading:empty{display:none}
+@keyframes trace-breathe{50%{opacity:.25}}@keyframes trace-enter{from{opacity:.35}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.trace-progress:before,.trace-detail-loading:before,.trace-stage-enter{animation:none}}
+@media(max-width:850px){.trace-progress{max-width:190px;overflow:hidden;text-overflow:ellipsis}}
 </style></head>
 <body class="geist-review">
 <div class="review-toolbar"><button id="review-return" hidden>← 返回执行全景</button><strong>执行路径</strong><span class="geist-edition">02</span><small id="review-state">105 轮真实记录</small><span class="review-spacer"></span><button id="review-rounds">每轮耗时</button><button id="review-path">行动路径 ↗</button><button id="review-stress" aria-pressed="false">密集样本</button><div class="review-controls" id="review-overview-controls"><button id="review-out" aria-label="缩小">−</button><button id="review-fit">全览</button><button id="review-in" aria-label="放大">＋</button></div></div><div class="app">
@@ -864,43 +880,142 @@ body { display: flex; flex-direction: column; align-items: stretch; }
 <script>/*__TRACE_RENDERER__*/</script>
 <script>
 (() => {
-  const element = document.getElementById('trace-data');
-  const payload = JSON.parse(element.textContent);
-  element.textContent = '';
-  window.__geistPayload = payload;
-  let booted = false;
+  const element = document.getElementById('trace-data'), payload = JSON.parse(element.textContent);
+  element.textContent = ''; window.__geistPayload = payload;
+  const loading = payload.traceLoad, sessionId = loading?.sessionId || payload.mainSession;
+  const official = {}, pendingTurns = new Map(), readyTurns = new Set(), pendingStages = new Map();
+  const timing = window.__traceStages = { shell: performance.now() };
+  const viewer = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  let booted = false, cut = null, officialKey = '', active = true, generation = 0, controller = new AbortController(), coreWork;
+  const cancelled = () => new DOMException('Trace view paused', 'AbortError');
   const merge = (target, patch) => {
-    for (const key of Object.keys(patch)) {
-      const value = patch[key], current = target[key];
+    for (const [key, value] of Object.entries(patch)) {
+      const current = target[key];
       if (value && typeof value === 'object' && !Array.isArray(value) && current && typeof current === 'object' && !Array.isArray(current)) merge(current, value);
-      else target[key] = value;
+      else target[key] = value && typeof value === 'object' && !Array.isArray(value) ? merge({}, value) : value;
     }
+    return target;
+  };
+  const announce = () => {
+    if (window.parent !== window) window.parent.postMessage({ type: 'analysis-trace-ready', sessionId, version: payload.traceVersion ?? null, assets: payload.traceAssets ?? null }, location.origin);
   };
   const boot = () => {
     if (booted) return;
     booted = true;
-    // 渲染炸了也要留下话说,而不是一张空白页。
     try {
-      window.__geistBoot();
-    } catch (error) {
-      window.__renderGuard = String((error && error.message) || error);
-      const box = document.createElement('pre');
-      box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;margin:0;padding:8px 12px;background:#fff3f3;color:#a00;font:12px/1.5 monospace;white-space:pre-wrap;max-height:40vh;overflow:auto';
-      box.textContent = '执行路径渲染失败:' + window.__renderGuard + '\n' + String((error && error.stack) || '');
-      document.body.appendChild(box);
+      window.__geistBoot(); timing.shellReady = performance.now(); announce();
+      if (!loading) { timing.core = performance.now(); requestAnimationFrame(() => requestAnimationFrame(() => { timing.corePaint = performance.now(); })); }
+    }
+    catch (error) {
+      window.__renderGuard = String(error?.message || error);
+      const box = document.createElement('pre'); box.className = 'trace-render-error';
+      box.textContent = '执行路径渲染失败：' + window.__renderGuard; document.body.appendChild(box);
     }
   };
+  const apply = (patch, stage) => {
+    const combined = {}; merge(combined, patch);
+    if (patch.context || patch.officialStats) merge(combined, official);
+    if (booted) window.__geistUpdate(combined, { stage }); else merge(payload, combined);
+    if (stage) timing[stage] = performance.now();
+  };
+  const query = (stage, turn, token = cut) => {
+    const value = new URLSearchParams({ session: sessionId, stage, view: viewer });
+    if (token) value.set('cut', token);
+    if (turn !== undefined) value.set('turn', turn);
+    return '/analysis-view/trace-data?' + value;
+  };
+  const release = token => { if (loading && token) fetch(query('release', undefined, token), { credentials: 'same-origin', keepalive: true }).catch(() => {}); };
+  const read = async (stage, turn, retry = true) => {
+    if (!active) throw cancelled();
+    const turnGeneration = generation, token = stage === 'core' ? null : cut;
+    const response = await fetch(query(stage, turn, token), { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
+    if (response.status === 409 && stage !== 'core' && retry) { await start(true); return read(stage, turn, false); }
+    if (!response.ok) throw new Error('读取失败 (' + response.status + ')');
+    const value = await response.json();
+    if (!active || turnGeneration !== generation) { if (stage === 'core') release(value.cut); throw cancelled(); }
+    if (value.sessionId !== sessionId || (token && value.cut !== token)) throw new Error('记录版本不一致');
+    if (stage !== 'core' && token !== cut) return read(stage, turn, false);
+    if (stage === 'core') cut = value.cut;
+    return value.payload;
+  };
+  window.__traceTurnReady = number => !loading || payload.traceStage?.details === 'ready' || readyTurns.has(number);
+  window.__traceEnsureTurn = number => {
+    if (window.__traceTurnReady(number)) return Promise.resolve();
+    if (!pendingTurns.has(number)) {
+      const job = read('turn', number).then(value => { readyTurns.add(number); apply(value, 'turn'); })
+        .finally(() => { if (pendingTurns.get(number) === job) pendingTurns.delete(number); });
+      pendingTurns.set(number, job);
+    }
+    return pendingTurns.get(number);
+  };
+  window.__traceLoadHistory = async before => {
+    if (payload.traceStatus?.history === 'loading' || !active) return;
+    apply({ traceStatus: { history: 'loading' } });
+    try { apply(await read('history', before), 'history'); }
+    catch (error) { if (error.name !== 'AbortError') apply({ traceStatus: { history: 'error' } }); }
+  };
+  const enrich = (stage, force = false) => {
+    if (!active || pendingStages.has(stage) || (!force && payload.traceStage?.[stage] === 'ready')) return;
+    const job = read(stage).then(value => {
+      apply(value, stage);
+      if (stage === 'actors') announce();
+    }).catch(error => {
+      if (error.name !== 'AbortError' && active) { timing[stage + 'Error'] = String(error.message); apply({ traceStage: { [stage]: 'error' } }); }
+    }).finally(() => {
+      if (pendingStages.get(stage) === job) pendingStages.delete(stage);
+      if (!pendingStages.size) apply({ traceStatus: { refresh: 'ready' } });
+    });
+    pendingStages.set(stage, job);
+  };
+  async function start(force = false) {
+    if (coreWork) return coreWork;
+    if (!active) return;
+    const job = (async () => {
+      try {
+        const core = await read('core');
+        if (!payload.sessions?.some(session => session.turns.length)) apply(core, 'core');
+        else apply({ traceVersion: core.traceVersion, traceAssets: core.traceAssets, traceCapabilities: core.traceCapabilities, traceStatus: { refresh: 'loading' } });
+        timing.core = performance.now(); announce();
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          timing.corePaint = performance.now(); enrich('details', force); enrich('actors', force);
+        }));
+      } catch (error) {
+        if (error.name !== 'AbortError' && active) { timing.coreError = String(error.message); apply({ traceStage: { core: 'error' } }); }
+      }
+    })().finally(() => { if (coreWork === job) coreWork = null; });
+    coreWork = job; return job;
+  }
+  const pause = () => {
+    if (!active) return;
+    active = false; generation++; controller.abort(); release(cut);
+  };
+  const resume = () => {
+    if (active) return;
+    active = true; controller = new AbortController(); coreWork = null;
+    pendingStages.clear(); pendingTurns.clear();
+    if (payload.traceStage?.details !== 'ready' || payload.traceStage?.actors !== 'ready') start(true);
+  };
   window.addEventListener('message', event => {
-    if (event.origin !== location.origin) return;
+    if (event.origin !== location.origin || (window.parent !== window && event.source !== window.parent)) return;
     const message = event.data;
-    if (!message || message.type !== 'analysis-trace-data' || !message.payload) return;
-    merge(payload, message.payload);
-    boot();
+    if (!message || (message.sessionId && message.sessionId !== sessionId)) return;
+    if (message.type === 'analysis-trace-visibility') { message.visible ? resume() : pause(); return; }
+    if (message.type === 'analysis-trace-refresh') { if (active) start(true); return; }
+    if (message.type !== 'analysis-trace-data' || !message.payload) return;
+    const key = JSON.stringify(message.payload);
+    if (key === officialKey) return;
+    officialKey = key; merge(official, message.payload); apply(message.payload);
   });
-  if (window.parent !== window) window.parent.postMessage({ type: 'analysis-trace-ready' }, location.origin);
-  // A view that cannot supply official values still gets the base graph.
-  setTimeout(boot, 2000);
+  window.addEventListener('pagehide', pause);
+  window.addEventListener('analysis-trace-retry', () => { if (loading) start(true); });
+  if (loading) {
+    Object.assign(payload, { mainSession: sessionId, sessions: [{ id: sessionId, title: '执行路径', turns: [], totals: { turns: 0, steps: 0, calls: 0, errors: 0 }, overview: { episodes: [], turns: [], focus: {}, totals: {} }, communications: [] }],
+      context: { requests: [], boundaries: [], callFacts: {}, fileOperations: [] }, traceStage: { core: 'loading', details: 'loading', actors: 'loading', context: window.parent === window ? 'unavailable' : 'loading' } });
+  }
+  boot();
+  if (loading) start();
 })();
+
 </script>
 </body>
 </html>

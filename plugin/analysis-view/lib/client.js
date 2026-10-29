@@ -1018,19 +1018,42 @@ window.__ModuleLoader__.load({
 
     /* ---------------- 面板 ---------------- */
     // 官方统计与上下文构成只存在于视图侧。页面由 /analysis-view/trace 现场生成,
-    // 把这类值作为补丁交进 iframe,页面拿到后只启动一次。
+    // 把这类值作为补丁交进 iframe;主干立即启动,详情后到时更新对应图层。
     //
     // contextTimeline 在浏览器里只有精简头,requests/events 是空的;插件自己的完整明细由
     // 它自己的只读路由给出(它自己的面板也是这么取的那份)。拿不到就当没有,不猜。
-    function loadTraceDetail(sessionId) {
-      return fetch("api/dsh-context/detail", {
+    const traceDetails = new Map();
+    function loadTraceDetail(sessionId, revision) {
+      const cached = traceDetails.get(sessionId);
+      if (cached && Date.now() - cached.at < 120000 && cached.revision === revision && (revision !== undefined || !cached.settled)) return cached.promise;
+      const entry = { revision, settled: false, at: Date.now() };
+      const controller = new AbortController();
+      entry.controller = controller;
+      const timer = setTimeout(() => controller.abort(), 10000);
+      entry.promise = fetch("/api/dsh-context/detail", {
         method: "POST",
         credentials: "same-origin",
+        signal: controller.signal,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sessionId }),
       }).then((response) => (response.ok ? response.json() : null))
-        .then((body) => (body && body.ok && body.value && typeof body.value === "object" ? body.value : null))
-        .catch(() => null);
+        .then((body) => {
+          const value = body?.ok && body.value;
+          return value && typeof value === "object" ? { rev: value.rev, head: value.head, current: value.current,
+            provider: value.provider, model: value.model, reasoningEffort: value.reasoningEffort, requests: value.requests } : null;
+        })
+        .catch(() => null)
+        .then(value => {
+          entry.settled = true;
+          if (value === null || (revision !== undefined && value.rev !== revision)) {
+            if (traceDetails.get(sessionId) === entry) traceDetails.delete(sessionId);
+          }
+          return value;
+        }).finally(() => clearTimeout(timer));
+      traceDetails.delete(sessionId);
+      traceDetails.set(sessionId, entry);
+      while (traceDetails.size > 2) traceDetails.delete(traceDetails.keys().next().value);
+      return entry.promise;
     }
 
     function officialTracePatch(sessionId, detail, timeline, pressure, breakdown) {
@@ -1062,8 +1085,9 @@ window.__ModuleLoader__.load({
     }
 
     // 独立的一页:执行路径图,数据由 /analysis-view/trace 现场生成。
-    // 切标签会卸载这个视图;把已经加载好的 iframe 收起来(不销毁、不重载),回来时原样挂回去。
-    const traceFrame = { element: null, session: null };
+    // Removing or reparenting an iframe destroys its browsing context. Keep one
+    // connected layer; the view's placeholder supplies its bounds while visible.
+    const traceFrame = { element: null, layer: null, session: null, ready: false, version: null, assets: null, active: false, expiry: null, postedDetail: null };
     function PathView(props) {
       React.useEffect(() => ensureStyle(), []);
       const sessionId = props && props.sessionId;
@@ -1071,73 +1095,137 @@ window.__ModuleLoader__.load({
       const timeline = useProjection ? useProjection("contextTimeline") : undefined;
       const pressure = useProjection ? useProjection("contextPressure") : undefined;
       const breakdown = useProjection ? useProjection("contextBreakdown") : undefined;
-      const [detail, setDetail] = React.useState(undefined);
-      const [settled, setSettled] = React.useState(false);
+      const [detailRecord, setDetailRecord] = React.useState(undefined);
+      const detail = detailRecord?.session === sessionId ? detailRecord.value : undefined;
+      const detailRevision = timeline?.detailRev;
       React.useEffect(() => {
-        setDetail(undefined);
+        setDetailRecord(undefined);
         if (!sessionId) return undefined;
         let live = true;
-        loadTraceDetail(sessionId).then((value) => { if (live) setDetail(value); });
-        return () => { live = false; };
-      }, [sessionId]);
+        const load = () => { if (document.visibilityState !== "hidden") loadTraceDetail(sessionId, detailRevision).then((value) => { if (live) setDetailRecord({ session: sessionId, value }); }); };
+        const cancel = () => {
+          const entry = traceDetails.get(sessionId);
+          if (entry && !entry.settled) { entry.controller.abort(); traceDetails.delete(sessionId); }
+        };
+        const visibility = () => { if (document.visibilityState === "hidden") cancel(); else load(); };
+        load(); document.addEventListener("visibilitychange", visibility);
+        return () => { live = false; cancel(); document.removeEventListener("visibilitychange", visibility); };
+      }, [sessionId, detailRevision]);
       const patch = React.useMemo(
         () => (sessionId ? officialTracePatch(sessionId, detail, timeline, pressure, breakdown) : null),
         [sessionId, detail, timeline, pressure, breakdown],
       );
-      // 明细请求挂了就不再等;页面自己也有兜底计时,空白不会成为正常状态。
-      React.useEffect(() => {
-        if (detail !== undefined) return undefined;
-        const timer = setTimeout(() => setSettled(true), 1500);
-        return () => clearTimeout(timer);
-      }, [detail]);
-      const open = detail !== undefined || settled;
       const shell = React.useRef(null);
       const [frame, setFrame] = React.useState(null);
       // 挂载时复用上一次的 iframe;只有换会话才重新加载。
       React.useLayoutEffect(() => {
         const host = shell.current;
-        if (!host || !open || !sessionId) return undefined;
+        if (!host || !sessionId) return undefined;
+        clearTimeout(traceFrame.expiry);
+        let layer = traceFrame.layer;
+        if (!layer) {
+          layer = document.createElement("div");
+          layer.className = "av-root av-trace";
+          layer.style.cssText = "position:fixed;z-index:1;margin:0;padding:0;min-height:0;overflow:hidden;display:none";
+          layer.hidden = true;
+          document.body.append(layer);
+          traceFrame.layer = layer;
+        }
         let element = traceFrame.element;
+        const reused = element && traceFrame.session === sessionId;
         if (!element || traceFrame.session !== sessionId) {
           if (element) element.remove();
           element = document.createElement("iframe");
           element.className = "av-trace-frame";
           element.title = "执行路径";
-          element.src = "/analysis-view/trace?session=" + encodeURIComponent(sessionId);
+          element.src = "/analysis-view/trace?staged=1&session=" + encodeURIComponent(sessionId);
           traceFrame.element = element;
           traceFrame.session = sessionId;
+          traceFrame.ready = false;
+          traceFrame.version = null;
+          traceFrame.assets = null; traceFrame.postedDetail = null;
+          layer.append(element);
         }
-        host.append(element);
         setFrame(element);
+        traceFrame.active = document.visibilityState !== "hidden";
+        const visible = () => {
+          element.contentWindow?.postMessage({ type: "analysis-trace-visibility", sessionId, visible: traceFrame.active }, location.origin);
+        };
         const fit = () => {
-          const parent = host.parentElement;
-          const height = Math.max(host.clientHeight, parent ? parent.clientHeight : 0);
-          if (height > 240) element.style.height = height + "px";
+          const box = host.getBoundingClientRect();
+          layer.hidden = !traceFrame.active || box.width <= 0 || box.height <= 0;
+          Object.assign(layer.style, { display: layer.hidden ? "none" : "flex", left: box.left + "px", top: box.top + "px", width: box.width + "px", height: box.height + "px" });
         };
         fit();
+        visible();
+        const visibility = () => { traceFrame.active = document.visibilityState !== "hidden"; visible(); fit(); };
+        document.addEventListener("visibilitychange", visibility);
         const observer = typeof ResizeObserver === "function" ? new ResizeObserver(fit) : null;
         if (observer) { observer.observe(host); if (host.parentElement) observer.observe(host.parentElement); }
+        window.addEventListener("resize", fit);
+        window.addEventListener("scroll", fit, true);
+        let live = true;
+        // Revalidate the retained page without transferring or parsing its HTML.
+        if (reused && traceFrame.ready) fetch("/analysis-view/trace-version?staged=1&session=" + encodeURIComponent(sessionId), { cache: "no-store" })
+          .then(response => response.ok ? response.json() : undefined).then(value => {
+            if (live && value && value.version !== traceFrame.version) {
+              if (value.assets && traceFrame.assets && value.assets !== traceFrame.assets) {
+                traceFrame.ready = false; traceFrame.version = null; traceFrame.postedDetail = null;
+                element.src = "/analysis-view/trace?staged=1&session=" + encodeURIComponent(sessionId);
+              } else element.contentWindow?.postMessage({ type: "analysis-trace-refresh", sessionId }, location.origin);
+            }
+          }).catch(() => {});
         return () => {
+          live = false;
           if (observer) observer.disconnect();
+          window.removeEventListener("resize", fit);
+          window.removeEventListener("scroll", fit, true);
+          document.removeEventListener("visibilitychange", visibility);
+          traceFrame.active = false; visible();
           setFrame(null);
-          // 只是挪走,不销毁:回来看的是同一份已经渲染好的页面。
-          element.remove();
+          layer.hidden = true;
+          layer.style.display = "none";
+          traceFrame.expiry = setTimeout(() => {
+            if (traceFrame.active || traceFrame.element !== element) return;
+            layer.remove(); traceFrame.element = traceFrame.layer = null;
+            traceFrame.session = traceFrame.version = traceFrame.assets = traceFrame.postedDetail = null;
+            traceFrame.ready = false; traceDetails.clear();
+          }, 120000);
         };
-      }, [open, sessionId]);
+      }, [sessionId]);
       React.useEffect(() => {
-        if (!frame || !patch) return undefined;
-        const post = () => { if (frame.contentWindow) frame.contentWindow.postMessage({ type: "analysis-trace-data", payload: patch }, location.origin); };
+        if (!frame) return undefined;
+        const post = () => {
+          if (!frame.contentWindow || !traceFrame.active) return;
+          const next = { ...(patch || {}), ...(patch?.context ? { context: { ...patch.context } } : {}),
+            traceStatus: { context: detail === undefined ? "loading" : detail === null ? "unavailable" : "ready" } };
+          if (next.context?.requests && traceFrame.postedDetail === detail) delete next.context.requests;
+          else if (next.context?.requests) traceFrame.postedDetail = detail;
+          frame.contentWindow.postMessage({ type: "analysis-trace-data", sessionId, payload: next }, location.origin);
+          frame.contentWindow.postMessage({ type: "analysis-trace-visibility", sessionId, visible: true }, location.origin);
+        };
+        const onLoad = () => {
+          const version = frame.contentWindow?.__geistPayload?.traceVersion;
+          traceFrame.ready = version !== undefined && version !== null;
+          traceFrame.version = version ?? traceFrame.version;
+          post();
+        };
         const onMessage = (event) => {
-          if (event.origin !== location.origin || !event.data || event.data.type !== "analysis-trace-ready") return;
+          if (event.origin !== location.origin || event.source !== frame.contentWindow || !event.data || event.data.type !== "analysis-trace-ready") return;
+          traceFrame.ready = event.data.version !== undefined && event.data.version !== null;
+          traceFrame.version = event.data.version ?? null;
+          traceFrame.assets = event.data.assets ?? traceFrame.assets;
+          if (!traceFrame.active) frame.contentWindow?.postMessage({ type: "analysis-trace-visibility", sessionId, visible: false }, location.origin);
           post();
         };
         window.addEventListener("message", onMessage);
-        frame.addEventListener("load", post);
+        frame.addEventListener("load", onLoad);
+        if (traceFrame.ready || frame.contentWindow?.__geistPayload) onLoad();
         return () => {
           window.removeEventListener("message", onMessage);
-          frame.removeEventListener("load", post);
+          frame.removeEventListener("load", onLoad);
         };
-      }, [frame, patch]);
+      }, [frame, patch, detail, sessionId]);
       // 页面里的"跳到第 N 轮对话":切到对话并滚到那一轮,复用分析面板的定位逻辑。
       React.useEffect(() => {
         if (!sessionId) return undefined;
@@ -1255,6 +1343,13 @@ window.__ModuleLoader__.load({
       inject: ["slots", "uiConversation"],
       apply(ctx) {
         clientCtx = ctx;
+        if (typeof ctx.effect === "function") ctx.effect(() => () => {
+          clearTimeout(traceFrame.expiry);
+          for (const entry of traceDetails.values()) if (!entry.settled) entry.controller.abort();
+          traceFrame.layer?.remove();
+          Object.assign(traceFrame, { element: null, layer: null, session: null, ready: false, version: null });
+          traceDetails.clear();
+        }, "analysis-view: retained trace frame");
         ctx.uiConversation.views.register({ target: "analysis", create: () => new AnalysisSnapshotBuilder(), isActive: () => true });
         const slots = ctx.slots;
         if (!slots) return;
