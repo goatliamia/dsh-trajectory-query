@@ -4,10 +4,14 @@
   const reviewRetryEvents = data.context?.retries || session.turns.flatMap(t => t.steps.flatMap(s => s.retries.map(r => ({
     ...r, turn: t.number, step: s.number, responded: s.assistantTime !== null && s.assistantTime >= r.time,
   }))));
+  let reviewRowIndex = { key: null, rows: new Map() };
   function reviewActiveTime(turnNumber, time) {
     const layout = overviewProjection?.layout || [];
     // 布局可能把若干轮合成一行,也可能还没排到某一轮;找不到就退到最近的前一行,绝不抛异常。
-    let row = layout.find(l => l.turn.number === turnNumber);
+    if (reviewRowIndex.key !== layout) {
+      reviewRowIndex = { key: layout, rows: new Map(layout.map(l => [l.turn.number, l])) };
+    }
+    let row = reviewRowIndex.rows.get(turnNumber);
     if (!row) row = [...layout].reverse().find(l => l.turn.number <= turnNumber) || layout[0];
     if (!row) return 0;
     return row.offset + Math.max(0, Math.min(endOf(row.turn) - row.turn.start, time - row.turn.start));

@@ -43,7 +43,10 @@
     const layout=[];let cursor=gutter,offset=0;
     turns.forEach((t,index)=>{const length=endOf(t)-t.start;layout.push({turn:t,index,x:cursor,end:cursor+length*factor,offset});cursor+=length*factor+(index<turns.length-1?gap:0);offset+=length;});
     const w=Math.max(vw,cursor+gutter),scroll=vp.scrollLeft,left=scroll+gutter,right=scroll+vw-gutter,base=142;
-    const mapTime=time=>{const l=layout.find(l=>time<=endOf(l.turn))||layout.at(-1);if(time>=l.turn.start)return l.x+Math.min(endOf(l.turn)-l.turn.start,Math.max(0,time-l.turn.start))*factor;const prev=layout[l.index-1];return prev?prev.end+Math.max(0,time-endOf(prev.turn))/Math.max(1,l.turn.start-endOf(prev.turn))*(l.x-prev.end):l.x;};
+    // 同一个时间映射,换成二分:原来每个事件都要线性扫一遍全部轮次。
+    const layoutEnds=layout.map(l=>endOf(l.turn));
+    const findRow=time=>{let lo=0,hi=layoutEnds.length-1,hit=-1;while(lo<=hi){const mid=(lo+hi)>>1;if(time<=layoutEnds[mid]){hit=mid;hi=mid-1;}else lo=mid+1;}return hit<0?layout.at(-1):layout[hit];};
+    const mapTime=time=>{const l=findRow(time);if(time>=l.turn.start)return l.x+Math.min(endOf(l.turn)-l.turn.start,Math.max(0,time-l.turn.start))*factor;const prev=layout[l.index-1];return prev?prev.end+Math.max(0,time-endOf(prev.turn))/Math.max(1,l.turn.start-endOf(prev.turn))*(l.x-prev.end):l.x;};
     const visible=(a,b=a)=>b>=left-90&&a<=right+90;
     const detail=false,showErrors=overviewLayers.has('failures'),showTime=overviewLayers.has('duration'),showInterrupt=overviewLayers.has('interruptions');
     overviewProjection={layout,factor,baseFactor,gutter,mapTime,mainY:base,mainBottom:base+8,visibleLeft:left,visibleRight:right};
