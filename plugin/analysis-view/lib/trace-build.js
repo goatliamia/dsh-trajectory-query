@@ -126,6 +126,12 @@ export function analyzeTraceOverview(session) {
   const episodes=[],facts=[];
   for(const turn of session.turns){
     const calls=turn.steps.flatMap(s=>s.calls).sort((a,b)=>a.seq-b.seq),batches=[];
+  // 同签名后续成功是热点:每个失败调用原来都要线性扫一遍全部调用,先按签名建索引。
+  const successBySignature=new Map();
+  for(const c of calls) if(c.status==='returned'&&c.signature){
+    const bucket=successBySignature.get(c.signature);
+    if(bucket===undefined) successBySignature.set(c.signature,[c]); else bucket.push(c);
+  }
     for(const step of turn.steps){
       const byCondition=new Map();
       for(const call of step.calls.filter(c=>c.status==='error')){
@@ -133,7 +139,8 @@ export function analyzeTraceOverview(session) {
         const key=condition+'|'+(serviceConditions.has(condition)?'shared-service':family)+(condition.startsWith('TOOL_ERROR:')?'|'+(call.signature||call.seq):'');
         if(!byCondition.has(key))byCondition.set(key,{key,condition,family,steps:[step.number],start:step.start,end:step.end,failed:[],pairs:[]});
         const batch=byCondition.get(key);batch.failed.push(call);
-        const next=calls.find(n=>call.signature&&n.signature===call.signature&&n.seq>call.resultSeq&&n.status==='returned');
+        const bucket=call.signature===undefined?undefined:successBySignature.get(call.signature);
+      const next=bucket===undefined?undefined:bucket.find(n=>n.seq>call.resultSeq);
         if(next)batch.pairs.push({failedSeq:call.seq,successSeq:next.seq,successTime:next.end,successStart:next.start});
       }
       batches.push(...byCondition.values());
