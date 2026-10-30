@@ -11,7 +11,7 @@
     selectedStep = Math.max(0, Math.min(selectedStep, count - 1));
     const selected = steps[selectedStep], showContext = overviewLayers.has('context'), showTime = overviewLayers.has('duration');
     const geometry = typeof geistActionGeometry === 'function' ? geistActionGeometry(t) : { height: 360, base: 208 };
-    const viewportWidth = Math.max(300, viewport.clientWidth), gutter = 54, { height, base } = geometry;
+    const viewportWidth = Math.max(300, viewport.clientWidth), viewportLeft = viewport.scrollLeft, gutter = 54, { height, base } = geometry;
     const gap = Math.max(128, Math.min(176, (viewportWidth - gutter * 2) / count));
     const width = Math.max(viewportWidth, gutter * 2 + gap * count);
     const start = (width - gap * count) / 2, x = index => start + (index + .5) * gap;
@@ -77,7 +77,7 @@
       brText(viewportWidth - gutter, 18, count + ' 步' + (showTime ? ' · ' + reviewDuration(endOf(t) - t.start) : '') + (failures ? ' · ' + failures + ' 步受阻' : ''), 'br-note', 'end') +
       brText(gutter, height - 12, showContext ? '每步上下文变化 · 显示至 ±' + reviewTokens(scale.limit) : '步骤从左到右排列', 'br-axis', 'start') +
       brText(viewportWidth - gutter, height - 12, '间距表示顺序 · 耗时见上方', 'br-axis', 'end') + '</g>';
-    reviewActionFileFrame = { t, x, base, gutter, height };
+    reviewActionFileFrame = { t, x, base, gutter, height, viewportWidth, viewportLeft };
     html += '<g id="review-files-layer">' + reviewActionFiles(t, x, base, viewport.scrollLeft + gutter, viewport.scrollLeft + viewportWidth - gutter, height) + '</g>';
     const graph = $('graph');
     graph.setAttribute('viewBox', '0 0 ' + width + ' ' + height); graph.setAttribute('height', height);
@@ -101,6 +101,32 @@
       });
     }
   }
+  // Selection changes the active mark and inspector, not the already materialized
+  // turn geometry. Data/layer/viewport changes still go through the full renderer.
+  selectStep = function(index) {
+    const t = turn(), next = Math.max(0, Math.min(t.steps.length - 1, index));
+    if (!t.steps.length || !Number.isInteger(next)) return;
+    const graph = $('graph'), frame = reviewActionFileFrame, node = graph.querySelector('[data-step="' + next + '"]');
+    if (view !== 'path' || zoom || frame?.t !== t || !node) { selectedStep = next; renderActionPath(); return; }
+    const previous = graph.querySelector('[data-step="' + selectedStep + '"]');
+    if (next !== selectedStep) {
+      if (previous) {
+        previous.classList.remove('is-selected'); previous.setAttribute('aria-pressed', 'false');
+        previous.querySelector('.review-action-halo')?.remove();
+        previous.querySelectorAll('[data-context-segment]').forEach(el => el.setAttribute('opacity', '.46'));
+      }
+      selectedStep = next;
+      node.classList.add('is-selected'); node.setAttribute('aria-pressed', 'true');
+      const halo = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      for (const [key, value] of Object.entries({ cx: frame.x(next), cy: frame.base, r: 18, class: 'review-action-halo' })) halo.setAttribute(key, value);
+      node.insertBefore(halo, node.querySelector('.review-action-node'));
+      node.querySelectorAll('[data-context-segment]').forEach(el => el.setAttribute('opacity', '.65'));
+    }
+    reviewRenderStepSummary(t, t.steps[next]);
+    if (typeof geistUpdateStepTiming === 'function') geistUpdateStepTiming(t);
+    reviewApplyFileFocus();
+    if (typeof geistBindSkillMaterials === 'function') geistBindSkillMaterials();
+  };
   function reviewRenderStepSummary(t, step) {
     const panel = $('step-panel'), info = reviewStepContext(t, step);
     const identity = [session.id, t.number, step.number, overviewLayers.has('duration'), overviewLayers.has('context')].join(':');

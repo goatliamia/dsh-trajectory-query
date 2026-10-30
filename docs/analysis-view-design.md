@@ -103,6 +103,19 @@ node docs/demo/layout-review/context-trend-test.mjs
 node scripts/build-context-trend-study.mjs
 ```
 
+### 步骤选择与补画
+
+逐步视图复用同一轮已生成的图形。选择变化只更新旧/新节点的高亮、色柱透明度、ARIA、详情、工具耗时入口和文件关联；轮次不匹配、节点未生成或技术缩放时仍回到完整渲染。数据、图层和尺寸变化继续完整更新。
+
+子代理与 Skill 补画读取主渲染器已测得的视口坐标。逐步视图的滚动在重画文件层前更新该坐标；未选择 Skill 时只清除旧高亮，不读取布局或扫描所有轮次。未增加跨会话缓存。
+
+455 轮、2,241 步冻结样本的本机浏览器取样中，第 81 轮（63 步）切换至第 2 步约 15.2 ms → 0.7 ms；未选择 Skill 的全览补画绑定约 20 ms → 不足 1 ms。原始记录、浮动标注和后续缩放继续可用。取样不代表所有设备上的帧耗时，整图平移仍有 SVG 重建成本。分阶段服务端补齐与这些交互成本分别计量。
+
+```sh
+node docs/demo/layout-review/selection-perf-test.mjs
+node docs/demo/layout-review/geist-interaction-test.mjs
+```
+
 修改页面应编辑 `docs/demo/layout-review` 的源文件，再执行构建与 port 脚本；不要直接改生成的 `plugin/analysis-view/lib/trace/page.html` 或 `page.js`。
 
 ```text

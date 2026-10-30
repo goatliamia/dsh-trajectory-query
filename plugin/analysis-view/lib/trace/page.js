@@ -256,7 +256,7 @@ window.__geistBoot = () => {
     selectedStep = Math.max(0, Math.min(selectedStep, count - 1));
     const selected = steps[selectedStep], showContext = overviewLayers.has('context'), showTime = overviewLayers.has('duration');
     const geometry = typeof geistActionGeometry === 'function' ? geistActionGeometry(t) : { height: 360, base: 208 };
-    const viewportWidth = Math.max(300, viewport.clientWidth), gutter = 54, { height, base } = geometry;
+    const viewportWidth = Math.max(300, viewport.clientWidth), viewportLeft = viewport.scrollLeft, gutter = 54, { height, base } = geometry;
     const gap = Math.max(128, Math.min(176, (viewportWidth - gutter * 2) / count));
     const width = Math.max(viewportWidth, gutter * 2 + gap * count);
     const start = (width - gap * count) / 2, x = index => start + (index + .5) * gap;
@@ -322,7 +322,7 @@ window.__geistBoot = () => {
       brText(viewportWidth - gutter, 18, count + ' 步' + (showTime ? ' · ' + reviewDuration(endOf(t) - t.start) : '') + (failures ? ' · ' + failures + ' 步受阻' : ''), 'br-note', 'end') +
       brText(gutter, height - 12, showContext ? '每步上下文变化 · 显示至 ±' + reviewTokens(scale.limit) : '步骤从左到右排列', 'br-axis', 'start') +
       brText(viewportWidth - gutter, height - 12, '间距表示顺序 · 耗时见上方', 'br-axis', 'end') + '</g>';
-    reviewActionFileFrame = { t, x, base, gutter, height };
+    reviewActionFileFrame = { t, x, base, gutter, height, viewportWidth, viewportLeft };
     html += '<g id="review-files-layer">' + reviewActionFiles(t, x, base, viewport.scrollLeft + gutter, viewport.scrollLeft + viewportWidth - gutter, height) + '</g>';
     const graph = $('graph');
     graph.setAttribute('viewBox', '0 0 ' + width + ' ' + height); graph.setAttribute('height', height);
@@ -346,6 +346,32 @@ window.__geistBoot = () => {
       });
     }
   }
+  // Selection changes the active mark and inspector, not the already materialized
+  // turn geometry. Data/layer/viewport changes still go through the full renderer.
+  selectStep = function(index) {
+    const t = turn(), next = Math.max(0, Math.min(t.steps.length - 1, index));
+    if (!t.steps.length || !Number.isInteger(next)) return;
+    const graph = $('graph'), frame = reviewActionFileFrame, node = graph.querySelector('[data-step="' + next + '"]');
+    if (view !== 'path' || zoom || frame?.t !== t || !node) { selectedStep = next; renderActionPath(); return; }
+    const previous = graph.querySelector('[data-step="' + selectedStep + '"]');
+    if (next !== selectedStep) {
+      if (previous) {
+        previous.classList.remove('is-selected'); previous.setAttribute('aria-pressed', 'false');
+        previous.querySelector('.review-action-halo')?.remove();
+        previous.querySelectorAll('[data-context-segment]').forEach(el => el.setAttribute('opacity', '.46'));
+      }
+      selectedStep = next;
+      node.classList.add('is-selected'); node.setAttribute('aria-pressed', 'true');
+      const halo = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      for (const [key, value] of Object.entries({ cx: frame.x(next), cy: frame.base, r: 18, class: 'review-action-halo' })) halo.setAttribute(key, value);
+      node.insertBefore(halo, node.querySelector('.review-action-node'));
+      node.querySelectorAll('[data-context-segment]').forEach(el => el.setAttribute('opacity', '.65'));
+    }
+    reviewRenderStepSummary(t, t.steps[next]);
+    if (typeof geistUpdateStepTiming === 'function') geistUpdateStepTiming(t);
+    reviewApplyFileFocus();
+    if (typeof geistBindSkillMaterials === 'function') geistBindSkillMaterials();
+  };
   function reviewRenderStepSummary(t, step) {
     const panel = $('step-panel'), info = reviewStepContext(t, step);
     const identity = [session.id, t.number, step.number, overviewLayers.has('duration'), overviewLayers.has('context')].join(':');
@@ -1855,7 +1881,9 @@ function fileChangeHistory(operations, path) {
       reviewFilesFramePending = false;
       if (view !== 'path' || !reviewActionFileFrame || !$('review-files-layer')) return;
       const { t, x, base, gutter, height } = reviewActionFileFrame, vp = $('graph-scroll');
-      $('review-files-layer').innerHTML = reviewActionFiles(t, x, base, vp.scrollLeft + gutter, vp.scrollLeft + vp.clientWidth - gutter, height);
+      const left = vp.scrollLeft;
+      reviewActionFileFrame.viewportLeft = left;
+      $('review-files-layer').innerHTML = reviewActionFiles(t, x, base, left + gutter, left + reviewActionFileFrame.viewportWidth - gutter, height);
       reviewFilesBind();
     });
   }
@@ -2998,6 +3026,10 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
       timing += geistTimingLayer(t, step, time => start + Math.max(0, Math.min(1, (time - step.start) / Math.max(1, step.end - step.start))) * span, 65, true);
     }
     $('graph').insertAdjacentHTML('beforeend', '<g class="geist-tool-time-layer">' + timing + '</g>'); geistBindTiming();
+    geistUpdateStepTiming(t);
+    return value;
+  };
+  function geistUpdateStepTiming(t) {
     const meta = $('step-panel').querySelector('.geist-step-meta>span');
     if (meta && t.steps[selectedStep].calls.length && overviewLayers.has('duration') && !meta.querySelector('[data-native-tool-time]')) {
       const step = t.steps[selectedStep], timing = toolTiming(geistStatsByStep.get(t.number + ':' + step.number), step);
@@ -3005,8 +3037,7 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
       button.textContent = timing.status === 'measured' ? '工具 ' + preciseTime(timing.coverage) : timing.status === 'inconsistent' ? '工具时间待核对' : '工具时间未记录';
       button.onclick = () => geistOpenTiming(t.number, step.number); meta.append(button);
     }
-    return value;
-  };
+  }
   const geistCaptionResultsBase = geistArrangeCaption;
   geistArrangeCaption = function() {
     geistCaptionResultsBase();
@@ -3123,12 +3154,15 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
     }
   }
   function geistActorContext() {
-    const graph = $('graph'), vp = $('graph-scroll');
-    const width = view === 'overview' ? Math.max(vp.clientWidth, (overviewProjection.layout.at(-1)?.end || 0) + 54) : Number(graph.getAttribute('viewBox').split(' ')[2]);
-    if (view === 'overview') return { width, base: overviewProjection.mainY, left: vp.scrollLeft + 54, right: vp.scrollLeft + vp.clientWidth - 54, map: e => overviewProjection.mapTime(e.time ?? e.start), filter: () => true };
-    const frame = reviewActionFileFrame, indices = new Map(frame.t.steps.map((s, i) => [s.number, i]));
+    const graph = $('graph');
+    if (view === 'overview') {
+      const p = overviewProjection, viewportWidth = p.visibleRight - p.visibleLeft + p.gutter * 2, scroll = p.visibleLeft - p.gutter;
+      return { width: Math.max(viewportWidth, (p.layout.at(-1)?.end || 0) + 54), base: p.mainY,
+        left: scroll + 54, right: scroll + viewportWidth - 54, map: e => p.mapTime(e.time ?? e.start), filter: () => true };
+    }
+    const frame = reviewActionFileFrame, width = Number(graph.getAttribute('viewBox').split(' ')[2]), indices = new Map(frame.t.steps.map((s, i) => [s.number, i]));
     const at = e => e.step != null && indices.has(e.step) ? frame.x(indices.get(e.step)) : actorTimePosition(frame.t.steps, frame.x, e.time ?? e.start);
-    return { width, base: frame.base, left: vp.scrollLeft + 54, right: vp.scrollLeft + vp.clientWidth - 54, map: at, filter: e => e.turn === frame.t.number };
+    return { width, base: frame.base, left: frame.viewportLeft + 54, right: frame.viewportLeft + frame.viewportWidth - 54, map: at, filter: e => e.turn === frame.t.number };
   }
   function geistPlanAgentForks() {
     if (!geistActorLayers.agents || !geistActors.branches.length) return [];
@@ -3358,6 +3392,10 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
     if (!geistSkillAnalysis) return;
     const graph = $('graph'); graph.querySelector('.real-skill-range')?.remove();
     const scope = geistActorLayers.skills ? geistSkillScope() : null;
+    if (!scope) {
+      graph.querySelectorAll('.skill-scope-outside').forEach(el => el.classList.remove('skill-scope-outside'));
+      return;
+    }
     const frame = geistActorContext(), t = view === 'path' ? turn() : null;
     if (scope) {
       let svg = '';
@@ -3381,8 +3419,9 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
       const step = t?.steps[Number(el.dataset.step)];
       el.classList.toggle('skill-scope-outside', !!scope && step && !scope.contains(step.start));
     });
+    const turns = new Map(session.turns.map(t => [t.number, t]));
     graph.querySelectorAll('.review-context-turn').forEach(el => {
-      const number = Number(el.dataset.contextTurn), round = session.turns.find(t => t.number === number);
+      const number = Number(el.dataset.contextTurn), round = turns.get(number);
       if (round) el.classList.toggle('skill-scope-outside', !!scope && !scope.intervals.some(i => round.start < i.to && endOf(round) >= i.from));
     });
   }

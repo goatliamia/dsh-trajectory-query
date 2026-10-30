@@ -234,6 +234,10 @@
       timing += geistTimingLayer(t, step, time => start + Math.max(0, Math.min(1, (time - step.start) / Math.max(1, step.end - step.start))) * span, 65, true);
     }
     $('graph').insertAdjacentHTML('beforeend', '<g class="geist-tool-time-layer">' + timing + '</g>'); geistBindTiming();
+    geistUpdateStepTiming(t);
+    return value;
+  };
+  function geistUpdateStepTiming(t) {
     const meta = $('step-panel').querySelector('.geist-step-meta>span');
     if (meta && t.steps[selectedStep].calls.length && overviewLayers.has('duration') && !meta.querySelector('[data-native-tool-time]')) {
       const step = t.steps[selectedStep], timing = toolTiming(geistStatsByStep.get(t.number + ':' + step.number), step);
@@ -241,8 +245,7 @@
       button.textContent = timing.status === 'measured' ? '工具 ' + preciseTime(timing.coverage) : timing.status === 'inconsistent' ? '工具时间待核对' : '工具时间未记录';
       button.onclick = () => geistOpenTiming(t.number, step.number); meta.append(button);
     }
-    return value;
-  };
+  }
   const geistCaptionResultsBase = geistArrangeCaption;
   geistArrangeCaption = function() {
     geistCaptionResultsBase();

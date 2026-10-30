@@ -9,7 +9,9 @@
       reviewFilesFramePending = false;
       if (view !== 'path' || !reviewActionFileFrame || !$('review-files-layer')) return;
       const { t, x, base, gutter, height } = reviewActionFileFrame, vp = $('graph-scroll');
-      $('review-files-layer').innerHTML = reviewActionFiles(t, x, base, vp.scrollLeft + gutter, vp.scrollLeft + vp.clientWidth - gutter, height);
+      const left = vp.scrollLeft;
+      reviewActionFileFrame.viewportLeft = left;
+      $('review-files-layer').innerHTML = reviewActionFiles(t, x, base, left + gutter, left + reviewActionFileFrame.viewportWidth - gutter, height);
       reviewFilesBind();
     });
   }

@@ -65,6 +65,10 @@
     if (!geistSkillAnalysis) return;
     const graph = $('graph'); graph.querySelector('.real-skill-range')?.remove();
     const scope = geistActorLayers.skills ? geistSkillScope() : null;
+    if (!scope) {
+      graph.querySelectorAll('.skill-scope-outside').forEach(el => el.classList.remove('skill-scope-outside'));
+      return;
+    }
     const frame = geistActorContext(), t = view === 'path' ? turn() : null;
     if (scope) {
       let svg = '';
@@ -88,8 +92,9 @@
       const step = t?.steps[Number(el.dataset.step)];
       el.classList.toggle('skill-scope-outside', !!scope && step && !scope.contains(step.start));
     });
+    const turns = new Map(session.turns.map(t => [t.number, t]));
     graph.querySelectorAll('.review-context-turn').forEach(el => {
-      const number = Number(el.dataset.contextTurn), round = session.turns.find(t => t.number === number);
+      const number = Number(el.dataset.contextTurn), round = turns.get(number);
       if (round) el.classList.toggle('skill-scope-outside', !!scope && !scope.intervals.some(i => round.start < i.to && endOf(round) >= i.from));
     });
   }

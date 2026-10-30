@@ -90,12 +90,15 @@
     }
   }
   function geistActorContext() {
-    const graph = $('graph'), vp = $('graph-scroll');
-    const width = view === 'overview' ? Math.max(vp.clientWidth, (overviewProjection.layout.at(-1)?.end || 0) + 54) : Number(graph.getAttribute('viewBox').split(' ')[2]);
-    if (view === 'overview') return { width, base: overviewProjection.mainY, left: vp.scrollLeft + 54, right: vp.scrollLeft + vp.clientWidth - 54, map: e => overviewProjection.mapTime(e.time ?? e.start), filter: () => true };
-    const frame = reviewActionFileFrame, indices = new Map(frame.t.steps.map((s, i) => [s.number, i]));
+    const graph = $('graph');
+    if (view === 'overview') {
+      const p = overviewProjection, viewportWidth = p.visibleRight - p.visibleLeft + p.gutter * 2, scroll = p.visibleLeft - p.gutter;
+      return { width: Math.max(viewportWidth, (p.layout.at(-1)?.end || 0) + 54), base: p.mainY,
+        left: scroll + 54, right: scroll + viewportWidth - 54, map: e => p.mapTime(e.time ?? e.start), filter: () => true };
+    }
+    const frame = reviewActionFileFrame, width = Number(graph.getAttribute('viewBox').split(' ')[2]), indices = new Map(frame.t.steps.map((s, i) => [s.number, i]));
     const at = e => e.step != null && indices.has(e.step) ? frame.x(indices.get(e.step)) : actorTimePosition(frame.t.steps, frame.x, e.time ?? e.start);
-    return { width, base: frame.base, left: vp.scrollLeft + 54, right: vp.scrollLeft + vp.clientWidth - 54, map: at, filter: e => e.turn === frame.t.number };
+    return { width, base: frame.base, left: frame.viewportLeft + 54, right: frame.viewportLeft + frame.viewportWidth - 54, map: at, filter: e => e.turn === frame.t.number };
   }
   function geistPlanAgentForks() {
     if (!geistActorLayers.agents || !geistActors.branches.length) return [];
