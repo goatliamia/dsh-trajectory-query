@@ -1,38 +1,39 @@
 # dsh-trajectory-query
 
-Three DSH plugins that make a session already written to the log retrievable, readable and analysable.
+[中文](README.md)
 
-| Plugin | Where | What it does |
+Explore and diagnose Agent conversations: execution paths, context composition, tool and file use, original evidence, and improvements you can verify. Includes DSH plugins plus Pi / Codex analysis tools and standalone conversation views.
+
+| Component | Entry point | Purpose |
 |---|---|---|
-| `dsh-trajectory-tools` | host (model tools) | Four read-only entries: search past events, read a verbatim window, walk relations, inspect diagnostic evidence |
-| `dsh-analysis-view` | "Analysis" tab | Turns, spend, tools, incidents, plus an on-demand interpretation |
-| `dsh-conversation-search` | right sidebar | Search the current conversation and jump to the matching turn |
+| `dsh-trajectory-tools` | DSH model tools | Four read-only entries: search history, read originals, inspect relations, collect diagnostic evidence |
+| `dsh-analysis-view` | DSH Analysis / Path tabs | Turns, usage, tools, incidents and on-demand interpretation; execution paths, context, files, Skills and subagents |
+| `dsh-conversation-search` | DSH right sidebar | Search the current conversation and jump to a turn |
+| `trajectory-portable-tools` | Pi extension / Codex MCP / CLI | The same four tools for latency, usage, repeated attempts, tool/file access and context |
 
-No changes to DSH core, nothing written back to the session, no new instrumentation. More documentation is available in [docs/](docs/).
+Query tools are read-only, with continued access to full arguments and results. DSH interpretation makes a model call; its optional post-compaction check-in is enabled by default, as described below.
 
 ## Requirements
 
-- DSH 0.2.1-rc.3 with the Web GUI
-- Node.js 18+
-- profile at `~/.dsh/profiles/web` (default)
+- DSH: verified with SDK 0.2.2-alpha.2 and Web GUI; Node.js 18+. Default profile: `~/.dsh/profiles/web`.
+- Pi / Codex tools: Node.js 20+. The native Pi extension requires Pi; online Codex reads require the official `codex app-server`. Offline file analysis does not start a model.
 
-## Install
+## Install the DSH plugins
 
-The packages are local file dependencies, not published to npm.
+The three DSH packages are local file dependencies, not published to npm. Pack each directory:
 
-```bash
-# 1. pack (inside each directory)
-cd plugin/trajectory-tools    && pnpm pack
-cd ../analysis-view           && pnpm pack
-cd ../conversation-search     && pnpm pack
+```sh
+cd plugin/trajectory-tools && pnpm pack
+cd ../analysis-view && pnpm pack
+cd ../conversation-search && pnpm pack
 ```
 
-Copy the `.tgz` files somewhere stable (e.g. `~/Documents/plugins/`), then in `~/.dsh/profiles/web/package.json`:
+Place the `.tgz` files in a stable location and add dependencies and bundles to `~/.dsh/profiles/web/package.json`:
 
-```jsonc
+```json
 {
   "dependencies": {
-    "dsh-trajectory-tools": "file:/absolute/path/dsh-trajectory-tools-0.4.0.tgz",
+    "dsh-trajectory-tools": "file:/absolute/path/dsh-trajectory-tools-0.5.1.tgz",
     "dsh-analysis-view": "file:/absolute/path/dsh-analysis-view-0.10.30.tgz",
     "dsh-conversation-search": "file:/absolute/path/dsh-conversation-search-0.2.1.tgz"
   },
@@ -48,100 +49,136 @@ Copy the `.tgz` files somewhere stable (e.g. `~/Documents/plugins/`), then in `~
 }
 ```
 
-```bash
+```sh
 cd ~/.dsh/profiles/web && pnpm install
 ```
 
 Restart `dsh web`. Host plugins do not hot-reload reliably; client-only changes need a page refresh.
 
-## Features
-
-### Trajectory query tools
-
-Four entries grouped by the question:
+## Four evidence tools
 
 | Tool | Purpose |
 |---|---|
-| `trajectory_search` | `view` required: `events` literal hits, `catalog` counts and ranges, `cost` token spend, `sessions` session list |
-| `trajectory_read` | verbatim window by `seq` range, optionally `format: "json"` |
-| `trajectory_graph` | replacement / reference / derivation relations, or session lineage |
-| `trajectory_inspect` | official statistics with bounded evidence for latency, token consumption and declarations, repeated calls, tool/file access and context changes |
+| `trajectory_inspect` | `overview`, `latency`, `cost` (usage and declarations), `repeats`, `io` (tools/files), `context` |
+| `trajectory_search` | `events` literal search, `catalog` counts and ranges, `cost` usage, `sessions` list |
+| `trajectory_read` | Original records, connected actions and feedback; continue through full arguments, results and diffs |
+| `trajectory_graph` | Event relations and session lineage |
 
-Every result carries `(session, seq@logId)` and quotes the original text; an empty result is a verifiable "no such fact". The plugin also registers the `trajectory-query` skill.
+Example model-side DSH calls:
 
-**Post-compaction check-in** (on by default): after a successful compaction, one short line is injected at the end of the turn asking the model to state what it thinks the task is, where it is, and what comes next. Disable with `config.reconcile: false`.
-
-### Analysis tab
-
-A third tab next to "Chat" and "Trajectory":
-
-| Section | Content |
-|---|---|
-| Path (separate tab) | the current turn's trunk and detours, turn strip, time axis; click a node for the real event |
-| KPI | turns, tool calls, failures, cache hit rate, events |
-| Turns | a duration-proportional strip coloured by failures; a failing turn jumps to the trajectory |
-| Spend | per-turn cache hit and miss drawn apart, output on its own bar, per-turn hit rate on the right; a row jumps to that turn in the chat. With the official API, each number carries its own cost |
-| Tools | three rings: category → that category's tools → which turns used the tool; selecting only changes the last two |
-| Incidents | evidence-backed chains: Cause / Runtime knew / Model received / Harness response / Impact, `seq` clickable |
-| Interpretation | one model call on demand, every statement carries a citation |
-
-Read-only endpoints:
-
-```text
-GET /analysis-view/digest?session=<id>      # deterministic facts, 2s cache, &fresh=1 to bypass
-GET /analysis-view/interpret?session=<id>   # on-demand interpretation, spends one model call
-GET /analysis-view/trace?session=<id>       # standalone Path snapshot
-GET /analysis-view/trace?staged=1&session=<id> # staged Path page
+```js
+trajectory_inspect({ view: "overview" })
+trajectory_search({ view: "sessions" })
+trajectory_search({ view: "events", query: "keyword" })
+trajectory_read({ session: "SESSION_ID", seq: 123 })
+trajectory_graph({ session: "SESSION_ID", seq: 123 })
 ```
 
-### Conversation search
+Reuse the returned `snapshot` to change ranges or focus on a tool or file, then follow read pointers. Evidence retains native identities and `seq@logId`; an empty result is limited to the selected scope and filters.
 
-A right-sidebar tab next to "Workspace files" and "Terminal". Searches the current conversation and groups hits by turn; chat-only by default, "also search tools" includes tool output. Clicking a hit scrolls the chat to that turn.
+DSH includes the `trajectory-query` skill; Pi / Codex include a short [trace-analysis skill](.agents/skills/trace-analysis/SKILL.md). Host parameters differ; see [DSH tools](plugin/trajectory-tools/README.md) and [Pi / Codex tools](plugin/portable-tools/README.md).
+
+**DSH post-compaction check-in:** enabled by default. After successful compaction, the model is asked at the end of the turn to state its task, progress and next action. This can add a model step. Disable with `config.reconcile: false`.
+
+## DSH Analysis and Path
+
+- **Analysis:** turns, tool calls, failures, cache, per-turn usage, tool distribution and evidence-backed incidents. On-demand interpretation makes one call using the current model.
+- **Path:** session overview and individual turns, trunk, branches and time axis; context composition, file changes, tool arguments/results, Skills and subagents.
+- **Long conversations:** the actual trunk appears first, followed by details and other layers. Selected turns get priority; earlier context increments can be loaded separately.
+- **Conversation search:** keyword search in the sidebar, chat messages by default with optional tool output; click a hit to jump to its turn.
 
 ```text
+GET /analysis-view/digest?session=<id>          # statistics; &fresh=1 bypasses cache
+GET /analysis-view/interpret?session=<id>       # on-demand interpretation; uses a model call
+GET /analysis-view/trace?session=<id>           # standalone Path snapshot
+GET /analysis-view/trace?staged=1&session=<id>  # staged Path page
+GET /analysis-view/trace-data?session=<id>&stage=core
 GET /conversation-search/search?session=<id>&q=<term>&scope=chat|all
 ```
 
-## Usage
+See [Analysis](plugin/analysis-view/README.md) and [Conversation search](plugin/conversation-search/README.md).
 
-```bash
-trajectory_search(view="sessions")                    # what can be searched
-trajectory_search(view="events", query="<literal>")   # hits carry seq / logId
-trajectory_read(session=<id>, seq=<hit seq>)          # verbatim context
-trajectory_graph(session=<id>, seq=<hit seq>)         # relations
-trajectory_search(view="cost", session=<id>)          # tokens and cache
+## Pi / Codex
 
-curl "http://127.0.0.1:3080/analysis-view/digest?session=<id>"
+Install the tool dependencies from the repository root:
+
+```sh
+npm ci --prefix plugin/portable-tools --ignore-scripts
 ```
+
+Pi can load the native extension to inspect the current branch and SDK tool inventory, or analyze a Session v3 JSONL file offline:
+
+```sh
+pi -e ./plugin/portable-tools
+# Or analyze offline
+node scripts/trajectory-query.mjs --host pi --file /absolute/session.jsonl --request query.json
+```
+
+Codex supports MCP integration or CLI analysis of a thread / official snapshot:
+
+```sh
+node scripts/trajectory-query.mjs --host codex --thread THREAD_ID --request query.json
+node scripts/trajectory-query.mjs --host codex --file /absolute/snapshot.json --request query.json
+```
+
+Example `query.json`:
+
+```json
+{"view":"overview"}
+```
+
+See [setup and parameters](plugin/portable-tools/README.md) for MCP configuration, scope selection, full-body continuation and tool-definition queries.
+
+The native Pi extension can read current configuration; historical files are not a current inventory. Codex analyzes recorded tool declarations. Text composition and definition sizes are estimates; recorded usage is reported separately. Codex was verified with a real conversation. Pi native logs and extension interfaces were tested; a real Pi process has not been verified here.
+
+## Standalone conversation views
+
+Pi / Codex can generate standalone pages using the project's palette and execution path. Select multiple context sources above the graph; delta and total trends can be shown together.
+
+```sh
+# Native Pi session
+node scripts/build-pi-demo.mjs --session /absolute/session.jsonl
+# Codex: read-only export and view generation
+node scripts/export-codex-thread.mjs --thread THREAD_ID
+# Start local previews
+node scripts/serve-layout-review.mjs 3086
+```
+
+Open `http://127.0.0.1:3086/pi` or `http://127.0.0.1:3086/codex`. Without `--session`, the Pi builder creates a clearly labeled synthetic example and requires a local Pi source repository. See [Pi](docs/demo/layout-review/PI.md) / [Codex](docs/demo/layout-review/CODEX.md) for options. These are independent previews; existing DSH view routes stay the same.
+
+Exports, generated pages and screenshots are kept in Git-ignored `.dsh/`, outside repository commits.
 
 ## Self-tests
 
-```bash
+```sh
 node analyzers/self-test.mjs
 node analyzers/host-self-test.mjs
 node analyzers/shape-law.mjs
-node plugin/trajectory-tools/self-test.mjs
+npm test --prefix plugin/trajectory-tools
 node plugin/analysis-view/self-test.mjs
 node plugin/conversation-search/self-test.mjs
+npm test --prefix plugin/portable-tools
+node analyzers/pi-adapter-test.mjs
+node analyzers/codex-adapter-test.mjs
 ```
 
-## Layout
+## Files and documentation
 
-- `plugin/trajectory-tools/` — trajectory query tools (host)
-- `plugin/analysis-view/` — analysis tab (host route + client)
-- `plugin/conversation-search/` — conversation search (host route + client)
-- `analyzers/` — deterministic analyzers, digest runner, self-tests
-- `skill/` — `trajectory-query.md`, `analysis.md`
-- `docs/` — technical documentation
-- `experiments/` — corpus, probes, generated reports
+- `plugin/`: three DSH plugins and portable Pi / Codex tools.
+- `analyzers/`: deterministic analyzers, host adapters and self-tests.
+- `scripts/`: export, query CLI and standalone view builders.
+- `skill/`, `.agents/skills/`: model usage instructions.
+- `docs/`: usage, research and experiment records; [diagnostic entry points](docs/diagnostics.md).
+- `experiments/`: test corpora, probes and reports.
 
 ## Versions
 
 | Package | Version |
 |---|---|
-| dsh-trajectory-tools | 0.4.0 |
+| dsh-trajectory-tools | 0.5.1 |
 | dsh-analysis-view | 0.10.30 |
 | dsh-conversation-search | 0.2.1 |
+| trajectory-portable-tools | 0.1.0 |
 
 ## License
 
