@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>上下文 · 动态装配</title><link rel="stylesheet" href="/assembly.css"></head>
+<body>
+  <header class="top"><a href="http://127.0.0.1:3087/">执行路径 <span>/</span> 上下文装配</a><span>概念动效 <b>04</b></span></header>
+  <main>
+    <div class="intro"><div><span class="eyebrow">CONTEXT IN THE MAKING</span><h1>一轮一轮，拼成这次上下文。</h1></div><span class="concept">演示序列 · 12 轮</span></div>
+    <div class="story"><div><span id="round">准备装配</span><h2 id="sentence">先放好系统与工具。</h2></div><span class="state" id="state">开始</span></div>
+    <div class="scene-wrap"><svg id="scene" viewBox="0 0 800 500" role="img" aria-label="上下文逐轮装配与局部历史改写的概念动画"></svg></div>
+    <div class="transport"><div class="buttons"><button id="play" class="play" aria-label="暂停动画">Ⅱ 暂停</button><button id="restart">↻ 重播</button><button id="jump" class="jump">看第 7 轮的改写 ↗</button></div><span id="position">00 / 12</span></div>
+    <nav id="timeline" aria-label="选择演示轮次"></nav>
+    <div class="readout"><div><span>已经拼入</span><strong id="assembled">00 <small>轮</small></strong></div><div><span>历史前缀</span><strong id="prefix">等待装配</strong></div><div><span>本轮动作</span><strong id="action">放入基线</strong></div></div>
+    <footer><div class="legend"><span style="--c:#8053e3">系统</span><span style="--c:#d49b00">工具定义</span><span style="--c:#44a56b">用户</span><span style="--c:#e66d26">Skill</span><span style="--c:#5b9fe8">助手</span><span style="--c:#3ab4a4">工具结果</span><span style="--c:#ce5757">历史改写</span></div><p>概念序列，用来感受装配与改写的节奏。</p></footer>
+  </main><script type="module" src="/assembly.js"></script>
+</body></html>

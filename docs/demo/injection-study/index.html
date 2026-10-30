@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>上下文来源 · 执行路径</title><link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="toolbar"><a class="brand" href="/" aria-label="上下文来源首页"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4v12M3 10h7l6-6M10 10l6 6"/><circle cx="3" cy="4" r="1.5"/><circle cx="16" cy="4" r="1.5"/><circle cx="16" cy="16" r="1.5"/></svg>执行路径<span class="slash">/</span><strong>上下文来源</strong></a><span class="study">独立试作 <span class="edition">03</span></span></header>
+  <main>
+    <div class="intro"><p>从哪里进入，落在什么位置。</p><span id="session-note">正在读取真实记录…</span></div>
+    <nav id="case-tabs" aria-label="切换真实案例"></nav>
+    <section class="composition" aria-labelledby="composition-heading">
+      <div class="composition-title"><h1 id="composition-heading">上下文构成 <span>来源估算</span></h1><span id="cut-label"></span></div>
+      <div class="numbers"><div class="estimate"><strong id="estimated-total">—</strong><span>估算 token</span></div><div class="occupancy" id="occupancy"></div></div>
+      <div id="composition-bar" class="composition-bar" aria-label="构成估算占比"></div>
+      <div id="composition-legend" class="composition-legend"></div>
+    </section>
+    <section class="path-section" aria-labelledby="path-heading">
+      <header class="path-heading"><div><h2 id="path-heading">来源与落点</h2><span id="graph-note">按逻辑消息顺序排列</span></div><div class="graph-controls"><button id="replay" type="button">↻ 重播展开</button><button id="reset" type="button">显示全部来源</button><label><input type="checkbox" id="include-history">包含已替换的记录</label></div></header>
+      <div class="graph-scroll"><svg id="graph" viewBox="0 0 1100 430" role="img" aria-label="内容来源、投递方式与上下文消息位置"></svg></div>
+      <div class="graph-foot"><span><i></i>来源记录各展示一条代表链 · 普通助手与工具消息在右侧</span><span>缓存回执按整次请求统计 · 消息间距不代表 token 数</span></div>
+    </section>
+    <section id="inspector" class="inspector" aria-live="polite"></section>
+    <section class="record-section"><header><div><h2 id="record-heading">当前切点的记录</h2><span id="record-count"></span></div><button id="clear-filter" type="button" hidden>清除筛选</button></header><div class="table-scroll"><table><thead><tr><th>内容来源</th><th>进入与提交</th><th>落点</th><th>当前状态</th><th>证据</th></tr></thead><tbody id="record-body"></tbody></table></div><button id="more" type="button" hidden>继续展开记录</button></section>
+    <footer class="page-foot"><span id="source-note"></span><span>所有内容均来自选定日志切点 · 未连接正在运行的 DSH</span></footer>
+  </main>
+  <div id="error" class="error" role="alert" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
