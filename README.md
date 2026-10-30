@@ -12,7 +12,7 @@
 
 ## 环境
 
-- DSH 0.2.1-rc.3，Web GUI
+- 验证环境：DSH SDK 0.2.2-alpha.2，Web GUI
 - Node.js 18+
 - profile 默认在 `~/.dsh/profiles/web`
 
@@ -32,7 +32,7 @@ cd ../conversation-search     && pnpm pack
 ```jsonc
 {
   "dependencies": {
-    "dsh-trajectory-tools": "file:/绝对路径/dsh-trajectory-tools-0.4.0.tgz",
+    "dsh-trajectory-tools": "file:/绝对路径/dsh-trajectory-tools-0.5.1.tgz",
     "dsh-analysis-view": "file:/绝对路径/dsh-analysis-view-0.10.30.tgz",
     "dsh-conversation-search": "file:/绝对路径/dsh-conversation-search-0.2.1.tgz"
   },
@@ -67,7 +67,7 @@ cd ~/.dsh/profiles/web && pnpm install
 | `trajectory_graph` | 事件的替换 / 引用 / 派生关系，或会话谱系 |
 | `trajectory_inspect` | 基于官方统计取证：耗时、消耗与工具定义、重复调用、工具文件、上下文；支持有界结果和同一快照下的原文追查 |
 
-证据优先：每个结果带 `(session, seq@logId)`，引用原样；查不到就是可核验的"没有"。
+结果带 `(session, seq@logId)`，引用原样；未命中限定于本次范围和过滤。
 
 插件同时注册 `trajectory-query` skill（先查再答、逐字引用）。
 

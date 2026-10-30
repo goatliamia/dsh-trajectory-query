@@ -12,7 +12,7 @@
 // 原则(与 skill/trajectory-query.md 一致):
 //   1. 只读:不写入、不改写任何事件;返回文本逐字来自日志。
 //   2. 事实与解释分离:工具只给"事实 + 指针",解释交给模型。
-//   3. 空结果 = 可验证的"没有":查不到就是日志里没有,不做语义补全。
+//   3. Empty results describe the selected scope and filters, not global absence.
 //   4. seq 只在同一份日志修订内稳定,引用必须带 logId。
 //
 // 数据来源优先级(不用 readSession:它会 replay 校验整份日志):
@@ -26,6 +26,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { SKILL_BODY, SKILL_DESCRIPTION, SKILL_NAME, SKILL_WHEN_TO_USE } from "./skill.js";
 import { InspectionService } from "./inspect-service.js";
+import { readField } from "./linked-read.js";
+import { costRequests, costTotals, costCoverage, costByTurn } from "./usage.js";
+export { cacheEfficiency, costRequests, costTotals, costCoverage, costByTurn } from "./usage.js";
 
 export const inject = ["tools"];
 
@@ -634,104 +637,6 @@ export function indexEvents(events, options = {}) {
  * 成本不套用 find 的自回显/样板过滤:那是"检索噪声"的概念,记账要记全量。
  * ------------------------------------------------------------------ */
 
-function usageNumber(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function sumKnown(values) {
-  let sum = null;
-  for (const value of values) {
-    if (value === null || value === undefined) continue;
-    sum = (sum || 0) + value;
-  }
-  return sum;
-}
-
-/** cache 效率 = cacheRead / (cacheRead + input);两侧都上报且分母 > 0 才给值。 */
-export function cacheEfficiency(cacheRead, input) {
-  if (cacheRead === null || input === null || cacheRead === undefined || input === undefined) return null;
-  const denominator = cacheRead + input;
-  return denominator > 0 ? cacheRead / denominator : null;
-}
-
-/** 逐请求抽取 usage;缺失即 unknown(不按 0)。 */
-export function costRequests(events) {
-  const requests = [];
-  for (const event of events || []) {
-    if (!event || event.type !== "assistant/message") continue;
-    const data = event.data || {};
-    const source = (data.message && data.message.source) || {};
-    const usage = data.usage;
-    const unknown = usage === undefined || usage === null || typeof usage !== "object";
-    const row = {
-      seq: event.seq,
-      turn: typeof data.turn === "number" ? data.turn : null,
-      step: typeof data.step === "number" ? data.step : null,
-      provider: typeof source.provider === "string" ? source.provider : null,
-      model: typeof source.model === "string" ? source.model : null,
-      unknown,
-      input: unknown ? null : usageNumber(usage.inputTokens),
-      cacheRead: unknown ? null : usageNumber(usage.cacheReadTokens),
-      cacheWrite: unknown ? null : usageNumber(usage.cacheWriteTokens),
-      output: unknown ? null : usageNumber(usage.outputTokens),
-      reasoning: unknown ? null : usageNumber(usage.reasoningTokens),
-      total: unknown ? null : usageNumber(usage.totalTokens),
-    };
-    row.cacheEfficiency = cacheEfficiency(row.cacheRead, row.input);
-    requests.push(row);
-  }
-  return requests;
-}
-
-/** 汇总一组请求:只加已上报的值;coverage 说明每个字段有多少请求报了。 */
-export function costTotals(requests) {
-  const rows = requests || [];
-  const cacheRead = sumKnown(rows.map((row) => row.cacheRead));
-  const input = sumKnown(rows.map((row) => row.input));
-  return {
-    requests: rows.length,
-    unknownRequests: rows.filter((row) => row.unknown).length,
-    input,
-    cacheRead,
-    cacheWrite: sumKnown(rows.map((row) => row.cacheWrite)),
-    output: sumKnown(rows.map((row) => row.output)),
-    reasoning: sumKnown(rows.map((row) => row.reasoning)),
-    total: sumKnown(rows.map((row) => row.total)),
-    cacheEfficiency: cacheEfficiency(cacheRead, input),
-  };
-}
-
-export function costCoverage(requests) {
-  const rows = requests || [];
-  const reported = (field) => rows.filter((row) => row[field] !== null).length;
-  return {
-    input: reported("input"),
-    cacheRead: reported("cacheRead"),
-    cacheWrite: reported("cacheWrite"),
-    output: reported("output"),
-    reasoning: reported("reasoning"),
-    total: reported("total"),
-  };
-}
-
-/** 按 turn 汇总(没有 turn 的请求归到一个 turn:null 的桶)。 */
-export function costByTurn(requests) {
-  const groups = new Map();
-  for (const row of requests || []) {
-    const key = row.turn === null ? "null" : String(row.turn);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
-  }
-  return [...groups.entries()].map(([key, list]) => ({
-    turn: key === "null" ? null : Number(key),
-    ...costTotals(list),
-  }));
-}
-
-/* ------------------------------------------------------------------ *
- * 工具
- * ------------------------------------------------------------------ */
-
 const OUTPUT = {
   schema: { type: "json" },
   render(_args, value) {
@@ -1190,9 +1095,24 @@ export function apply(ctx, config = {}) {
   }
 
   /* ---------------- read:逐字取原文 ---------------- */
-  async function runRead(args) {
+  async function runRead(args, exec) {
     try {
+      if (args.format === "linked") {
+        if (args.field !== undefined) throw Error('linked and field cannot be combined');
+        return await inspections.readLinked(args, exec?.signal);
+      }
       const sessionId = String(args.session);
+      if (args.field !== undefined) {
+        if (!Number.isSafeInteger(args.seq) || args.seq < 0) throw Error('field requires seq');
+        const window = await withTimeout(readWindow(ctx, sessionId, args.seq, args.seq), LOAD_TIMEOUT_MS, 'trajectory_read');
+        if (args.snapshot) inspections.validateRead(args.snapshot, sessionId, args.seq, args.seq, window.events);
+        const event = window.events.find(e => e.seq === args.seq);
+        if (!event) throw Error('Event not found');
+        const part = readField(event, args.field, args.offset ?? 0);
+        return { ok: true, session: sessionId, log: { id: logIdOf(sessionId, window.first), eventCount: window.total ?? null },
+          format: 'field', ...part, nextRead: part.nextOffset == null ? null : { tool: 'trajectory_read', args: { ...args, offset: part.nextOffset } } };
+      }
+      if (args.offset !== undefined) throw Error('offset requires linked or field');
       let from;
       let to;
       if (args.seq !== undefined && args.seq !== null) {
@@ -1292,9 +1212,9 @@ export function apply(ctx, config = {}) {
     description: "查会话日志的事实与数字:字面命中、会话清单、token 花费。结果带 (session, seq@logId) 与逐字片段。",
     parameters: {
       view: { type: "string", required: true, enum: ["events", "catalog", "sessions", "cost"], description: "events=字面命中;catalog=计数与范围;sessions=有哪些会话;cost=token 与缓存" },
-      session: { type: "string", description: "会话 id;events 省略=当前+live+最近,cost 必填" },
+      session: { type: "string", description: "会话 id；events 省略=当前+live+最近，cost 省略=当前" },
       query: { type: "string", description: "字面词,events 用" },
-      filter: { type: "object", additionalProperties: true, description: "可选维度;键按 view 不同,传错会列出该 view 的可选键" },
+      filter: { type: "object", additionalProperties: true, description: "events:types/from/to/timeFrom/timeTo/sessionCount/normalize/excludeInjected/excludeSelf；catalog:cwd/timeFrom/timeTo/type/tool/breakdown；cost:from/to/groupBy(request或turn)；sessions:liveOnly" },
       limit: { type: "integer", description: "行数上限,默认 " + DEFAULT_ROWS },
       offset: { type: "integer", description: "跳过前 N 条(events 用);返回 nextOffset,没有更多就是 null" },
     },
@@ -1305,14 +1225,17 @@ export function apply(ctx, config = {}) {
 
   register({
     name: "trajectory_inspect",
-    description: "获取会话运行统计、代表性执行片段及关联原文，用于诊断执行过程。",
+    description: "看会话的推进过程、投入分布和具体执行证据，定位值得改变的做法。",
     parameters: {
-      view: { type: "string", enum: ["overview", "latency", "cost", "repeats", "io", "context"], description: "overview=总览(默认);latency=耗时;cost=消耗与常驻工具定义;repeats=重复候选;io=工具文件;context=上下文变化" },
+      view: { type: "string", enum: ["overview", "latency", "cost", "repeats", "io", "context"], description: "overview=时间过程(默认);latency=等待;cost=用量和定义;repeats=同参候选;io=操作;context=变化" },
       session: { type: "string", description: "会话 id，省略为当前会话" },
-      turns: { type: "object", additionalProperties: true, description: "可选轮次闭区间 {from,to}，省略为全会话" },
-      limit: { type: "integer", description: "取证条目数，默认 3，范围 1–10；统计仍覆盖指定范围" },
-      snapshot: { type: "string", description: "沿用先前返回的快照，保持多次查询一致" },
-      cursor: { type: "string", description: "照抄返回的游标，继续同一 view" },
+      turns: { type: "object", additionalProperties: true, description: "轮次闭区间 {from,to}，省略为全会话；沿用 snapshot 时可换范围" },
+      focus: { type: "object", additionalProperties: true, description: "{tool:精确工具名} 或 {file:返回过的完整路径}，二选一；时间/用量为包含该对象的完整步骤" },
+      groupBy: { type: "string", enum: ["turn", "tool", "file"], description: "overview:turn/tool/file;latency和cost:turn;io:tool/file；省略用默认粒度" },
+      sort: { type: "string", enum: ["time", "wall", "input", "output", "returned", "count", "change"], description: "overview窗口/turn及latency/cost:time/wall/input/output；tool/file及io:time/returned/count；repeats:time/count；context:time/change" },
+      limit: { type: "integer", description: "每页 1–10 项；overview 默认 6，其余默认 3" },
+      snapshot: { type: "string", description: "沿用日志切点" },
+      cursor: { type: "string", description: "照抄 nextCursor 继续同一查询" },
     },
     output: OUTPUT,
     execute: async (args, exec) => {
@@ -1323,20 +1246,21 @@ export function apply(ctx, config = {}) {
 
   register({
     name: "trajectory_read",
-    description: "按 seq 区间取逐字原文(消息、工具调用、结果)。",
+    description: "读取历史原文或有关联的行动、反馈和后续处理；长正文可续读。",
     parameters: {
       session: { type: "string", required: true, description: "会话 id" },
-      seq: { type: "integer", description: "中心 seq,取前后各 5 个" },
-      from: { type: "integer", description: "起点 seq(含)" },
-      to: { type: "integer", description: "终点 seq(含);窗口上限 " + MAX_WINDOW },
-      raw: { type: "boolean", description: "true=连没有正文的事件也给" },
-      format: { type: "string", enum: ["text", "json"], description: "json=完整事件对象(信封/来源/stream 都在),默认 text=逐字正文" },
-      snapshot: { type: "string", description: "可选 inspect 快照，校验原文与取证时一致" },
+      seq: { type: "integer", description: "中心事件；text/json 取前后各5条，linked 取关联记录，field 只读该事件" },
+      from: { type: "integer", description: "区间起点，含" },
+      to: { type: "integer", description: "区间终点，含；最多 " + MAX_WINDOW + " 条" },
+      raw: { type: "boolean", description: "text 模式包含无正文事件" },
+      format: { type: "string", enum: ["text", "json", "linked"], description: "text=正文(默认);json=完整事件;linked=按 seq 读调用/状态/正式返回及后续消息" },
+      field: { type: "string", description: "按 seq 读事件内字段，如 data.arguments；与 linked 分开使用，文本每页12000字符" },
+      offset: { type: "integer", description: "linked 的记录偏移或 field 的字符偏移，默认0；优先照抄 nextRead" },
+      snapshot: { type: "string", description: "沿用 inspect 切点并校验原文" },
     },
     output: OUTPUT,
-    // 只读且定点:同一 step 里可以和其他调用并行。
     isConcurrencySafe: () => true,
-    execute: (args) => runRead(args),
+    execute: (args, exec) => runRead(args, exec),
   });
 
   register({

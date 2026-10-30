@@ -20,7 +20,7 @@ Four entries, split by the question rather than by data source. `view` is requir
 
 | Tool | Question it answers |
 |---|---|
-| `trajectory_search` | what is there / where was it said / how much did it cost. `view`: `events` literal hits with a snippet centred on the match · `catalog` per-session counts and seq/time ranges, no content · `cost` per-request tokens and cache efficiency · `sessions` which sessions are queryable |
+| `trajectory_search` | what is there / where was it said / how much did it cost. `view`: `events` literal hits with a snippet centred on the match · `catalog` per-session counts and seq/time ranges, no content · `cost` recorded reply usage and cache efficiency · `sessions` which sessions are queryable |
 | `trajectory_read` | give me the verbatim text of this `(session, seq range)` |
 | `trajectory_graph` | how are these related: event replacement / source / derived chain, or session lineage |
 | `trajectory_inspect` | collect official runtime statistics, representative evidence and ready-to-call original-record pointers; views: overview, latency, cost, repeats, io, context |
@@ -38,6 +38,10 @@ them in parallel; `trajectory_search` stays exclusive because its default scan r
 `trajectory_read` takes `format: "json"` for the complete event objects — envelopes, sources and
 stream records included — and still returns the same `log` identity, so `(session, seq@logId)`
 citations keep working.
+
+### Connected and full-body reads
+
+Use `trajectory_read({session,seq,format:"linked",snapshot})` to read a bounded set of connected calls, statuses, formal results and subsequent messages. Copy `body`, `more` or `nextRead` to retrieve details. `field:"data.arguments"` reads one event field; `offset` continues in 12,000-character pages. Text and JSON window reads remain available.
 
 ### Results
 
@@ -68,7 +72,7 @@ is normalized — quoted evidence stays verbatim — and the response reports `n
 
 ### Cost
 
-`view="cost"` folds `assistant/message.usage` — no new instrumentation. The numbers only; whether
+`view="cost"` folds append-origin `assistant/message.usage` records — no new instrumentation. The numbers only; whether
 the spend was worth it stays the model's interpretation.
 
 - `input` is uncached input; `cacheRead` is cache-read input. A cache miss alone does not establish
@@ -85,8 +89,11 @@ the spend was worth it stays the model's interpretation.
 |---|---|
 | `view` | `overview` (default), `latency`, `cost`, `repeats`, `io`, `context` |
 | `session` | Session ID; defaults to the current session |
-| `turns` | Optional inclusive range `{from,to}`; omitted means all turns |
-| `limit` | Evidence entries per page, 1–10; default 3 |
+| `turns` | Inclusive `{from,to}`; may change while reusing a snapshot |
+| `focus` | `{tool: exactName}` or `{file: exactReturnedPath}` |
+| `groupBy` | overview: turn/tool/file; latency/cost: turn; io: tool/file |
+| `sort` | Time or a supported metric; see the tool parameter description |
+| `limit` | 1–10 entries; overview defaults to 6, other views to 3 |
 | `snapshot` | Reuse a returned snapshot across queries |
 | `cursor` | Copy `nextCursor` to continue the same view |
 
@@ -97,11 +104,21 @@ If a snapshot expires, start a new inspection.
 
 
 
+### Prompt entries
+
+```js
+import { ENTRY_PROMPTS } from 'dsh-trajectory-tools/prompts';
+const processPrompt = ENTRY_PROMPTS.process;
+const profilePrompt = ENTRY_PROMPTS.profile;
+```
+
+Choose one entry and supply the target session and question. Subject methods and report rules come from inspection results. The module also exports `INSPECT_METHODS`, `INSPECT_OUTPUT_RULE` and `METHOD_VERSION`.
+
 ### Bundled skill
 
 The plugin also registers one thin runtime skill, `trajectory-query` (`lib/skill.js`), so the
 discipline travels with the tools and no agent preset has to be edited: query instead of guessing,
-quote verbatim, cite `(session, seq@logId)`, treat an empty result as verifiable absence.
+quote verbatim, cite `(session, seq@logId)`, and interpret empty results within their scope and filters.
 
 ### Optional: reconcile after compaction
 
@@ -150,9 +167,9 @@ reply should end with the two lines, and the host log gains one `compaction reco
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.4.0.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.5.1.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.4.0.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.5.1.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. restart `dsh web`              # host plugins do not hot-reload reliably
@@ -178,6 +195,7 @@ override by id** in `~/.dsh/profiles/web/cordis.patch.yml` — never a second `i
 ```text
 node self-test.mjs                                       # from the installed package dir -> ALL PASS
 node inspect-test.mjs                                    # diagnostic query checks
+node diagnosis-test.mjs                                  # scope, connected reads and body continuation
 trajectory_search(view="sessions")                       # which sessions are queryable
 trajectory_search(view="catalog", session=<id>)          # counts + ranges, no content
 trajectory_search(view="events", query="<literal>")      # hits with matchAt + logId
@@ -251,8 +269,11 @@ trajectory_search(view="cost", session=<id>)             # tokens + cache effici
 |---|---|
 | `view` | `overview` 总览（默认）、`latency` 耗时、`cost` 消耗与工具定义、`repeats` 重复候选、`io` 工具文件、`context` 上下文 |
 | `session` | 会话 ID，省略为当前会话 |
-| `turns` | 可选轮次闭区间 `{from,to}`，省略为全会话 |
-| `limit` | 每页证据条数，1–10，默认 3 |
+| `turns` | 轮次闭区间 `{from,to}`；沿用 snapshot 时可更换范围 |
+| `focus` | `{tool:精确工具名}` 或 `{file:返回过的完整路径}` |
+| `groupBy` | overview 支持 turn/tool/file；latency、cost 支持 turn；io 支持 tool/file |
+| `sort` | 时间或该主题支持的指标，具体取值见工具参数说明 |
+| `limit` | 每页 1–10 项；overview 默认 6，其余默认 3 |
 | `snapshot` | 沿用返回的快照，继续查询 |
 | `cursor` | 照抄 `nextCursor`，继续同一主题 |
 
@@ -260,12 +281,24 @@ trajectory_search(view="cost", session=<id>)             # tokens + cache effici
 成本主题还提供大工具定义和选定范围内未调用的定义。估算与实测 usage 分别标注；
 缺失的插件归属或历史记录保持未知。快照过期后重新发起查询。
 
+关联阅读使用 `trajectory_read({session,seq,format:"linked",snapshot})`，返回调用、状态、正式结果及后续消息。
+照抄 `body`、`more` 或 `nextRead` 可继续读取正文。`field:"data.arguments"` 按 seq 读取一个字段，
+每页 12,000 字符，`offset` 续读；text/json 区间读取继续可用。
 
+
+### 提示词入口
+
+```js
+import { ENTRY_PROMPTS } from 'dsh-trajectory-tools/prompts';
+```
+
+`process` 用于过程诊断，`profile` 用于静态剖面；选择一个入口，另附会话和用户问题。
+场景方法和报告规则随查询按需取得，也可从同一模块读取。实时作用域工具/SDK 完整快照尚未接入；静态入口使用已确认的构成及历史证据。
 
 ### 自带 skill
 
 插件同时注册一个薄的 runtime skill `trajectory-query`(`lib/skill.js`),让纪律跟着工具走、
-不用改任何 agent preset:先查再答、逐字引用、引用写 `(session, seq@logId)`、空结果就是可验证的"没有"。
+不用改任何 agent preset:先查再答、逐字引用、引用写 `(session, seq@logId)`；空结果限定于本次范围与过滤。
 
 ### 可选功能：压缩后对账
 
@@ -309,9 +342,9 @@ trajectory_search(view="cost", session=<id>)             # tokens + cache effici
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.4.0.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.5.1.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.4.0.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.5.1.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新

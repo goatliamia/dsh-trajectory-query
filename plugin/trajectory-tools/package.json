@@ -1,11 +1,12 @@
 {
   "name": "dsh-trajectory-tools",
-  "version": "0.4.0",
+  "version": "0.5.1",
   "description": "面向模型的会话轨迹查询与诊断取证：逐字检索、窗口、关系链及官方统计证据。只读，不改写日志；附带可选的压缩后对账。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./prompts": "./lib/diagnostic-prompts.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -13,9 +14,13 @@
     "cordis.patch.yml",
     "README.md",
     "self-test.mjs",
-    "inspect-test.mjs"
+    "inspect-test.mjs",
+    "diagnosis-test.mjs"
   ],
   "license": "MIT",
+  "scripts": {
+    "test": "node self-test.mjs && node inspect-test.mjs && node diagnosis-test.mjs"
+  },
   "keywords": [
     "dsh-plugin",
     "deepseek-harness",

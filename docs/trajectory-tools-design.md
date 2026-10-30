@@ -4,20 +4,21 @@
 
 ## 诊断取证与常驻工具定义
 
-`trajectory_inspect` 默认查询当前会话，返回 3 条代表证据。`view` 可选 `overview`、`latency`、
-`cost`、`repeats`、`io`、`context`；`turns:{from,to}` 指定轮次闭区间，`limit` 只改变返回条数。
-返回的 `snapshot` 保持跨主题查询一致，`nextCursor` 用于同主题翻页。结果附有该主题的调查方法
-和可以直接调用的 `trajectory_read` 参数；读取时会校验快照范围和原始事件哈希。
+0.5.1 的 `trajectory_inspect` 默认查询当前会话。overview 用至多六个可展开窗口展示全过程，
+其余主题默认返回三项。`view` 保留 overview、latency、cost、repeats、io、context；
+同一 snapshot 固定日志切点，turns 可切换范围，focus 支持工具/文件，groupBy 和 sort 只提供有意义的组合。
+结果附有 expand、关联阅读 reads 及正文续读入口；读取校验切点和原始事件哈希。
+场景方法每个快照/主题返回一次，共同报告要求每个快照返回一次。
 
 耗时、工具计数及步骤 usage 直接运行已安装的官方统计定义与 view builder；会话总量和上下文
 使用公共 `sessionProjections.restore` 的独立返回值。定义大小调用官方
 `@deepseek-ai/dsh-token-meter/estimate`，不新增 tokenizer 或金额计算。官方来源缺失或契约变化时
 明确报告不可用。高 token 量步骤的排序不代表实际费用排序。
 
-成本主题同时列出大定义和观察范围内未调用的定义，保留规模估算、版本、请求样本和调用次数。
+成本主题同时列出大定义和观察范围内未调用的定义，保留规模估算、版本、声明区间和调用次数。
 未调用只是检查线索；没有记录的插件归属保持未知。`deferLoading` 是请求延期加载，不证明适配器
-实际省了 token。Code Mode 的系统提示工具目录不强行归入 header schema。旧日志没有记录的
-请求样本也不补造。可评估以下四种方案：
+实际省了 token。Code Mode 的系统提示工具目录不强行归入 header schema。
+request/context 仅计为 metadataChanges，已移除虚假的请求/曝光累计和定义费用累计。可评估以下四种方案：
 
 | 方案 | 适用证据 | 验证 |
 |---|---|---|
@@ -26,13 +27,15 @@
 | 官方延期加载 | 运行时和适配器支持发现与启用 | 实际输入减少、工具能被正确找到并调用 |
 | 小型发现与调用入口 | 同一领域有很多长尾工具，并有可靠检索说明 | 总 token、查找次数、调用次数和任务正确性 |
 
-不因为一次未调用就停用工具。新增声明按官方独立 schema 估算为 388 → 569 token，增加 181；
+不因为一次未调用就停用工具。官方独立 schema 估算：0.4.0 为 569，0.5.0 为 749，0.5.1 为 789 token；
 不含 Code Mode 系统目录及 runtime skill 的发现文本，也不是实际账单。详细方法随结果返回。
 取证只在调用时运行；最多缓存 4 个紧凑快照，合计估算预算 16 MiB，闲置两分钟释放，不保留原始日志。
 
 ## 各主题的分析方法
 
 分析使用项目可统计的运行数据；上下文趋势图和 Skill 标注只是可能的证据来源。固定工具负责取证，模型负责解释、提出可执行动作和验证办法。
+
+v2 试跑未达到用户要求。复盘见 [方法与工具设计](diagnostic-method-and-tools.md)，当前使用提示见 [诊断提示词](diagnostic-prompts.md)。正面场景方法已进入 inspect-methods.js，逐主题按需返回；构成、组装、投递和回执继续作为解释剖面，不新建平行工具。历史查询和诊断分布共用 usage.js；inspect 的 settlement 计数与旧 search 的兼容字段分别标注。
 
 | 主题 | 核查内容 | 可提出的行动与结论边界 |
 |---|---|---|
@@ -86,13 +89,17 @@ export function apply(ctx, config = {}) {      // 不是 apply(ctx)
 - `lib/official-stats.js`：官方统计和估算适配。
 - `lib/inspect.js`：证据索引、主题和分页。
 - `lib/inspect-service.js`：快照、预算、游标和原文一致性校验。
+- `lib/linked-read.js`：确定性关联、正文入口及字段续读。
+- `lib/usage.js`：历史查询和诊断共用的实际用量提取。
 - `lib/skill.js`：随插件注册的查询纪律；正文与 `skill/trajectory-query.md` 保持一致。
 - `scripts/sync-inspect-models.mjs`：同步路径页的原生事件与工具语义模型；`--check` 检查漂移。
 
 ```text
 node plugin/trajectory-tools/self-test.mjs
 node plugin/trajectory-tools/inspect-test.mjs
+node plugin/trajectory-tools/diagnosis-test.mjs
+node scripts/sync-diagnostic-prompts.mjs --check
 node scripts/sync-inspect-models.mjs --check
 ```
 
-独立原生 schema 的官方估算为旧三入口 388 → 当前四入口 569 token，增加 181；不包含 Code Mode 系统目录及 runtime skill 发现文本。455 轮、2241 步样本验证了官方步骤统计复现与取证构建；紧凑索引估算约 13.6 MiB。这是本地样本记录，不是通用性能保证。
+独立原生 schema 的官方估算为已安装 0.3.6 三入口 388、仓库 0.4.0 四入口 569、0.5.0 四入口 749、0.5.1 四入口 789 token；不包含 Code Mode 系统目录及 runtime skill 发现文本。查询 skill 正文由 1863 经 942 缩至 576 字符。455 轮、2241 步样本的原始对照和本轮索引预算、查询规模见实验结果；这些是本地样本记录，不是通用性能保证。
