@@ -1,10 +1,11 @@
 # Codex host adapter
 
-`/codex` uses the same event graph, file objects, result branches, branch collision layout, selection and navigation as `/geist`. Build `/geist` first. Codex-specific explanations and measurement semantics live in `codex-host.js`; no DSH plugin installation is involved.
+`/codex` uses the current shared event graph, file objects, result branches, selection and navigation. Composition supports multiple selected sources; delta and total trends have independent switches and share the original graph. There is no dependency on a previously generated `/geist` page. Codex-specific explanations and measurement semantics live in `codex-host.js`; no DSH plugin installation is involved.
 
 ```powershell
-node scripts/build-geist-demo.mjs
 node scripts/export-codex-thread.mjs --thread <thread-id>
+node scripts/build-codex-demo.mjs
+node scripts/serve-layout-review.mjs 3086
 node analyzers/codex-adapter-test.mjs
 ```
 
@@ -15,7 +16,7 @@ node scripts/build-codex-demo.mjs
 node scripts/build-codex-demo.mjs --api-only --out .dsh/codex-review/api-only.html
 ```
 
-The official reader uses only `initialize`, `thread/read` and `thread/turns/list`. The adapter optionally reads the thread's own local rollout file, bounded by the API snapshot capture timestamp and checked against its thread ID. That file format is a local, unstable source, not a stable public API.
+The official reader uses only initialization and read/list operations: `thread/read`, `thread/turns/list` and `thread/items/list`, with a legacy fallback on explicit unsupported-method errors. It never starts or resumes a thread. The adapter optionally reads the thread's own local rollout file, bounded by the API snapshot capture timestamp and checked against its thread ID. That file format is a local, unstable source, not a stable public API. Open `http://127.0.0.1:3086/codex`; use `--snapshot path.json` to select an existing capture.
 
 The payload preserves `official-api`, `local-rollout` and `estimate` evidence. An action node represents an observed reply or operation, not a model request. Native API item order is preserved. Local `item_completed` records match on item ID to provide actual start/end times; absent times remain unmeasured. Native command duration is retained separately. No equal division of a turn's time is presented as measured timing.
 
@@ -24,3 +25,5 @@ Commands are independently classified using their parameters, literal read primi
 Actual last-request input and context-window telemetry are separate from source estimates. Visible retained text is estimated by CJK characters plus other characters divided by four; compaction resets the visible projection from `replacement_history`. Hidden reasoning, encrypted compaction summaries, media tokens and unrecorded definitions are excluded, never treated as known zero. Mixed tool output is classified as skill content only for exact matching source text, or an unambiguous exclusive skill read. Candidate current skill files are used only if their bytes match the historical returned text. Skill path references in catalogs do not imply activation, compliance or causal influence.
 
 Native `collabAgentToolCall` supports receiver thread IDs and states. A local `collaboration.spawn_agent` call can also supply an observed launch and returned task path. When it lacks a receiver thread ID, the graph shows the launch point through the existing branch packer; it does not fabricate a child execution interval or internal history. That linkage is an outstanding host capability.
+
+The local 0.154.0 item-list schema does not provide individual item timestamps. Exact item times continue to come from matched local rollout records. See [portable tools](../../../plugin/portable-tools/README.md) for MCP/CLI usage and [source coverage](../../portable-analysis.md) for cross-host boundaries.

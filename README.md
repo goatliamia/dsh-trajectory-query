@@ -119,6 +119,19 @@ trajectory_search(view="cost", session=<id>)          # token 与缓存
 curl "http://127.0.0.1:3080/analysis-view/digest?session=<id>"
 ```
 
+## Pi / Codex
+
+另提供四个同名只读分析工具：Pi 原生扩展、Codex MCP 和 CLI，以及一个简短的 `trace-analysis` skill。需要 Node.js 20+。
+
+```sh
+npm ci --prefix plugin/portable-tools --ignore-scripts
+pi -e ./plugin/portable-tools
+# 或分析 Codex 的指定线程
+node scripts/trajectory-query.mjs --host codex --thread THREAD_ID --request query.json
+```
+
+安装与参数见 [跨宿主工具](plugin/portable-tools/README.md)，原生视图导入见 [Pi](docs/demo/layout-review/PI.md) / [Codex](docs/demo/layout-review/CODEX.md)。
+
 ## 自检
 
 ```bash
@@ -144,7 +157,7 @@ node plugin/conversation-search/self-test.mjs   # 对话搜索
 
 | 包 | 版本 |
 |---|---|
-| dsh-trajectory-tools | 0.4.0 |
+| dsh-trajectory-tools | 0.5.1 |
 | dsh-analysis-view | 0.10.30 |
 | dsh-conversation-search | 0.2.1 |
 

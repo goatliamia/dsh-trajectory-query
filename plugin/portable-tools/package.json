@@ -1,0 +1,11 @@
+{
+  "name": "trajectory-portable-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only Pi and Codex trajectory evidence using the shared diagnostic methods",
+  "scripts": { "test": "node test.mjs && node transports-test.mjs" },
+  "dependencies": { "@modelcontextprotocol/sdk": "1.32.2", "typebox": "1.3.27" },
+  "pi": { "extensions": ["./pi.mjs"], "skills": ["../../.agents/skills/trace-analysis"] },
+  "engines": { "node": ">=20" }
+}

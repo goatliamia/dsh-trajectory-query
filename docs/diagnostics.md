@@ -6,6 +6,7 @@
 
 ## 当前使用
 
+- [Pi / Codex 适配](portable-analysis.md)：同一组四工具、原生来源、使用入口与验证边界；不改变 DSH 的既有安装。
 - [安装、参数与调用](../plugin/trajectory-tools/README.md)：四个只读入口，范围/对象查询、关联阅读与正文续读。
 - [诊断提示词](diagnostic-prompts.md)：过程诊断、静态剖面两个短入口，六种按需方法和一份报告规则；由包内源文件生成，不整篇注入。
 - [静态剖面与能力保持](static-context-profile.md)：解释构成、作用、使用与保留价值，核对工具变更的受影响场景。
