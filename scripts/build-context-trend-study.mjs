@@ -1,17 +1,24 @@
 // Independent study: reuse the shipped visual language; keep private data local.
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import vm from 'node:vm';
+import { requireStudySnapshot } from './context-study-snapshot.mjs';
 
 const option = name => { const i = process.argv.indexOf(name); return i < 0 ? null : process.argv[i + 1]; };
-const source = resolve(option('--source') || '.dsh/layout-review/geist.html');
+const savedSource = '.dsh/context-trend-study-source.html';
+const source = resolve(option('--source') || (existsSync(savedSource) ? savedSource : '.dsh/layout-review/geist.html'));
+const mainTarget = resolve('.dsh/context-trend-study');
+const target = resolve(option('--out') || mainTarget);
+const allowIncomplete = process.argv.includes('--allow-incomplete');
+if (allowIncomplete && target.toLowerCase() === mainTarget.toLowerCase()) {
+  throw Error('Incomplete performance fixtures require a separate --out; the main preview must stay complete');
+}
 const frozen = readFileSync(source, 'utf8');
 const match = frozen.match(/<script id="trace-data" type="application\/json">([\s\S]*?)<\/script>/);
 if (!match) throw Error('Use a frozen trace page containing trace-data');
 const payload = JSON.parse(match[1]);
-if (!payload.context?.requests?.length) throw Error('The study needs recorded context compositions');
+const coverage = requireStudySnapshot(payload, { allowIncomplete });
 const assets = resolve('docs/demo/layout-review');
-const target = resolve('.dsh/context-trend-study');
 mkdirSync(target, { recursive: true });
 const template = readFileSync('plugin/analysis-view/lib/trace/page.html', 'utf8');
 let head = template.slice(0, template.indexOf('<script id="trace-data"'));
@@ -41,4 +48,4 @@ const page = head.replace('<title>执行路径</title>', '<title>上下文趋势
   + '<script src="/renderer.js"></script>\n<script>window.__geistPayload=JSON.parse(document.getElementById("trace-data").textContent);document.getElementById("trace-data").textContent="";window.__geistBoot();</script></body></html>';
 writeFileSync(join(target, 'index.html'), page);
 writeFileSync(join(target, 'renderer.js'), renderer);
-console.log(JSON.stringify({ output: target, turns: payload.sessions[0].turns.length, requests: payload.context.requests.length }));
+console.log(JSON.stringify({ output: target, source, ...coverage }));
