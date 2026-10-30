@@ -104,13 +104,13 @@ export function buildInspection(loaded, sessionId, { turns = null, projections =
   const nativeSteps = new Map(), calls = [], callsByStep = new Map();
   for (const t of native.turns) for (const s of t.steps) {
     if (!inRange(t.number, turns)) continue;
-    nativeSteps.set(t.number + ':' + s.number, { seq: s.seq, assistantSeq: s.assistantSeq, following: clip(s.reply?.text, 220) });
+    nativeSteps.set(t.number + ':' + s.number, { seq: s.seq, assistantSeq: s.assistantSeq, start: s.start, end: s.end, following: clip(s.reply?.text, 220) });
     for (const call of s.calls) {
       const raw = bySeq.get(call.seq)?.data || {}, result = bySeq.get(call.resultSeq)?.data || {};
       const output = text(result.message?.content || result.content), args = json(raw.arguments);
       const detail = describeOperation(call, args, output, result.meta, loaded.header?.cwd);
       calls.push({ seq: call.seq, resultSeq: call.resultSeq, startSeq: call.startSeq ?? call.seq, rootSeq: call.rootSeq ?? null,
-        name: call.name, turn: t.number, step: s.number, signature: call.signature, status: call.status,
+        name: call.name, turn: t.number, step: s.number, signature: call.signature, status: call.status, start: call.start, end: call.end,
         args: clip(typeof raw.arguments === 'string' ? raw.arguments : JSON.stringify(raw.arguments || {})), result: clip(output),
         resultHash: call.resultSeq == null ? null : hash(output), outputCharacters: output.length,
         family: detail.family, files: detail.files.slice(0, 8).map(f => ({ path: f.path, access: f.access, matchedLines: f.lines?.length || 0 })),
@@ -185,6 +185,8 @@ export function buildInspection(loaded, sessionId, { turns = null, projections =
     toolDefinitions: { ...inventory, invocations: undefined, definitions, definitionCount: definitions.length },
     statisticsScope: 'official step metrics; whole-session projections and at-cut composition labeled separately' };
   return JSON.parse(JSON.stringify({ scope, coverage, summary, views, stepEntries, turnEntries, usageRows,
+    // Tuples avoid retaining a second set of long field names per request.
+    contextSamples: requests.map(r => ['seq', 'turn', 'step', 'time', 'system', 'tools', 'user', 'inject', 'skill', 'assistant', 'tool', 'total'].map(k => r[k] ?? null)),
     declarationInvocations: inventory.invocations, definitionItems: definitions.filter(d => d.invocationsInScope === 0), anchors, relations }));
 }
 

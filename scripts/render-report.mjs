@@ -1,0 +1,13 @@
+import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import {dirname,resolve} from 'node:path';
+import {arcCompiler} from '../report/arc.mjs';
+import {renderReport} from '../report/render.mjs';
+const option=name=>{const at=process.argv.indexOf(name);return at<0?null:process.argv[at+1];};
+if(!option('--arc-root')||!option('--markdown')||!option('--bundle')||!option('--output'))throw Error('Use --arc-root <archify> --markdown <report.md> --bundle <frozen-bundle.json> --output <report.html>');
+const bundle=JSON.parse(readFileSync(option('--bundle'),'utf8'));
+if(bundle.schema!=='trajectory-report-bundle/1')throw Error('Unsupported report bundle');
+const compile=await arcCompiler(option('--arc-root')),markdown=readFileSync(option('--markdown'),'utf8');
+const figures=Array.isArray(bundle.figures)?Object.fromEntries(bundle.figures.map(row=>[row.id,row])):bundle.figures;
+const result=renderReport({markdown,datasets:bundle.datasets,figures,compile,title:option('--title')||markdown.split('\n')[0].replace(/^#\s*/,'')});
+const output=resolve(option('--output'));mkdirSync(dirname(output),{recursive:true});writeFileSync(output,result.html);
+console.log(JSON.stringify({output,figures:result.figures.length,bytes:Buffer.byteLength(result.html)}));

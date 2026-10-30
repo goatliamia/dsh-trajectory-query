@@ -14,7 +14,7 @@ export function intervalUnion(spans) {
   for (const [a, b] of spans.filter(([a, b]) => valid(a) && valid(b) && b >= a).sort((x, y) => x[0] - y[0])) { total += Math.max(0, b - Math.max(a, end)); end = Math.max(end, b); }
   return total;
 }
-function usageRow(host, row) {
+export function usageRow(host, row) {
   const u = row.usage || {};
   if (host === 'pi') {
     const input = ['input', 'cacheRead', 'cacheWrite'].every(k => valid(u[k])) ? u.input + u.cacheRead + u.cacheWrite : null;
@@ -45,7 +45,7 @@ function declarationEvidence(data) {
   return [...definitions.values()];
 }
 
-export function inspectData(data, q) {
+export function selectPortableEvidence(data, q) {
   const p = data.payload, session = p.sessions[0], context = p.context;
   const range = q.turns || { from: session.turns[0]?.number || 1, to: session.turns.at(-1)?.number || 1 };
   let turns = session.turns.filter(t => t.number >= range.from && t.number <= range.to);
@@ -67,6 +67,11 @@ export function inspectData(data, q) {
   const rawUsage = (context.usage || []).filter(u => data.host === 'pi' ? turnNumbers.has(u.turn) : turnIds.has(u.turnId));
   // A response ID can be re-emitted by telemetry; it is one usage settlement.
   const usage = [...new Map(rawUsage.map((u, i) => [u.responseId || 'record:' + i, u])).values()];
+  return { p, session, context, range, turns, allCalls, calls, bySeq, files, usage, turnIds, turnNumbers };
+}
+
+export function inspectData(data, q) {
+  const { p, session, context, range, turns, allCalls, calls, bySeq, files, usage, turnIds, turnNumbers } = selectPortableEvidence(data, q);
   const totals = usageTotal(data.host, usage);
   const nativeSpan = t => valid(t.start) && valid(t.end) && t.end >= t.start ? t.end - t.start : null;
   const measured = calls.filter(c => c.precise && valid(c.start) && valid(c.end) && c.end >= c.start);

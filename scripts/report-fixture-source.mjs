@@ -1,0 +1,28 @@
+// Preview-only bridge. Components never read these private files. This bridge
+// invokes the real registered read-only tools over explicitly bound frozen logs.
+import {readFileSync} from 'node:fs';
+import {apply} from '../plugin/trajectory-tools/lib/index.js';
+export function reportFixture(key){
+  if(!['repair','long'].includes(key))throw Error('Unknown frozen report fixture');
+  const root='.dsh/diagnostic-pilot/'+key+'/',meta=JSON.parse(readFileSync(root+'meta.json','utf8'));
+  const events=readFileSync(root+'events.jsonl','utf8').trim().split('\n').map(JSON.parse);
+  let captured={};
+  if(key==='long'){
+    const page=readFileSync('.dsh/context-trend-study-source.html','utf8'),payload=JSON.parse(page.match(/<script id="trace-data" type="application\/json">([\s\S]*?)<\/script>/)[1]);
+    if(payload.mainSession!==meta.session||payload.sessions[0].lastSeq!==events.at(-1).seq)throw Error('Captured context does not match the frozen log cut');
+    // Match the installed projection's retained window. Historical backfill is
+    // a separate explicit read, not a larger permanent inspection cache.
+    const requests=[...payload.context.requests].sort((a,b)=>a.seq-b.seq);
+    const bySeq=new Map(events.map(e=>[e.seq,e]));
+    if(requests.some(r=>{const event=bySeq.get(r.seq);return event?.type!=='assistant/message'||event.time!==r.time||event.data.turn!==r.turn||event.data.step!==r.step;}))throw Error('Captured context rows do not match the frozen responses');
+    captured={contextTimeline:{requests},contextPressure:payload.officialStats.context.pressure,contextBreakdown:payload.officialStats.context.breakdown};
+  }
+  const tools=new Map(),disposers=[];
+  apply({tools:{register(tool){tools.set(tool.name,tool);return()=>{};}},effect(fn){disposers.push(fn());},get(name){
+    if(name==='sessionQuery')return {async observeSession(id){if(id!==meta.session)throw Error('Unbound session');return {header:{id,version:4,cwd:meta.cwd},events,source:'persisted',[Symbol.dispose](){}};}};
+    // The preview's optional projections are captured at exactly this cut.
+    // Intermediate chunks carry no captured projection; no live state is folded.
+    if(name==='sessionProjections')return {restore(checkpoint,batch){return {checkpoint:{},snapshot:{asOfSeq:batch.at(-1).seq,values:batch.at(-1).seq===events.at(-1).seq?captured:{}}};}};
+  }},{reconcile:false});
+  return {session:meta.session,execute:async(name,args,signal)=>{if(!tools.has(name))throw Error('Unknown tool');return tools.get(name).execute({session:meta.session,...args},{signal:signal||new AbortController().signal});},dispose(){for(const fn of disposers)fn?.();}};
+}

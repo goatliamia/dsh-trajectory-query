@@ -1,8 +1,10 @@
 import { inspectData, VIEWS } from './analysis.mjs';
 import { hash, recordText } from './sources.mjs';
 import { INSPECT_METHODS, INSPECT_OUTPUT_RULE, METHOD_VERSION } from '../trajectory-tools/lib/inspect-methods.js';
+import { portableReportData } from './report-data.mjs';
+import { reportPage } from '../trajectory-tools/lib/report-data.js';
 
-const queryKeys = ['view', 'turns', 'focus', 'groupBy', 'sort', 'includeSelf', 'query'];
+const queryKeys = ['view', 'turns', 'focus', 'groupBy', 'sort', 'includeSelf', 'query', 'format'];
 const pick = args => Object.fromEntries(queryKeys.filter(k => args[k] !== undefined).map(k => [k, args[k]]));
 const preview = text => String(text || '').slice(0, 320);
 function cursorEncode(value) { const text = JSON.stringify(value); return Buffer.from(text).toString('base64url') + '.' + hash(text).slice(0, 16); }
@@ -57,6 +59,7 @@ export class PortableService {
     }
     const q = { ...(previous?.query || {}), ...pick(args) };
     if (name === 'trajectory_inspect' || name === 'trajectory_search') { q.view ||= name === 'trajectory_inspect' ? 'overview' : 'events'; q.sort ||= 'time'; q.includeSelf ??= false; }
+    if (name === 'trajectory_inspect') { q.format ||= 'summary'; if (!['summary', 'data'].includes(q.format)) throw Error('format must be summary or data'); }
     if (q.turns) { if (!Number.isSafeInteger(q.turns.from) || !Number.isSafeInteger(q.turns.to) || q.turns.from < 1 || q.turns.to < q.turns.from) throw Error('turns requires an inclusive {from,to} range'); q.turns = { from: q.turns.from, to: q.turns.to }; }
     if (q.focus && (Object.keys(q.focus).length !== 1 || !Object.values(q.focus)[0])) throw Error('Select one exact tool, file, or skill in focus');
     if (previous && hash(q) !== hash(previous.query)) throw Error('Cursor does not match selection');
@@ -71,6 +74,14 @@ export class PortableService {
     if (name === 'trajectory_inspect' || name === 'trajectory_search' && q.view === 'cost') {
       const view = name === 'trajectory_search' ? 'cost' : q.view || 'overview';
       if (!VIEWS.includes(view)) throw Error('Unknown inspection view');
+      if (name === 'trajectory_inspect' && q.format === 'data') {
+        if (q.sort !== 'time') throw Error('Data format preserves source order; rank in the figure');
+        if (q.groupBy && !(view === 'io' && ['tool', 'file'].includes(q.groupBy))) throw Error('Data groupBy is available for io tool/file only');
+        const source = { host: data.host, session: data.session, snapshot: item.id, log: data.logId,
+          cut: data.records.at(-1)?.seq ?? null, query: { view, turns: q.turns || null, focus: q.focus || null, groupBy: q.groupBy || null, includeSelf: q.includeSelf } };
+        const page = reportPage(portableReportData(data, { ...q, view }, source), offset, args.limit ?? 250);
+        return { ok: true, ...page, nextCursor: page.nextOffset == null ? null : cursorEncode({ tool: name, snapshot: item.id, query: q, offset: page.nextOffset }) };
+      }
       if (q.groupBy && !(['overview', 'io'].includes(view) ? ['turn', 'tool', 'file'] : view === 'cost' ? ['turn', 'definition'] : ['turn']).includes(q.groupBy)) throw Error('Grouping is not available for this view; tool/file groups do not allocate model usage');
       const report = inspectData(data, { ...q, view }), page = paginate(report.rows, args.limit ?? 6);
       const repeated = item.methods.has(view); item.methods.add(view);

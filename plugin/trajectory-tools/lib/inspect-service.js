@@ -1,14 +1,17 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { buildInspection, readOfficialProjections, inspectionPage, evidencePointers, INSPECT_VIEWS } from './inspect.js';
 import { linkedPlan, linkedRecord } from './linked-read.js';
+import { inspectionReportData, reportPage } from './report-data.js';
 
 const GROUPS = { overview: ['turn', 'tool', 'file'], latency: ['turn'], cost: ['turn'], io: ['tool', 'file'], repeats: [], context: [] };
 const SORTS = { overview: ['time', 'wall', 'input', 'output', 'returned', 'count'], latency: ['time', 'wall', 'input', 'output'], cost: ['time', 'wall', 'input', 'output'], io: ['time', 'returned', 'count'], repeats: ['time', 'count'], context: ['time', 'change'] };
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('base64url');
 function selection(args, previous = {}) {
   const q = {};
-  for (const key of ['view', 'turns', 'focus', 'groupBy', 'sort']) q[key] = args[key] === undefined ? previous[key] ?? null : args[key];
+  for (const key of ['view', 'turns', 'focus', 'groupBy', 'sort', 'format']) q[key] = args[key] === undefined ? previous[key] ?? null : args[key];
   q.view ||= 'overview';
+  q.format ||= 'summary';
+  if (!['summary', 'data'].includes(q.format)) throw Error('format must be summary or data');
   if (!INSPECT_VIEWS.includes(q.view)) throw Error('Unknown inspection view');
   if (q.turns && (typeof q.turns !== 'object' || Array.isArray(q.turns) || Object.keys(q.turns).some(k => !['from', 'to'].includes(k)) || !Number.isSafeInteger(q.turns.from) || !Number.isSafeInteger(q.turns.to) || q.turns.from < 1 || q.turns.to < q.turns.from)) throw Error('turns requires an inclusive {from,to} range');
   if (q.turns) q.turns = { from: q.turns.from, to: q.turns.to };
@@ -76,10 +79,18 @@ export class InspectionService {
     }
     const q = selection(args, prior || {});
     if (prior && digest(q) !== digest(prior)) throw Error('Cursor does not match view or query');
-    const limit = args.limit ?? (q.view === 'overview' ? 6 : 3);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw Error('limit must be an integer from 1 to 10');
+    const limit = args.limit ?? (q.format === 'data' ? 250 : q.view === 'overview' ? 6 : 3);
+    if (!Number.isInteger(limit) || limit < 1 || limit > (q.format === 'data' ? 500 : 10)) throw Error('limit exceeds this format’s page size');
     const prepared = await this.prepare(id, args.session || (id ? undefined : current), signal);
     id = prepared.id; const entry = prepared.entry;
+    if (q.format === 'data') {
+      if (q.sort && q.sort !== 'time') throw Error('Data format keeps source order; choose ranking in the figure');
+      if (q.groupBy && !(q.view === 'io' && ['tool', 'file'].includes(q.groupBy))) throw Error('Data groupBy is available only for io tool/file; other data keeps source rows');
+      const source = { host: 'dsh', session: entry.session, snapshot: id, log: entry.index.log?.id ?? entry.index.log,
+        cut: entry.index.scope.toSeq, query: { view: q.view, turns: q.turns, focus: q.focus, groupBy: q.groupBy } };
+      const page = reportPage(inspectionReportData(entry.index, q, source), offset, limit);
+      return { ok: true, ...page, nextCursor: page.nextOffset == null ? null : id + ':' + Buffer.from(JSON.stringify(q)).toString('base64url') + ':' + page.nextOffset };
+    }
     const page = inspectionPage(entry.index, q.view, offset, limit, q);
     page.log = entry.index.log;
     const repeatedMethod = entry.methods.has(q.view);
