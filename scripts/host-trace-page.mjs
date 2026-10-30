@@ -25,7 +25,7 @@ export function writeHostTracePage(payload, output) {
   let renderer = readFileSync('plugin/analysis-view/lib/trace/page.js', 'utf8');
   const seam = "  $('review-return').onclick=reviewReturnOverview;";
   if (renderer.split(seam).length !== 2) throw Error('Trace boot seam changed');
-  renderer = renderer.replace(seam, () => readFileSync(root + payload.host + '-host.js', 'utf8') + '\n' + readFileSync(root + 'context-observation.js', 'utf8') + '\n' + seam);
+  renderer = renderer.replace(seam, () => readFileSync(root + payload.host + '-host.js', 'utf8') + '\n' + readFileSync(root + 'context-trend-model.mjs', 'utf8').replaceAll('export function ', 'function ') + '\n' + readFileSync(root + 'context-observation.js', 'utf8') + '\n' + seam);
   new vm.Script(renderer);
   const encoded = JSON.stringify(payload).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   const html = head + '<script id="trace-data" type="application/json">' + encoded + '</script><script>' + renderer.replace(/<\/script/gi, '<\\/script') + '\nwindow.__geistPayload=JSON.parse(document.getElementById("trace-data").textContent);document.getElementById("trace-data").textContent="";window.__geistBoot();</script></body></html>';

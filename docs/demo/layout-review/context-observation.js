@@ -53,12 +53,20 @@
   function studyToggle(key) { studySources.has(key) ? studySources.delete(key) : studySources.add(key); studyRefresh(); }
   const studyOverviewHeader = geistRenderContextOverview;
   geistRenderContextOverview = function(...args) { const value = studyOverviewHeader(...args); studySyncSources(); return value; };
-  function studyRefresh() {
+  function studyRefresh({ geometryChanged = false } = {}) {
+    const pixels = reviewContextScale.pixels;
     reviewContextScale = contextDisplayScale(reviewContextRows.map(row => ({ ...row, ...studyAmounts(row) })));
+    reviewContextScale.pixels = pixels;
     reviewActionScales.clear();
     if ($('step-panel')) delete $('step-panel').dataset.detailKey;
     $('canvas').dataset.contextTotal = String(studyShowTotal && view === 'overview');
-    if (view === 'path') renderActionPath(); else renderOverview({ plotOnly: true });
+    if (view === 'path') renderActionPath();
+    else if (!geometryChanged && $('trace-context-layer') && overviewProjection) {
+      const p = overviewProjection, visible = (a, b = a) => b >= p.visibleLeft - 90 && a <= p.visibleRight + 90;
+      $('trace-context-layer').innerHTML = reviewContextLayer(p.layout, p.mainY, p.visibleLeft, p.visibleRight, visible);
+      reviewContextBind(); studyBindStock();
+      if ($('review-context-scale-note')) $('review-context-scale-note').textContent = '柱高至 ±' + reviewTokens(reviewContextScale.limit) + ' · …收起更大量';
+    } else renderOverview({ plotOnly: true });
     studySyncSources();
   }
   function studyNice(value) {
@@ -66,18 +74,34 @@
     return [1, 2, 2.5, 4, 5, 8, 10].map(n => n * magnitude).find(n => n >= value) || magnitude * 10;
   }
   const studyDeltaLayer = reviewContextLayer;
+  let studySeriesCache, studyProjectionCache;
+  function studySeries() {
+    const categories = studyCategories(), mask = categories.map(c => c.key).join(':');
+    if (studySeriesCache?.rows === reviewContextRequests && studySeriesCache.mask === mask) return studySeriesCache;
+    let maximum = 0;
+    const values = reviewContextRequests.map(row => {
+      let sum = 0;
+      const upper = categories.map(c => sum += Number(row[c.key] || 0));
+      maximum = Math.max(maximum, sum); return upper;
+    });
+    return studySeriesCache = { rows: reviewContextRequests, mask, categories, values, maximum };
+  }
   function studyStockLayer(layout, base, left, right, visible) {
     if (!studyShowTotal || view !== 'overview') return '';
     if (!studySources.size) return brText(left + 8, base - 54, '点选上方构成项，选择要追踪的类型', 'br-note', 'start');
     const projection = overviewProjection;
-    const points = reviewContextRequests.map(row => ({ row, x: projection.mapTime(row.time) }));
+    const series = studySeries();
+    const axis = projection.layout.map(l => [l.turn.number, l.turn.start, endOf(l.turn), l.x, l.end].join(':')).join('|');
+    if (studyProjectionCache?.series !== series || studyProjectionCache.axis !== axis)
+      studyProjectionCache = { series, axis, points: series.rows.map((row, index) => ({ row, index, x: projection.mapTime(row.time) })) };
+    const points = studyProjectionCache.points;
     if (!points.length) return '';
-    const max = studyNice(Math.max(...points.map(p => studySum(p.row))) * 1.03), pixels = 154, stockBase = base;
+    const max = studyNice(series.maximum * 1.03), pixels = 154, stockBase = base;
     const y = value => stockBase - value / max * pixels;
-    const first = Math.max(0, points.findIndex(p => p.x >= left) - 1);
+    const firstVisible = points.findIndex(p => p.x >= left);
+    const first = firstVisible < 0 ? Math.max(0, points.length - 1) : Math.max(0, firstVisible - 1);
     const after = points.findIndex(p => p.x > right);
     const shown = points.slice(first, after < 0 ? undefined : after + 1);
-    const coordinate = (point, value) => point.x.toFixed(2) + ',' + y(value).toFixed(2);
     let html = '<defs><clipPath id="study-stock-clip"><rect x="' + left + '" y="' + (stockBase - pixels - 2) + '" width="' + Math.max(0, right - left) + '" height="' + (pixels + 4) + '"/></clipPath></defs>';
     const paired = overviewLayers.has('context');
     for (const amount of [0, max / 2, max]) {
@@ -85,12 +109,12 @@
     }
     html += brText(left + 6, base - pixels - 14, studyMeaning.title + ' · ' + studyLabel(), 'study-stock-title', 'start');
     html += '<g clip-path="url(#study-stock-clip)">';
-    let lower = shown.map(() => 0);
-    for (const category of studyCategories()) {
-      const upper = lower.map((n, i) => n + Number(shown[i].row[category.key] || 0));
-      const d = 'M' + shown.map((p, i) => coordinate(p, upper[i])).join('L') + 'L' + shown.map((p, i) => coordinate(p, lower[i])).reverse().join('L') + 'Z';
+    let lower = compactTrendPolyline(shown.map(p => [p.x, y(0)]));
+    for (const [index, category] of series.categories.entries()) {
+      const upper = compactTrendPolyline(shown.map(p => [p.x, y(series.values[p.index][index])]));
+      const d = 'M' + upper.join('L') + 'L' + [...lower].reverse().join('L') + 'Z';
       html += '<path data-study-area="' + category.key + '" d="' + d + '" fill="' + category.color + '" class="study-stock-fill"/>';
-      html += '<path d="M' + shown.map((p, i) => coordinate(p, upper[i])).join('L') + '" stroke="' + category.color + '" class="study-stock-edge"/>';
+      html += '<path d="M' + upper.join('L') + '" stroke="' + category.color + '" class="study-stock-edge"/>';
       lower = upper;
     }
     html += '</g>';
@@ -138,13 +162,16 @@
     const total = studyShowTotal && view === 'overview';
     totalToggle.innerHTML = '<input type="checkbox" data-study-total' + (total ? ' checked' : '') + '>' + studyMeaning.total;
     totalToggle.title = '把保留量叠加在原图上，与增量共用主干和时间轴，可同时开启';
-    totalToggle.querySelector('input').onchange = event => { studyShowTotal = event.target.checked; if (studyShowTotal && view !== 'overview') reviewReturnOverview(); studyRefresh(); };
+    totalToggle.querySelector('input').onchange = event => { studyShowTotal = event.target.checked; if (studyShowTotal && view !== 'overview') reviewReturnOverview(); studyRefresh({ geometryChanged: true }); };
     $('canvas').dataset.contextTotal = String(total);
-    for (const node of $('graph').querySelectorAll('[data-stock-turn]')) {
-      const row = reviewContextMap.get(Number(node.dataset.stockTurn));
-      node.onmouseenter = () => tlReadout(studyStockNote(row));
-      node.onclick = event => { event.stopPropagation(); studyOpenStock(row.turn); };
-      node.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); studyOpenStock(row.turn); } };
-    }
+    studyBindStock();
     return result;
   };
+  function studyBindStock() {
+    const graph = $('graph'); if (graph.dataset.studyStockBound) return;
+    graph.dataset.studyStockBound = 'true';
+    const record = event => { const node = event.target.closest('[data-stock-turn]'); return node && graph.contains(node) ? reviewContextMap.get(Number(node.dataset.stockTurn)) : null; };
+    graph.addEventListener('mouseover', event => { const row = record(event); if (row) tlReadout(studyStockNote(row)); });
+    graph.addEventListener('click', event => { const row = record(event); if (row) { event.stopPropagation(); studyOpenStock(row.turn); } });
+    graph.addEventListener('keydown', event => { const row = record(event); if (row && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); studyOpenStock(row.turn); } });
+  }

@@ -28,7 +28,7 @@ for (;;) {
 const seam = "  $('review-return').onclick=reviewReturnOverview;";
 let renderer = readFileSync('plugin/analysis-view/lib/trace/page.js', 'utf8');
 if (renderer.split(seam).length !== 2) throw Error('Trace boot seam changed');
-renderer = renderer.replace(seam, () => readFileSync(join(assets, 'context-observation.js'), 'utf8') + '\n' + seam);
+renderer = renderer.replace(seam, () => readFileSync(join(assets, 'context-trend-model.mjs'), 'utf8').replaceAll('export function ', 'function ') + '\n' + readFileSync(join(assets, 'context-observation.js'), 'utf8') + '\n' + seam);
 new vm.Script(renderer);
 const encoded = JSON.stringify(payload).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 // Show the project's light presentation, using its own canonical tokens.
