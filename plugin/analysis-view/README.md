@@ -151,4 +151,4 @@ The standalone `GET /analysis-view/trace?session=<id>` URL returns a self-contai
 - 模型解读为可选功能，会消耗 token。
 - 费用显示仅适用于已支持的官方 API 模型。
 
-开发文档：[分析面板与路径页](https://github.com/goatliamia/dsh-trajectory-query/blob/main/docs/analysis-view-design.md)。
+开发文档：[分析面板与路径页](https://github.com/goatliamia/trajectory-tree/blob/main/docs/analysis-view-design.md)。

@@ -1,8 +1,8 @@
-# dsh-trajectory-query
+# Trajectory Tree
 
 [中文](README.md)
 
-Explore and diagnose Agent conversations: execution paths, context composition, tool and file use, original evidence, and improvements you can verify. Includes DSH plugins plus Pi / Codex analysis tools and standalone conversation views.
+Trajectory Tree helps you explore and diagnose Agent conversations: execution paths, context composition, tool and file use, original evidence, and improvements you can verify. Includes DSH plugins plus Pi / Codex analysis tools and standalone conversation views.
 
 | Component | Entry point | Purpose |
 |---|---|---|

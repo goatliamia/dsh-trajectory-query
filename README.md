@@ -1,8 +1,8 @@
-# dsh-trajectory-query
+# Trajectory Tree
 
 [English](README.en.md)
 
-查看和分析 Agent 会话：追踪执行过程、上下文构成、工具与文件使用，按原文取证并给出可验证的改进建议。支持 DSH，另提供 Pi / Codex 分析工具和独立会话视图。
+Trajectory Tree（轨迹树）用于查看和分析 Agent 会话：追踪执行过程、上下文构成、工具与文件使用，按原文取证并给出可验证的改进建议。支持 DSH，另提供 Pi / Codex 分析工具和独立会话视图。
 
 | 组件 | 入口 | 用途 |
 |---|---|---|

@@ -367,4 +367,4 @@ trajectory_graph(session=<id>, seq=<命中 seq>)           # 有界关系链
 trajectory_search(view="cost", session=<id>)             # token 与 cache 效率
 ```
 
-开发文档：[查询与诊断取证](https://github.com/goatliamia/dsh-trajectory-query/blob/main/docs/trajectory-tools-design.md)。
+开发文档：[查询与诊断取证](https://github.com/goatliamia/trajectory-tree/blob/main/docs/trajectory-tools-design.md)。
