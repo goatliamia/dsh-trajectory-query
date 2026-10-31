@@ -1,5 +1,6 @@
   // Merge arrivals cheaply, then rebuild only the indices whose inputs changed.
   // Several arrivals in one frame share the same index and graph work.
+  window.__ctxProbe = () => ({ rows: reviewContextRequests.length, index: reviewContextStepIndex.size, view, sample: reviewContextRequests.slice(0, 2).map(r => ({ seq: r.seq, turn: r.turn, step: r.step })) });
   const geistDirty = new Set();
   const geistUpdateCounts = window.__traceUpdates = { context: 0, outcomes: 0, actors: 0, stats: 0, graph: 0, contextLayer: 0, summary: 0 };
   const geistArrived = new Set();
