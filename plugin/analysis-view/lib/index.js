@@ -28,7 +28,8 @@ function readTraceAssets() {
     if (base.split(seam).length !== 2) throw Error('Trace presentation boot seam changed');
     traceAssets = { version,
       template: readFileSync(files[0], "utf8")
-        .replace('<body class="geist-review">', '<body class="geist-review context-trend-study">')
+        // 正式「路径」页不挂研究页的布局类:那套样式会把 #graph-scroll 钉死在 386/466px,
+    // 并把 body 改成可滚,底部于是出现一块不参与排版的空白。
         .replace('</head>', '<style>'+readFileSync(files[5], "utf8")+readFileSync(files[3], "utf8")+'</style></head>'),
       renderer: base.replace(seam, () => readFileSync(files[4], "utf8")+'\n'+readFileSync(files[2], "utf8")+'\n'+seam),
     };
