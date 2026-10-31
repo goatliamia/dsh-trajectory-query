@@ -214,7 +214,7 @@ function groupCalls(calls, by) {
   return [...groups.values()];
 }
 export function inspectionPage(index, view, offset = 0, limit = 3, options = {}) {
-  const { turns = index.scope.turns, focus, groupBy, sort } = options;
+  const { turns = index.scope.turns, focus, groupBy, sort, samples = true } = options;
   const calls = index.views.io.filter(c => inRange(c.turn, turns) && matches(c, focus));
   const callBySeq = new Map(index.views.io.map(c => [c.seq, c]));
   // Code Mode is unwrapped for operation statistics, but a query for its actual
@@ -233,7 +233,7 @@ export function inspectionPage(index, view, offset = 0, limit = 3, options = {})
   const allowedTurns = new Set([...steps.map(s => s.turn), ...calls.map(c => c.turn)]);
   const ownTurns = index.turnEntries.filter(t => inRange(t.turn, turns) && (!focus || allowedTurns.has(t.turn)));
   const scope = { ...index.scope, turns: turns || null, ...(focus ? { focus, metricsScope: 'whole steps containing matching calls; not per-object token/time attribution' } : {}) };
-  const hydration = s => ({ ...s, evidence: { ...s.evidence, callSeqs: undefined,
+  const hydration = s => !samples ? s : ({ ...s, evidence: { ...s.evidence, callSeqs: undefined,
     prompt: index.turnEntries.find(t => t.turn === s.turn)?.prompt,
     calls: s.evidence.callSeqs.map(seq => callBySeq.get(seq)).filter(Boolean) } });
   const groupTurn = (ts, compact = false) => {
@@ -242,13 +242,13 @@ export function inspectionPage(index, view, offset = 0, limit = 3, options = {})
     const counts = Object.fromEntries([...new Set(ts.flatMap(t => Object.keys(t.toolCounts)))].map(n => [n, ts.reduce((v, t) => v + (t.toolCounts[n] || 0), 0)]));
     const toolPairs = Object.entries(counts).sort((a, b) => b[1] - a[1]);
     const largest = [...ts].sort((a, b) => (b.official.wall ?? -1) - (a.official.wall ?? -1))[0];
-    const samples = [...new Set(compact ? [ts[0], ts.at(-1), largest] : [ts[0], ts[Math.floor((ts.length - 1) / 2)], ts.at(-1), largest])];
+    const sampleTurns = [...new Set(compact ? [ts[0], ts.at(-1), largest] : [ts[0], ts[Math.floor((ts.length - 1) / 2)], ts.at(-1), largest])];
     const small = (e, max) => ({ ...clip(e.text, max), omitted: e.omitted + Math.max(0, e.text.length - max) });
     return { turns: { from: ts[0].turn, to: ts.at(-1).turn }, seq: ts[0].seq, endSeq: ts.at(-1).endSeq,
       steps: ss.length, official: sumSteps(ss), usage: compact ? { settlements: usage.settlements, input: usage.input, cacheRead: usage.cacheRead, cacheWrite: usage.cacheWrite, output: usage.output,
         ...(usage.unknownSettlements ? { unknownSettlements: usage.unknownSettlements } : {}) } : usage,
-      samples: samples.map(t => ({ turn: t.turn, seq: t.seq, promptSeqs: t.promptSeqs, prompt: compact ? small(t.prompt, 180) : t.prompt,
-        following: compact ? small(t.following, 140) : t.following, replySeq: t.replySeq, status: t.status })),
+      ...(samples ? { samples: sampleTurns.map(t => ({ turn: t.turn, seq: t.seq, promptSeqs: t.promptSeqs, prompt: compact ? small(t.prompt, 180) : t.prompt,
+        following: compact ? small(t.following, 140) : t.following, replySeq: t.replySeq, status: t.status })) } : {}),
       toolCounts: compact ? Object.fromEntries(toolPairs.slice(0, 6)) : counts,
       ...(compact && toolPairs.length > 6 ? { omittedToolKinds: toolPairs.length - 6, otherCalls: toolPairs.slice(6).reduce((n, p) => n + p[1], 0) } : {}),
       markers: ts.flatMap(t => t.markers).slice(0, compact ? 4 : 8) };

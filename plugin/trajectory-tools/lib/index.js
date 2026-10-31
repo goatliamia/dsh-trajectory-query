@@ -1237,6 +1237,7 @@ export function apply(ctx, config = {}) {
       limit: { type: "integer", description: "summary 每页1–10项(默认6/3)；data每页1–500行(默认250)" },
       snapshot: { type: "string", description: "沿用日志切点" },
       cursor: { type: "string", description: "照抄 nextCursor 继续同一查询" },
+      samples: { type: "boolean", description: "默认 true；传 false 时不返回原文摘录(prompt/following)与证据正文,只留数字,用于只看排名/规模" },
     },
     output: OUTPUT,
     execute: async (args, exec) => {
