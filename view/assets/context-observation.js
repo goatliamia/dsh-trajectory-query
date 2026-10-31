@@ -26,7 +26,9 @@
     geistRenderContextOverview();
     const total = studyShowTotal && view === 'overview';
     reviewContextScale.pixels = 76;
-    return { height: total ? 430 : 350, base: total ? 282 : overviewLayers.has('context') ? 202 : 208 };
+    // 不开总趋势时也用开着那套比例:上方不再挤在顶部,基线下移,留出柱子的高度。
+    const context = overviewLayers.has('context');
+    return { height: context ? 430 : 350, base: context ? 282 : 208 };
   };
   function studySyncSources() {
     const region = $('geist-context-overview'); if (!region) return;
