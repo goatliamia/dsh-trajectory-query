@@ -2152,7 +2152,7 @@ function fileChangeHistory(operations, path) {
     const detail=false,showErrors=overviewLayers.has('failures'),showTime=overviewLayers.has('duration'),showInterrupt=overviewLayers.has('interruptions');
     overviewProjection={layout,factor,baseFactor,gutter,mapTime,mainY:base,mainBottom:base+8,visibleLeft:left,visibleRight:right};
     if(!plotOnly){
-      $('turn-heading').innerHTML=`<div class="overview-heading"><div class="overview-heading-main"><strong>执行全景</strong><span>${turns.length} 轮</span></div><div class="overview-heading-meta"><span>${clock(turns[0].start).slice(0,5)} — ${clock(endOf(turns.at(-1))).slice(0,5)}</span><i></i><span>执行 ${dur(active)}</span></div></div><div class="ov-controls"><div class="ov-layer-checks">${Object.entries(focusNames).map(([id,name])=>`<label class="ov-layer-check"><input type="checkbox" data-br-layer="${id}" ${overviewLayers.has(id)?'checked':''}><span>${name}</span></label>`).join('')}</div><span class="spacer"></span><button class="ov-focus-rule" id="br-rules">图例与规则 ↗</button><div class="ov-zoom"><button id="ov-zoom-out" aria-label="缩小时间轴" ${overviewScale<=1?'disabled':''}>−</button><button id="ov-fit">${overviewScale===1?'全览':overviewScale.toFixed(overviewScale<10?1:0)+'×'}</button><button id="ov-zoom-in" aria-label="放大时间轴" ${overviewScale>=1024?'disabled':''}>＋</button></div></div><div class="br-key"><span><svg aria-hidden="true" viewBox="0 0 29 14"><path d="M1 11 C7 11 5 3 11 3 H19 C24 3 23 11 28 11" class="br-connector"/></svg>行动</span><span><svg aria-hidden="true" viewBox="0 0 29 14"><path d="M1 12 Q6 12 9 3 H27 M1 12 Q7 12 11 8 H23" class="br-connector"/></svg>并行 / 委派</span><span class="br-key-error">⊣ 拦截　◷ 超时　× 报错</span><span class="br-key-return">↻✓ 原操作后续成功</span><span>? 后续未确认</span><span class="br-key-note">${detail?'枝条按实际时间展开':'事件标记 · 点击展开'}</span></div>`;
+      $('turn-heading').innerHTML=`<div class="overview-heading"><div class="overview-heading-main"><strong>执行全景</strong><span>${turns.length} 轮</span></div><div class="overview-heading-meta"><span>${clock(turns[0].start).slice(0,5)} — ${clock(endOf(turns.at(-1))).slice(0,5)}</span><i></i><span>执行 ${dur(active)}</span></div></div><div class="ov-controls"><div class="ov-layer-checks">${Object.entries(focusNames).map(([id,name])=>`<label class="ov-layer-check"><input type="checkbox" data-br-layer="${id}" ${overviewLayers.has(id)?'checked':''}><span>${name}</span></label>`).join('')}</div><span class="spacer"></span><button class="ov-focus-rule" id="br-rules">图例与规则 ↗</button><div class="ov-zoom"><button id="ov-zoom-out" aria-label="缩小时间轴" ${overviewScale<=1?'disabled':''}>−</button><button id="ov-fit">${overviewScale===1?'全览':overviewScale.toFixed(overviewScale<10?1:0)+'×'}</button><button id="ov-zoom-in" aria-label="放大时间轴" ${overviewScale>=1024?'disabled':''}>＋</button></div></div><div class="br-key"><span><svg aria-hidden="true" viewBox="0 0 29 14"><path d="M1 11 C7 11 5 3 11 3 H19 C24 3 23 11 28 11" class="br-connector"/></svg>行动</span><span><svg aria-hidden="true" viewBox="0 0 29 14"><path d="M1 12 Q6 12 9 3 H27 M1 12 Q7 12 11 8 H23" class="br-connector"/></svg>并行 / 委派</span><span class="br-key-error">⊣ 拦截　◷ 超时　× 报错</span><span class="br-key-return">↻✓ 原操作后续成功</span><span>? 后续未确认</span><span class="br-key-item"><svg aria-hidden="true" viewBox="0 0 12 12"><rect x="2" y="2.5" width="8" height="7" rx="1.5" class="br-glyph"/></svg>文件对象</span><span class="br-key-item"><svg aria-hidden="true" viewBox="0 0 14 10"><path d="M1 9 C5 9 4 3 8 3 H13" class="br-glyph"/></svg>子代理支线</span><span class="br-key-item"><svg aria-hidden="true" viewBox="0 0 12 12"><rect x="1.5" y="6" width="9" height="4" class="br-glyph" opacity=".45"/></svg>上下文总趋势</span><span class="br-key-note">${detail?'枝条按实际时间展开':'事件标记 · 点击展开'}</span></div>`;
       $('br-rules').onclick=spShowSource;
       $('turn-heading').querySelectorAll('[data-br-layer]').forEach(el=>el.onchange=()=>{el.checked?overviewLayers.add(el.dataset.brLayer):overviewLayers.delete(el.dataset.brLayer);renderOverview();});
       $('ov-zoom-in').onclick=()=>setOverviewScale(overviewScale*1.8);$('ov-zoom-out').onclick=()=>setOverviewScale(overviewScale/1.8);$('ov-fit').onclick=()=>setOverviewScale(1);
@@ -3612,19 +3612,6 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
   // Several arrivals in one frame share the same index and graph work.
   window.__ctxProbe = () => ({ rows: reviewContextRequests.length, index: reviewContextStepIndex.size, view, sample: reviewContextRequests.slice(0, 2).map(r => ({ seq: r.seq, turn: r.turn, step: r.step })) });
 
-  // 临时:把探针结果直接显示在页面上,便于截图核对;确认后删除。
-  if (typeof document !== 'undefined') {
-    const showProbe = () => {
-      let el = document.getElementById('ctx-probe');
-      if (!el) {
-        el = document.createElement('div'); el.id = 'ctx-probe';
-        el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:9999;font:11px/1.4 monospace;background:#fff;color:#111;border:1px solid #ccc;padding:4px 6px;border-radius:4px;max-width:72ch;white-space:pre-wrap';
-        document.body.appendChild(el);
-      }
-      try { el.textContent = JSON.stringify(window.__ctxProbe()); } catch (error) { el.textContent = String(error); }
-    };
-    setTimeout(showProbe, 1500); setInterval(showProbe, 1000);
-  }
   const geistDirty = new Set();
   const geistUpdateCounts = window.__traceUpdates = { context: 0, outcomes: 0, actors: 0, stats: 0, graph: 0, contextLayer: 0, summary: 0 };
   const geistArrived = new Set();
