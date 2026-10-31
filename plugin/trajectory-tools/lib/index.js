@@ -1067,6 +1067,8 @@ export function apply(ctx, config = {}) {
       return {
         ok: true,
         view: "cost",
+        // 与 trajectory_inspect view=cost 等价;保留本入口只为兼容旧调用。
+        canonical: "trajectory_inspect",
         session: sessionId,
         log: logIdentity(sessionId, loaded.events),
         groupBy,
@@ -1211,7 +1213,7 @@ export function apply(ctx, config = {}) {
     name: "trajectory_search",
     description: "查会话日志的事实与数字:字面命中、会话清单、token 花费。结果带 (session, seq@logId) 与逐字片段。",
     parameters: {
-      view: { type: "string", required: true, enum: ["events", "catalog", "sessions", "cost"], description: "events=字面命中;catalog=计数与范围;sessions=有哪些会话;cost=token 与缓存" },
+      view: { type: "string", required: true, enum: ["events", "catalog", "sessions", "cost"], description: "定位用:events=字面命中;catalog=计数与范围;sessions=有哪些会话。cost 是兼容别名,等价于 trajectory_inspect view=cost,新调用请直接用 inspect。" },
       session: { type: "string", description: "会话 id；events 省略=当前+live+最近，cost 省略=当前" },
       query: { type: "string", description: "字面词,events 用" },
       filter: { type: "object", additionalProperties: true, description: "events:types/from/to/timeFrom/timeTo/sessionCount/normalize/excludeInjected/excludeSelf；catalog:cwd/timeFrom/timeTo/type/tool/breakdown；cost:from/to/groupBy(request或turn)；sessions:liveOnly" },
@@ -1248,7 +1250,7 @@ export function apply(ctx, config = {}) {
 
   register({
     name: "trajectory_read",
-    description: "读取历史原文或有关联的行动、反馈和后续处理；长正文可续读。",
+    description: "读取历史原文或某次调用的前因后果(linked)。要看正文或它前后的消息用本工具;要看替换链、引用、派生、会话谱系这些结构用 trajectory_graph。",
     parameters: {
       session: { type: "string", required: true, description: "会话 id" },
       seq: { type: "integer", description: "中心事件；text/json 取前后各5条，linked 取关联记录，field 只读该事件" },
@@ -1267,7 +1269,7 @@ export function apply(ctx, config = {}) {
 
   register({
     name: "trajectory_graph",
-    description: "关系链:事件的替换/引用/派生,或会话谱系(祖先/子会话/子代理)。",
+    description: "关系结构:事件的替换/引用/派生,或会话谱系(祖先/子会话/子代理)。这里只出结构,要读正文用 trajectory_read。",
     parameters: {
       session: { type: "string", required: true, description: "会话 id" },
       seq: { type: "integer", description: "事件 seq;省略=会话谱系" },
