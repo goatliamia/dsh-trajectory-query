@@ -72,7 +72,7 @@ export function agentShowsResults(branch, span, actionView = false) {
 
 // Forks and ordinary result twigs occupy one plot. Dense fork groups remain
 // selectable; an unobserved child ending never becomes an execution interval.
-export function layoutAgentForks(items, { left, right, measure, labelOf, expanded = null, slots = [-60, 60, -96, 96], compact = false }) {
+export function layoutAgentForks(items, { left, right, measure, labelOf, expanded = null, slots = [-60, 60, -96, 96], compact = false, obstacles = [] }) {
   let groups = [...items].sort((a, b) => a.x - b.x).map(item => [item]);
   const hit = (a, b) => a.left < b.right + 10 && a.right + 10 > b.left && a.top < b.bottom + 8 && a.bottom + 8 > b.top;
   for (;;) {
@@ -85,7 +85,7 @@ export function layoutAgentForks(items, { left, right, measure, labelOf, expande
       const rect = { left: Math.min(x, cx - width / 2), right: Math.max(end, cx + width / 2) };
       const slot = slots.map(dy => ({ ...rect, x, end, cx, dy, label, members, open,
         top: dy - (compact ? 16 : open && dy < 0 ? 112 : 30), bottom: dy + (compact ? 4 : open ? (dy > 0 ? 108 : 35) : 10) }))
-        .find(p => placed.every(q => !hit(p, q)));
+        .find(p => placed.every(q => !hit(p, q)) && obstacles.every(o => !hit(p, o)));
       if (!slot) { failed = index; break; }
       placed.push(slot);
     }

@@ -109,7 +109,7 @@
       return { branch, x, end, showResults: agentShowsResults(branch, end - x, view === 'path') };
     });
     return layoutAgentForks(items, { left: 20, right: frame.width - 20, measure: reviewMeasure,
-      ...(view === 'path' ? { slots: [-112] } : {}),
+      ...(view === 'path' ? { slots: [-112, -146, -78], obstacles: (typeof reviewBranchesNow === 'object' && Array.isArray(reviewBranchesNow) ? reviewBranchesNow : []) } : {}),
       labelOf: members => members.length > 1 ? members.length + ' 个子代理' : geistActorLabel(members[0].branch.name, Math.min(160, frame.width - 120)),
     });
   }

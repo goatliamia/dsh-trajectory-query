@@ -802,6 +802,17 @@ body { display: flex; flex-direction: column; align-items: stretch; }
 /* 平移是运输,不是重排:把画布提升为合成层,滚动只做位移,不重画。 */
 .geist-review #graph-wrap { will-change: transform; }
 .geist-review #graph-scroll { will-change: scroll-position; }
+/* 画布填满工作区,图区吸收剩余高度:底部控件变高时只从图区里扣,不留下画布下方的空白。 */
+.geist-review .workspace { display: flex; flex-direction: column; }
+.geist-review .canvas { flex: 1 1 auto; min-height: 0; height: auto; }
+.geist-review .overview-mode.branch-scene .graph-scroll,
+.geist-review .review-action-mode .graph-scroll {
+  flex: 1 1 auto; min-height: 0; height: auto; max-height: none;
+}
+
+/* 行动路径:图区吸收剩余高度,步骤面板在内部滚动,内容多了不再顶走图。 */
+.geist-review .canvas.review-action-mode .graph-scroll { flex: 1 1 auto; min-height: 240px; height: auto; max-height: none; }
+.geist-review .canvas.review-action-mode .step-panel.geist-step { flex: 0 1 auto; min-height: 0; max-height: 40vh; overflow-y: auto; }
 .geist-review .review-action-mode .graph-scroll{flex:0 0 auto;min-height:0;height:auto;max-height:none;overflow-x:auto;overflow-y:hidden}
 .geist-review .review-action-mode .graph-wrap{display:block;align-items:initial;min-height:0;height:auto;padding:0}
 .geist-review .review-action-mode .step-panel.geist-step{max-height:none;overflow:visible;flex:none;padding-bottom:24px}
@@ -858,7 +869,8 @@ body { display: flex; flex-direction: column; align-items: stretch; }
 @keyframes trace-breathe{50%{opacity:.25}}@keyframes trace-enter{from{opacity:.35}to{opacity:1}}
 @media(prefers-reduced-motion:reduce){.trace-progress:before,.trace-detail-loading:before,.trace-stage-enter{animation:none}}
 @media(max-width:850px){.trace-progress{max-width:190px;overflow:hidden;text-overflow:ellipsis}}
-</style></head>
+</style><style>@media not (prefers-color-scheme: dark){:root{--tt-surface:#ffffff;--tt-canvas:#fafafa;--tt-ink:#171717;--tt-muted:#666666;--tt-line:#e6e6e6;--tt-grid:#ededed;--tt-soft:#f5f5f5;--tt-action:#0068d6;--tt-metric:#3485ed;--tt-success:#087b58;--tt-error:#c72b31;--tt-warning:#b87800;--tt-retry:#8745d9;--tt-change-pulse:#c72b31;--tt-context-system:#8053e3;--tt-context-tools:#d49b00;--tt-context-user:#44a56b;--tt-context-inject:#c442a7;--tt-context-skill:#e66d26;--tt-context-assistant:#5b9fe8;--tt-context-tool:#3ab4a4;--tt-request-uncachedInputTokens:#f59a36;--tt-request-cacheReadTokens:#3485ed;--tt-request-cacheWriteTokens:#9561dd;--tt-request-outputTokens:#1aaa91;--tt-font-sans:Geist,'Segoe UI','Microsoft YaHei',sans-serif;--tt-font-mono:GeistMono,'Geist Mono',Consolas,'Microsoft YaHei',monospace;--tt-type-body:14px;--tt-type-label:12px;--tt-type-meta:11px;--tt-type-section:18px;--tt-type-title:28px;--tt-type-metric:28px;--tt-space-4:4px;--tt-space-8:8px;--tt-space-12:12px;--tt-space-16:16px;--tt-space-24:24px;--tt-space-32:32px;--tt-space-40:40px;--tt-radius-control:6px;--tt-radius-popover:12px;--tt-opacity-source:1;--tt-opacity-area:0.22;--tt-opacity-inactive:0.18;--tt-motion-feedback:140ms;--tt-motion-mark:550ms;--tt-motion-fracture:650ms;--tt-motion-insert:850ms;--tt-motion-hold:1000ms;--chart-system:#8053e3;--chart-tools:#d49b00;--chart-user:#44a56b;--chart-inject:#c442a7;--chart-skill:#e66d26;--chart-assistant:#5b9fe8;--chart-tool:#3ab4a4;--surface:var(--tt-surface);--ink:var(--tt-ink);--muted:var(--tt-muted);--line:var(--tt-line);--grid:var(--tt-grid);--soft:var(--tt-soft);--accent:var(--tt-action);--sans:var(--tt-font-sans);--mono:var(--tt-font-mono)}
+}</style></head>
 <body class="geist-review">
 <div class="review-toolbar"><button id="review-return" hidden>← 返回执行全景</button><strong>执行路径</strong><span class="geist-edition">02</span><small id="review-state">105 轮真实记录</small><span class="review-spacer"></span><button id="review-rounds">每轮耗时</button><button id="review-path">行动路径 ↗</button><button id="review-stress" aria-pressed="false">密集样本</button><div class="review-controls" id="review-overview-controls"><button id="review-out" aria-label="缩小">−</button><button id="review-fit">全览</button><button id="review-in" aria-label="放大">＋</button></div></div><div class="app">
   <div class="top"><span class="mark" aria-hidden="true">d</span><span>DSH</span><span class="slash">/</span><strong>执行路径</strong><button class="back-link" id="parent-button" hidden>← 主会话</button><span class="spacer"></span><button class="source-btn" id="source-button">查看数据来源 ↗</button></div>

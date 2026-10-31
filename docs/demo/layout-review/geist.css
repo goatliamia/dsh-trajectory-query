@@ -436,3 +436,14 @@ body { display: flex; flex-direction: column; align-items: stretch; }
 /* 平移是运输,不是重排:把画布提升为合成层,滚动只做位移,不重画。 */
 .geist-review #graph-wrap { will-change: transform; }
 .geist-review #graph-scroll { will-change: scroll-position; }
+/* 画布填满工作区,图区吸收剩余高度:底部控件变高时只从图区里扣,不留下画布下方的空白。 */
+.geist-review .workspace { display: flex; flex-direction: column; }
+.geist-review .canvas { flex: 1 1 auto; min-height: 0; height: auto; }
+.geist-review .overview-mode.branch-scene .graph-scroll,
+.geist-review .review-action-mode .graph-scroll {
+  flex: 1 1 auto; min-height: 0; height: auto; max-height: none;
+}
+
+/* 行动路径:图区吸收剩余高度,步骤面板在内部滚动,内容多了不再顶走图。 */
+.geist-review .canvas.review-action-mode .graph-scroll { flex: 1 1 auto; min-height: 240px; height: auto; max-height: none; }
+.geist-review .canvas.review-action-mode .step-panel.geist-step { flex: 0 1 auto; min-height: 0; max-height: 40vh; overflow-y: auto; }

@@ -2483,7 +2483,7 @@ function agentShowsResults(branch, span, actionView = false) {
 
 // Forks and ordinary result twigs occupy one plot. Dense fork groups remain
 // selectable; an unobserved child ending never becomes an execution interval.
-function layoutAgentForks(items, { left, right, measure, labelOf, expanded = null, slots = [-60, 60, -96, 96], compact = false }) {
+function layoutAgentForks(items, { left, right, measure, labelOf, expanded = null, slots = [-60, 60, -96, 96], compact = false, obstacles = [] }) {
   let groups = [...items].sort((a, b) => a.x - b.x).map(item => [item]);
   const hit = (a, b) => a.left < b.right + 10 && a.right + 10 > b.left && a.top < b.bottom + 8 && a.bottom + 8 > b.top;
   for (;;) {
@@ -2496,7 +2496,7 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
       const rect = { left: Math.min(x, cx - width / 2), right: Math.max(end, cx + width / 2) };
       const slot = slots.map(dy => ({ ...rect, x, end, cx, dy, label, members, open,
         top: dy - (compact ? 16 : open && dy < 0 ? 112 : 30), bottom: dy + (compact ? 4 : open ? (dy > 0 ? 108 : 35) : 10) }))
-        .find(p => placed.every(q => !hit(p, q)));
+        .find(p => placed.every(q => !hit(p, q)) && obstacles.every(o => !hit(p, o)));
       if (!slot) { failed = index; break; }
       placed.push(slot);
     }
@@ -3173,7 +3173,7 @@ function layoutAgentForks(items, { left, right, measure, labelOf, expanded = nul
       return { branch, x, end, showResults: agentShowsResults(branch, end - x, view === 'path') };
     });
     return layoutAgentForks(items, { left: 20, right: frame.width - 20, measure: reviewMeasure,
-      ...(view === 'path' ? { slots: [-112] } : {}),
+      ...(view === 'path' ? { slots: [-112, -146, -78], obstacles: (typeof reviewBranchesNow === 'object' && Array.isArray(reviewBranchesNow) ? reviewBranchesNow : []) } : {}),
       labelOf: members => members.length > 1 ? members.length + ' 个子代理' : geistActorLabel(members[0].branch.name, Math.min(160, frame.width - 120)),
     });
   }
