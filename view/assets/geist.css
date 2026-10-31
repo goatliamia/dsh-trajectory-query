@@ -436,3 +436,8 @@ body { display: flex; flex-direction: column; align-items: stretch; }
 /* 平移是运输,不是重排:把画布提升为合成层,滚动只做位移,不重画。 */
 .geist-review #graph-wrap { will-change: transform; }
 .geist-review #graph-scroll { will-change: scroll-position; }
+
+/* 上下文构成可点选;取消勾选的项要暗下去。原规则只挂在研究页的 body 类上,正式页没有。 */
+.geist-review [data-current-source][data-muted="true"] { opacity: .45; }
+.geist-review .geist-context-occupied > span[data-muted="true"] { opacity: .12; }
+.geist-review [data-current-source][aria-pressed="false"] { opacity: .45; }
