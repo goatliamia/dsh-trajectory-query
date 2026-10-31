@@ -230,7 +230,7 @@
   }
   function reviewSyncNavigation() {
     const path = view === 'path';
-    $('review-return').hidden = !path;
+    const returnButton = $('review-return'); if (returnButton) returnButton.hidden = !path;
     $('review-overview-controls').hidden = false;
     $('review-in').disabled = path;
     $('review-fit').textContent = path ? '全览' : overviewScale === 1 ? '全览' : Math.round(overviewScale) + '×';
