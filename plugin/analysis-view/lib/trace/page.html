@@ -811,8 +811,14 @@ body { display: flex; flex-direction: column; align-items: stretch; }
 }
 
 /* 行动路径:图区吸收剩余高度,步骤面板在内部滚动,内容多了不再顶走图。 */
-.geist-review .canvas.review-action-mode .graph-scroll { flex: 1 1 auto; min-height: 240px; height: auto; max-height: none; }
-.geist-review .canvas.review-action-mode .step-panel.geist-step { flex: 0 1 auto; min-height: 0; max-height: 40vh; overflow-y: auto; }
+.geist-review .canvas.review-action-mode .graph-scroll { flex: 1 1 auto; min-height: 320px; height: auto; max-height: none; }
+/* 步骤面板固定收在 148px,内容在面板内滚动,不再把图挤到顶上。 */
+.geist-review .canvas.review-action-mode .step-panel.geist-step { flex: 0 0 auto; min-height: 0; height: 148px; max-height: 148px; overflow-y: auto; }
+
+/* 行动路径:步骤面板默认收成摘要,文字多的步骤不再把图挤到顶上。 */
+.geist-review .review-action-mode .step-panel.review-step-summary { max-height: 148px; overflow: hidden; }
+.geist-review .review-action-mode .step-panel.review-step-summary.is-open { max-height: 42vh; overflow-y: auto; }
+.geist-review .review-action-mode .graph-scroll { min-height: 320px; }
 .geist-review .review-action-mode .graph-scroll{flex:0 0 auto;min-height:0;height:auto;max-height:none;overflow-x:auto;overflow-y:hidden}
 .geist-review .review-action-mode .graph-wrap{display:block;align-items:initial;min-height:0;height:auto;padding:0}
 .geist-review .review-action-mode .step-panel.geist-step{max-height:none;overflow:visible;flex:none;padding-bottom:24px}

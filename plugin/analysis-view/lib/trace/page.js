@@ -389,13 +389,15 @@ window.__geistBoot = () => {
     const onward = insight.links[0] || (insight.following ? { step: insight.following.step, text: '第 ' + insight.following.step + ' 步 · ' + insight.following.text } : null);
     panel.innerHTML = '<div class="review-step-heading"><div><p>第 ' + step.number + ' 步' +
       (overviewLayers.has('duration') ? ' · ' + preciseTime(step.end - step.start) : '') + (calls.length ? ' · ' + calls.length + ' 项操作' : '') +
-      '</p><h3>' + esc(title) + '</h3></div><button class="review-panel-quiet" id="panel-record">原始记录 ↗</button></div>' +
+      '</p><h3>' + esc(title) + '</h3></div><button class="review-panel-quiet" id="panel-record">原始记录 ↗</button><button class="review-panel-quiet" id="panel-expand">展开全文</button></div>' +
       '<div class="review-operations">' + insight.calls.slice(0, 2).map(renderCall).join('') +
       (!calls.length && insight.reply ? '<p class="review-reply-summary">' + esc(insight.reply) + '</p>' : '') +
       (!calls.length && !insight.reply ? '<p class="review-reply-summary">没有记录到本步的文字回复或工具操作。</p>' : '') + '</div>' +
       '<div class="review-step-footer"><div>' + (onward ? '<span>' + (insight.links.length ? '后续确认' : '接下来') + '</span><button data-insight-step="' + onward.step + '" class="' + (insight.links.length ? 'review-insight-proof' : '') + '">' + esc(onward.text) + ' ↗</button>' : '<span>本轮执行记录到这里</span>') +
       '</div><button class="review-panel-quiet" id="review-panel-details">' + (insight.calls.length > 2 ? '全部 ' + insight.calls.length + ' 项操作与依据' : '前后文与依据') + ' ↗</button></div>';
     $('panel-record').onclick = () => showStep(selectedStep);
+    const expand = $('panel-expand');
+    if (expand) expand.onclick = () => { const open = panel.classList.toggle('is-open'); expand.textContent = open ? '收起' : '展开全文'; };
     $('review-panel-details').onclick = () => reviewOpenStepDetail(t, step, insight, info);
     panel.querySelectorAll('[data-insight-change]').forEach(el => el.onclick = () => reviewOpenChange(t, step, insight.calls.find(f => f.seq === Number(el.dataset.insightChange))));
     panel.querySelectorAll('[data-insight-step]').forEach(el => el.onclick = () => reviewJumpToStep(t, Number(el.dataset.insightStep)));
