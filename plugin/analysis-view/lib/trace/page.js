@@ -2291,7 +2291,7 @@ function fileChangeHistory(operations, path) {
   $('source-button').onclick=spShowSource;$('parent-button').onclick=returnParent;$('drawer-close').onclick=closeDrawer;$('drawer-backdrop').onclick=closeDrawer;
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('canvas').classList.contains('drawer-open')){closeDrawer();$('source-button').focus({preventScroll:true})}});
   let resizeTimer,reviewLastWidth=-1;new ResizeObserver(entries=>{const width=entries[0].contentRect.width;if(Math.abs(width-reviewLastWidth)<1)return;reviewLastWidth=width;clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(view==='path')renderPath();else renderOverview()},80)}).observe($('graph-wrap'));
-// Transform recorded outcomes, not tool names alone, into a small branch vocabulary.
+  if(!$('review-return')){const stub=document.createElement('button');stub.id='review-return';stub.hidden=true;stub.style.display='none';(document.querySelector('.review-toolbar')||document.body).appendChild(stub);}// Transform recorded outcomes, not tool names alone, into a small branch vocabulary.
 function collectToolResults(session, facts, fileOperations) {
   const covered = new Set();
   const results = session.overview.episodes.map(e => {
