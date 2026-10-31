@@ -59,8 +59,10 @@
     // 行动路径的高度跟着对话区走:短面板里先保住步标签、主图和步骤详情。
     const available = $('canvas')?.clientHeight || window.innerHeight;
     const tight = available < 620, compact = available < 760;
-    if (branches) return tight ? { height: 296, base: 198 } : compact ? { height: 340, base: 220 } : { height: 420, base: 268 };
-    return tight ? { height: 256, base: 166 } : compact ? { height: 300, base: 182 } : { height: 360, base: 208 };
+    // 高度跟实际图区走,不再写死:写死会在图区下方留出一整块空白。
+    const viewportHeight = Math.max(240, Math.round(($('graph-scroll')?.clientHeight || available * 0.55) - 6));
+    const height = Math.min(620, viewportHeight);
+    return { height, base: Math.round(height - (branches ? 110 : 96)) };
   }
   function geistActorControls() {
     const caption = $('graph-caption'), layers = caption.querySelector('.br-layers'); if (!layers) return;
