@@ -24,7 +24,7 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { SKILL_BODY, SKILL_DESCRIPTION, SKILL_NAME, SKILL_WHEN_TO_USE } from "./skill.js";
+import { SKILL_BODY, SKILL_DESCRIPTION, SKILL_NAME, SKILL_WHEN_TO_USE, loadDiagnosticSkills } from "./skill.js";
 import { InspectionService } from "./inspect-service.js";
 import { readField } from "./linked-read.js";
 import { costRequests, costTotals, costCoverage, costByTurn } from "./usage.js";
@@ -1225,10 +1225,10 @@ export function apply(ctx, config = {}) {
 
   register({
     name: "trajectory_inspect",
-    description: "看会话的推进过程、投入分布和具体执行证据，定位值得改变的做法。",
+    description: "查询会话统计、步骤、工具文件操作和上下文构成，返回原文位置。",
     parameters: {
       view: { type: "string", enum: ["overview", "latency", "cost", "repeats", "io", "context"], description: "overview=时间过程(默认);latency=等待;cost=用量和定义;repeats=同参候选;io=操作;context=变化" },
-      format: { type: "string", enum: ["summary", "data"], description: "summary(默认)供分析阅读；data供报告组件取数，保持来源顺序；repeats用摘要和linked原文组织" },
+      format: { type: "string", enum: ["summary", "data"], description: "summary(默认)返回摘要；data返回表格，保持来源顺序；repeats仅支持summary" },
       session: { type: "string", description: "会话 id，省略为当前会话" },
       turns: { type: "object", additionalProperties: true, description: "轮次闭区间 {from,to}，省略为全会话；沿用 snapshot 时可换范围" },
       focus: { type: "object", additionalProperties: true, description: "{tool:精确工具名} 或 {file:返回过的完整路径}，二选一；时间/用量为包含该对象的完整步骤" },
@@ -1306,6 +1306,10 @@ export function apply(ctx, config = {}) {
       content: SKILL_BODY,
     });
     if (typeof disposeSkill === "function") ctx.effect(() => disposeSkill, "trajectory-tools:skill");
+    for(const skill of loadDiagnosticSkills()){
+      const dispose=skills.register(skill);
+      if(typeof dispose==='function')ctx.effect(()=>dispose,'trajectory-tools:skill:'+skill.name);
+    }
   }
 
   // 可选功能:压缩后对账(默认开;config.reconcile: false 关)。

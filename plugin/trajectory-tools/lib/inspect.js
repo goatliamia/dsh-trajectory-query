@@ -2,11 +2,10 @@ import { createHash } from 'node:crypto';
 import { projectSession } from './inspect-models/session.js';
 import { describeOperation } from './inspect-models/operations.mjs';
 import { replayOfficialStats, estimateToolsTokens } from './official-stats.js';
-import { INSPECT_METHODS, INSPECT_OUTPUT_RULE, METHOD_VERSION } from './inspect-methods.js';
 import { costRequests, costTotals, costCoverage } from './usage.js';
 import { buildRelations } from './linked-read.js';
 
-export const INSPECT_VIEWS = Object.keys(INSPECT_METHODS);
+export const INSPECT_VIEWS = ['overview', 'latency', 'cost', 'repeats', 'io', 'context'];
 const replacement = e => e.surfaceOp && typeof e.surfaceOp === 'object';
 const text = blocks => (blocks || []).filter(b => b.type === 'text').map(b => b.text || '').join('\n');
 const json = value => { try { return typeof value === 'string' ? JSON.parse(value) : value || {}; } catch { return {}; } };
@@ -288,7 +287,6 @@ export function inspectionPage(index, view, offset = 0, limit = 3, options = {})
     contextPressureAtCut: index.summary.contextPressureAtCut,
     toolDefinitions: { ...index.summary.toolDefinitions, definitions: undefined, definitionCount: definitions.length, scope: 'declarations active at recorded settlements/calls in selected turns; metadata counters cover the whole cut' } });
   return { scope, coverage, summary, groupBy: groupBy || (view === 'overview' ? 'window' : view === 'io' ? 'call' : 'step'), sort: order,
-    methodRef: { version: METHOD_VERSION, view }, method: INSPECT_METHODS[view], outputRule: INSPECT_OUTPUT_RULE,
     totalEntries: rows.length, offset, items: rows.slice(offset, offset + limit),
     ...(view === 'overview' ? { availableViews: ['latency', 'cost', 'repeats', 'io', 'context'] } : {}),
     ...(groupBy === 'file' ? { groupingNote: 'Calls touching several files occur in several groups; character counts describe the full call result.' } : {}),

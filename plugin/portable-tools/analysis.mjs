@@ -16,7 +16,7 @@ export function intervalUnion(spans) {
 }
 export function usageRow(host, row) {
   const u = row.usage || {};
-  if (host === 'pi') {
+  if (host === 'pi' || host === 'claude') {
     const input = ['input', 'cacheRead', 'cacheWrite'].every(k => valid(u[k])) ? u.input + u.cacheRead + u.cacheWrite : null;
     return { input, uncachedInput: valid(u.input) ? u.input : null, cachedInput: valid(u.cacheRead) ? u.cacheRead : null, cacheWrite: valid(u.cacheWrite) ? u.cacheWrite : null, output: valid(u.output) ? u.output : null, reportedCost: valid(u.cost?.total) ? u.cost.total : null };
   }
@@ -64,7 +64,7 @@ export function selectPortableEvidence(data, q) {
   if (focusTurns) turns = turns.filter(t => focusTurns.has(t.number));
   const turnIds = new Set(turns.map(t => t.id)), turnNumbers = new Set(turns.map(t => t.number));
   const callSeqs = new Set(calls.map(c => c.seq)); files = files.filter(f => callSeqs.has(f.seq));
-  const rawUsage = (context.usage || []).filter(u => data.host === 'pi' ? turnNumbers.has(u.turn) : turnIds.has(u.turnId));
+  const rawUsage = (context.usage || []).filter(u => data.host !== 'codex' ? turnNumbers.has(u.turn) : turnIds.has(u.turnId));
   // A response ID can be re-emitted by telemetry; it is one usage settlement.
   const usage = [...new Map(rawUsage.map((u, i) => [u.responseId || 'record:' + i, u])).values()];
   return { p, session, context, range, turns, allCalls, calls, bySeq, files, usage, turnIds, turnNumbers };
@@ -78,13 +78,13 @@ export function inspectData(data, q) {
   const nativeTurns = new Map(turns.map(t => [t.number, t]));
   const boundedIntervals = measured.flatMap(c => { const t = nativeTurns.get(c.turn); return valid(t?.start) && valid(t?.end) ? [[Math.max(c.start, t.start), Math.min(c.end, t.end)]] : []; }).filter(([a, b]) => b >= a);
   const read = seq => ({ tool: 'trajectory_read', ...pointer(data, seq), linked: true });
-  const summary = { host: data.host, unit: data.host === 'pi' ? 'assistant-cycle' : 'visible-action', turns: turns.length, actions: turns.reduce((n, t) => n + t.steps.length, 0), calls: calls.length, errors: calls.filter(c => c.status === 'error').length,
+  const summary = { host: data.host, unit: data.host === 'pi' ? 'assistant-cycle' : data.host === 'claude' ? 'assistant-record' : 'visible-action', turns: turns.length, actions: turns.reduce((n, t) => n + t.steps.length, 0), calls: calls.length, errors: calls.filter(c => c.status === 'error').length,
     observedTurnSpanMs: sum(turns.map(nativeSpan)), nativeToolDurationMs: sum(calls.map(c => c.durationMs)), measuredToolIntervals: measured.length, toolCoveredMs: boundedIntervals.length ? intervalUnion(boundedIntervals) : null, returnedTextCharacters: calls.reduce((n, c) => n + (c.result?.text.length || 0) + (c.result?.omitted || 0), 0), usage: totals };
-  const coverage = { usageUnit: data.host === 'pi' ? 'recorded assistant usage' : 'local response usage records; not all request attempts', callUnit: 'recorded native calls; inner Code Mode activity only when separately recorded', errorUnit: 'tool-result errors; turn failures and assistant stopReason remain separate', focusedUsage: q.focus ? 'whole owning turns, not attributed to the selected tool/file/skill' : 'selected turns', excludedDiagnosticCalls: allCalls.length - allCalls.filter(c => q.includeSelf || !self(toolName(c))).length, unknownTimingCalls: calls.length - measured.length, toolCoverage: 'union of recorded intervals clipped to owning turn bounds; native durations remain separate', crossTurnToolIntervals: measured.filter(c => { const t = nativeTurns.get(c.turn); return c.start < t.start || c.end > t.end; }).length, context: p.evidence.context, synthetic: data.synthetic };
+  const coverage = { usageUnit: data.host === 'pi' ? 'recorded assistant usage' : data.host === 'claude' ? 'recorded assistant message usage, deduplicated by message ID' : 'local response usage records; not all request attempts', callUnit: 'recorded native calls; inner Code Mode activity only when separately recorded', errorUnit: 'tool-result errors; turn failures and assistant stopReason remain separate', focusedUsage: q.focus ? 'whole owning turns, not attributed to the selected tool/file/skill' : 'selected turns', excludedDiagnosticCalls: allCalls.length - allCalls.filter(c => q.includeSelf || !self(toolName(c))).length, unknownTimingCalls: calls.length - measured.length, toolCoverage: 'union of recorded intervals clipped to owning turn bounds; native durations remain separate', crossTurnToolIntervals: measured.filter(c => { const t = nativeTurns.get(c.turn); return c.start < t.start || c.end > t.end; }).length, context: p.evidence.context, synthetic: data.synthetic };
   summary.failedTurns = turns.filter(t => t.reason?.kind === 'failed').length;
   summary.assistantErrorCycles = turns.flatMap(t => t.steps).filter(s => s.stopReason === 'error' || s.stopReason === 'aborted').length;
   const turnRows = turns.map(t => {
-    const own = calls.filter(c => c.turn === t.number), ownUsage = usage.filter(u => data.host === 'pi' ? u.turn === t.number : u.turnId === t.id);
+    const own = calls.filter(c => c.turn === t.number), ownUsage = usage.filter(u => data.host !== 'codex' ? u.turn === t.number : u.turnId === t.id);
     return { turn: t.number, title: compact(t.title || t.prompts[0]?.text), actions: t.steps.length, calls: own.length, errors: own.filter(c => c.status === 'error').length, wallMs: nativeSpan(t), usage: usageTotal(data.host, ownUsage), tools: [...new Set(own.map(toolName))], returnedTextCharacters: own.reduce((n, c) => n + (c.result?.text.length || 0) + (c.result?.omitted || 0), 0), read: read(t.prompts[0]?.seq ?? t.steps[0]?.seq ?? t.seq) };
   });
   function toolRows() {
@@ -105,7 +105,7 @@ export function inspectData(data, q) {
       for (let i = 0; i < turnRows.length; i += size) {
         const group = turnRows.slice(i, i + size), selected = new Set(group.map(r => r.turn));
         const selectedIds = new Set(turns.filter(t => selected.has(t.number)).map(t => t.id));
-        const windowUsage = usage.filter(u => data.host === 'pi' ? selected.has(u.turn) : selectedIds.has(u.turnId));
+        const windowUsage = usage.filter(u => data.host !== 'codex' ? selected.has(u.turn) : selectedIds.has(u.turnId));
         const range = { from: group[0].turn, to: group.at(-1).turn };
         rows.push({ kind: 'window', turns: range, ...(group.length === 1 ? { turn: group[0].turn } : {}), firstTask: group[0].title, lastTask: group.at(-1).title, actions: group.reduce((n, r) => n + r.actions, 0), calls: group.reduce((n, r) => n + r.calls, 0), errors: group.reduce((n, r) => n + r.errors, 0), wallMs: sum(group.map(r => r.wallMs)), usage: usageTotal(data.host, windowUsage), returnedTextCharacters: group.reduce((n, r) => n + r.returnedTextCharacters, 0), read: group[0].read, expand: { tool: 'trajectory_inspect', view: q.view, turns: range, groupBy: 'turn', ...(q.focus ? { focus: q.focus } : {}) } });
       }

@@ -341,14 +341,15 @@ check("源码里不得出现 ctx.config(配置走第二参)", ctxConfigLines.len
 eq("registers one disposer per tool + one for the skill", disposed.filter((label) => label === "trajectory-tools:tool" || label === "trajectory-tools:skill").length, 5);
 eq("reconcile 默认挂 3 个监听", [...listeners.keys()].sort(), ["agent/turn-stopping", "session/disposed", "session/event"]);
 eq("reconcile 的监听各自登记 disposer", disposed.filter((label) => label === "trajectory-tools:reconcile").length, 3);
-eq("registers the runtime skill", [...skillsRegistered.keys()], ["trajectory-query"]);
+eq("registers query and method skills", [...skillsRegistered.keys()], ["trajectory-query", "trace-analysis", "context-profile"]);
+for(const name of ["trace-analysis","context-profile"]){const method=skillsRegistered.get(name);check(name+" has DSH metadata and resource base",method.source==='runtime'&&typeof method.whenToUse==='string'&&typeof method.content==='string'&&method.resourceBase?.kind==='directory'&&method.content.includes('.md)'));}
 const skill = skillsRegistered.get("trajectory-query");
 check("skill carries a description", typeof skill.description === "string" && skill.description.length > 0);
 check(
-  "skill body names every tool",
-  ["trajectory_search", "trajectory_read", "trajectory_graph", "trajectory_inspect"].every((name) => skill.content.includes(name)),
+  "query skill covers candidate search and surrounding evidence",
+  skill.content.includes("候选") && skill.content.includes("反馈") && skill.content.includes("后续结果"),
 );
-check("skill body pins the citation convention", skill.content.includes("(session, seq@logId)"));
+check("query skill requests verifiable original locations", skill.content.includes("原文位置"));
 
 // skills 服务缺失时,工具仍必须注册(硬依赖只有 tools)。
 const toolOnly = new Map();

@@ -1,10 +1,20 @@
 import { TOOLS, executeTool } from './tools.mjs';
 import { PortableService } from './service.mjs';
 import { datasetFromNative } from './sources.mjs';
+import {generateTraceView} from '../../view/generate.mjs';
+import {serveViewFile,openViewBrowser} from '../../view/serve.mjs';
 
 // No prompt injection, session writes, tool replacement, or full-history watcher.
 export default function trajectoryExtension(pi) {
   const sessions = new Map(), timing = new Map();
+  function viewInput(ctx){
+    const manager=ctx.sessionManager,id=manager.getSessionId(),active=new Set(pi.getActiveTools());
+    return {header:{type:'session',version:3,id,cwd:ctx.cwd},entries:manager.getEntries(),leafId:manager.getLeafId(),
+      capture:[...(timing.get(id)?.values()||[])].flat(),source:{name:'Pi read-only SessionManager',file:manager.getSessionFile()},
+      scope:{source:'pi-sdk-current-scope',observedAt:new Date().toISOString(),systemPrompt:ctx.getSystemPrompt(),
+        tools:pi.getAllTools().map(t=>({name:t.name,description:t.description,parameters:t.parameters,active:active.has(t.name),exposure:t.exposure,reachesTools:t.reachesTools,source:t.source})),
+        model:ctx.model?.id,provider:ctx.model?.provider,contextWindow:ctx.model?.contextWindow??null}};
+  }
   function observe(event, ctx) {
     const session = ctx.sessionManager.getSessionId();
     if (!timing.has(session)) timing.set(session, new Map());
@@ -16,6 +26,17 @@ export default function trajectoryExtension(pi) {
   }
   pi.on('tool_execution_start', observe); pi.on('tool_execution_end', observe);
   pi.on('session_shutdown', () => { for (const entry of sessions.values()) entry.service.dispose(); sessions.clear(); timing.clear(); });
+  pi.registerCommand?.('trajectory',{
+    description:'打开当前分支的轨迹树视图（路径、上下文、工具与文件）',
+    async handler(args,ctx){
+      if(args.trim()&&!['--no-open'].includes(args.trim())){ctx.ui.notify('用法：/trajectory [--no-open]','warning');return;}
+      try{
+        const view=await generateTraceView({host:'pi',input:viewInput(ctx)}),{url}=await serveViewFile(view.output);
+        if(args.trim()!=='--no-open')await openViewBrowser(url);
+        ctx.ui.notify('轨迹树 · '+url,'info');
+      }catch(error){ctx.ui.notify('轨迹树：'+error.message,'error');}
+    },
+  });
   for (const tool of TOOLS) pi.registerTool({ name: tool.name, label: tool.name, description: tool.description, parameters: tool.parameters,
     async execute(_callId, args, signal, _onUpdate, ctx) {
       const id = ctx.sessionManager.getSessionId();
@@ -26,11 +47,7 @@ export default function trajectoryExtension(pi) {
           if (session && !['current', id].includes(session)) throw Error('Use the current Pi session; bind other files through CLI/MCP');
           const current = entry.ctx, manager = current.sessionManager;
           if (manager.getSessionId() !== id) throw Error('Pi session switched; request a new inspection');
-          const entries = manager.getEntries(), active = new Set(pi.getActiveTools());
-          const tools = pi.getAllTools().map(t => ({ name: t.name, description: t.description, parameters: t.parameters, active: active.has(t.name), exposure: t.exposure, reachesTools: t.reachesTools, source: t.source }));
-          const input = { header: { type: 'session', version: 3, id, cwd: current.cwd }, entries, leafId: manager.getLeafId(), capture: [...(timing.get(id)?.values() || [])].flat(),
-            source: { name: 'Pi read-only SessionManager', file: manager.getSessionFile() }, scope: { source: 'pi-sdk-current-scope', observedAt: new Date().toISOString(), systemPrompt: current.getSystemPrompt(), tools, model: current.model?.id, provider: current.model?.provider, contextWindow: current.model?.contextWindow ?? null } };
-          return datasetFromNative('pi', input);
+          return datasetFromNative('pi', viewInput(current));
         } });
         sessions.set(id, entry);
         while (sessions.size > 1) { const old = sessions.keys().next().value; sessions.get(old).service.dispose(); sessions.delete(old); }

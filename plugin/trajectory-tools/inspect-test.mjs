@@ -4,7 +4,7 @@ import { InspectionService } from './lib/inspect-service.js';
 import { replayOfficialStats, estimateToolsTokens } from './lib/official-stats.js';
 import { apply } from './lib/index.js';
 import { projectToolSchema } from '@deepseek-ai/dsh-tools';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { SKILL_BODY } from './lib/skill.js';
 
 let n = 0;
@@ -65,8 +65,7 @@ assert.equal(index.views.context[0].categoryNetChange.tool, 5, 'net-zero is not 
 assert.equal(inspectionPage(index, 'latency', 0, 1).items.length, 1);
 assert.equal(inspectionPage(index, 'cost', 0, 1).largestDefinitions.length, 1);
 assert.equal(index.views.latency.length, index.stepEntries.length, 'views retain compact references to one step evidence table');
-const skillMirror = new URL('../../skill/trajectory-query.md', import.meta.url);
-if (existsSync(skillMirror)) assert.equal(readFileSync(skillMirror, 'utf8').split('需要过去的信息时')[1], SKILL_BODY.split('需要过去的信息时')[1], 'repository skill mirrors the registered runtime body');
+assert.equal(readFileSync(new URL('./skills/trajectory-query/SKILL.md',import.meta.url),'utf8').replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/,''),SKILL_BODY,'runtime skill is loaded from its packaged source');
 
 let restored = 0;
 const large = { ...loaded, inherited: 20, events: Array.from({ length: 1002 }, (_, seq) => ({ seq, type: 'test/sample', data: {} })) };
@@ -87,8 +86,11 @@ const service = new InspectionService({ load: async () => { reads++; return load
 const first = await service.query({ view: 'latency', limit: 1 }, 'fixture');
 assert.ok(first.snapshot); assert.ok(first.nextCursor); assert.ok(first.reads.length);
 const continued = await service.query({ view: 'latency', cursor: first.nextCursor, limit: 1 }, 'fixture');
-assert.equal(continued.method, undefined, 'paging does not repeat the analysis method');
-assert.equal(continued.outputRule, undefined, 'paging does not repeat report instructions');
+for (const view of ['overview', 'latency', 'cost', 'repeats', 'io', 'context']) {
+  for (const result of [await service.query({ snapshot: first.snapshot, view }, 'fixture'), continued]) {
+    for (const key of ['method', 'methodRef', 'outputRule', 'reportRule']) assert.ok(!(key in result), 'Evidence results do not carry teaching fields: ' + view + '.' + key);
+  }
+}
 assert.equal(reads, 1, 'pagination reuses compact prepared evidence, not another raw log');
 await assert.rejects(service.query({ view: 'cost', cursor: first.nextCursor }, 'fixture'), /view/);
 await assert.rejects(service.query({ snapshot: first.snapshot, session: 'other' }, 'fixture'), /another session/);

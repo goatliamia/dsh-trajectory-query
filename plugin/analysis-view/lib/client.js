@@ -1340,9 +1340,24 @@ window.__ModuleLoader__.load({
     AnalysisSnapshotBuilder.prototype.snapshot = function () { return this.snap; };
 
     return {
-      inject: ["slots", "uiConversation"],
+      inject: ["slots", "uiConversation", "commandUi"],
       apply(ctx) {
         clientCtx = ctx;
+        ctx.commandUi.register({
+          name: "trajectory",
+          label: () => "轨迹树",
+          description: () => "打开当前会话的路径与上下文视图",
+          available: (session) => typeof session.sessionId === "string" && session.sessionId.length > 0,
+          ui: {
+            kind: "action",
+            run(session) {
+              const url = new URL("/analysis-view/trace", window.location.href);
+              url.searchParams.set("session", session.sessionId);
+              url.searchParams.set("staged", "1");
+              window.open(url.href, "_blank", "noopener,noreferrer");
+            },
+          },
+        });
         if (typeof ctx.effect === "function") ctx.effect(() => () => {
           clearTimeout(traceFrame.expiry);
           for (const entry of traceDetails.values()) if (!entry.settled) entry.controller.abort();

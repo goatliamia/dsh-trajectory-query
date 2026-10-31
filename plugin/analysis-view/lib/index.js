@@ -20,10 +20,18 @@ const TRACE_FONTS = { "Geist-Variable.woff2": "font/woff2", "GeistMono-Variable.
 
 let traceAssets;
 function readTraceAssets() {
-  const files = ["page.html", "page.js"].map(name => new URL("./trace/" + name, import.meta.url));
+  const files = ["page.html", "page.js", "shared/context-observation.js", "shared/context-observation.css", "shared/context-trend-geometry.js", "shared/visual-tokens.css"].map(name => new URL("./trace/" + name, import.meta.url));
   const version = files.map(file => { const s = statSync(file); return [s.mtimeMs, s.ctimeMs, s.size].join(":"); }).join("|");
   if (traceAssets?.version !== version) {
-    traceAssets = { version, template: readFileSync(files[0], "utf8"), renderer: readFileSync(files[1], "utf8") };
+    const seam = "  $('review-return').onclick=reviewReturnOverview;";
+    const base = readFileSync(files[1], "utf8");
+    if (base.split(seam).length !== 2) throw Error('Trace presentation boot seam changed');
+    traceAssets = { version,
+      template: readFileSync(files[0], "utf8")
+        .replace('<body class="geist-review">', '<body class="geist-review context-trend-study">')
+        .replace('</head>', '<style>'+readFileSync(files[5], "utf8")+readFileSync(files[3], "utf8")+'</style></head>'),
+      renderer: base.replace(seam, () => readFileSync(files[4], "utf8")+'\n'+readFileSync(files[2], "utf8")+'\n'+seam),
+    };
   }
   return traceAssets;
 }
@@ -32,7 +40,7 @@ function readTraceAssets() {
 export function renderTracePage(payload, assets = readTraceAssets()) {
   const json = JSON.stringify(payload).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
   // 一次性替换两个占位符:会话正文里可能出现同样的字符串,分批替换会把它替换进数据里。
-  const template = payload.traceLoad ? assets.template.replace('<body class="geist-review">', '<body class="geist-review trace-pending">') : assets.template;
+  const template = payload.traceLoad ? assets.template.replace('<body class="geist-review', '<body class="geist-review trace-pending') : assets.template;
   return template.replace(/\/\*__TRACE_DATA__\*\/|\/\*__TRACE_RENDERER__\*\//g,
     token => (token === "/*__TRACE_DATA__*/" ? json : assets.renderer));
 }

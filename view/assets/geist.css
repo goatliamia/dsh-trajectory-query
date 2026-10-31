@@ -1,0 +1,438 @@
+@font-face{font-family:Geist;src:url('/fonts/Geist-Variable.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:'Geist Mono';src:url('/fonts/GeistMono-Variable.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap}
+:root{
+  color-scheme:light dark;
+  --sans:Geist,'Segoe UI','Microsoft YaHei',sans-serif;
+  --mono:'Geist Mono',Consolas,'Microsoft YaHei',monospace;
+  --bg:#fafafa;--surface:#fff;--ink:#171717;--muted:#666;--line:#e6e6e6;--grid:#ededed;--soft:#f5f5f5;
+  --accent:#0068d6;--error:#c72b31;--error-bg:#fff0f0;--tool:#087f5b;--path:#1f4567;--warm:#a66b00;
+  --branch-ink:#1c2938;--branch-muted:#5b6470;--branch-model:#2684ff;--branch-good:#087b58;--branch-bad:#c72b31;--branch-link:#64748b;--branch-child:#7c3aed;
+  --review-action:#0068d6;--review-action-tint:#edf5ff;--review-rule:#a4acb5;
+  --review-retry:#8745d9;--review-compact:#b87800;--review-stop:#bb660d;--review-unknown:#a56b00;--review-gap:#297ead;
+  --file-read:#0069c2;--file-change:#ae5a09;--file-read-soft:#edf6ff;--file-change-soft:#fff5e9;
+  --chart-system:#8053e3;--chart-tools:#d49b00;--chart-user:#44a56b;--chart-inject:#c442a7;--chart-skill:#e66d26;--chart-assistant:#5b9fe8;--chart-tool:#3ab4a4;
+  --shadow:0 12px 40px #0000000f;
+}
+body.geist-review{font:14px/1.5 var(--sans);color:var(--ink);background:var(--surface);text-rendering:optimizeLegibility}
+.geist-review button,.geist-review input{font-family:var(--sans)}
+.geist-review button:focus-visible,.geist-review a:focus-visible,.geist-review summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.geist-review .review-toolbar{height:56px;padding:0 24px;gap:12px;border-color:var(--line)}
+.geist-review .app{height:calc(100dvh - 56px)}
+.geist-review .canvas{overflow-x:hidden;overflow-y:auto}
+.geist-review .review-toolbar strong{font-size:14px;font-weight:600;letter-spacing:-.025em;white-space:nowrap}
+.geist-edition{font:11px var(--mono);padding:2px 5px;border:1px solid var(--line);border-radius:4px;color:var(--muted)}
+.geist-review .review-toolbar small{font-size:12px;color:var(--muted)}
+.geist-review .review-toolbar button,.geist-review .review-toolbar a{font-size:12px;line-height:20px;font-weight:500;white-space:nowrap;border-radius:6px;padding:5px 9px}
+.geist-review .review-toolbar button{color:var(--ink)}
+.geist-review .review-toolbar a:hover{color:var(--ink);background:var(--soft)}
+.geist-review #review-path{border:1px solid var(--line);box-shadow:0 1px 2px #00000005}
+.geist-review .review-controls{gap:0;border:1px solid var(--line);border-radius:6px;padding:2px}
+.geist-review .review-controls button{padding:3px 8px;min-width:28px}
+.geist-review #review-fit{font:11px var(--mono);min-width:44px}
+.geist-review #review-stress{font-weight:400;color:var(--muted)}
+.geist-review #graph{font-family:var(--sans)}
+.geist-context-overview{flex:none;padding:12px 24px 10px;border-bottom:1px solid var(--line);background:var(--surface)}
+.geist-context-overview>header{display:flex;align-items:baseline;justify-content:space-between;gap:8px 24px;flex-wrap:wrap}
+.geist-context-overview h2{font:600 15px/22px var(--sans);margin:0;color:var(--ink)}
+.geist-context-overview h2 small{font:11px var(--sans);font-weight:400;color:var(--muted);margin-left:8px}
+.geist-context-model{font:12px/20px var(--sans);color:var(--muted);overflow-wrap:anywhere}
+.geist-context-total{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:5px 0 8px;color:var(--muted);font:12px/22px var(--sans)}
+.geist-context-total strong{font:600 28px/34px var(--sans);letter-spacing:-.04em;color:var(--ink)}
+.geist-context-total b{font:500 16px var(--mono);color:var(--ink);margin-right:4px}
+.geist-context-meter{height:14px;background:var(--soft);border-radius:3px;overflow:hidden}
+.geist-context-occupied{height:100%;display:flex;overflow:hidden}
+.geist-context-occupied>span{height:100%;flex:none}
+.geist-context-sources{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px 22px;margin-top:10px}
+.geist-review .geist-context-sources button{display:flex;align-items:center;gap:7px;min-width:0;padding:0;border:0;background:none;font:13px/21px var(--sans);color:var(--ink);text-align:left;cursor:pointer}
+.geist-context-sources button:hover>span{text-decoration:underline;text-underline-offset:3px}
+.geist-context-sources i{width:8px;height:8px;border-radius:2px;flex:none}
+.geist-context-sources button>span{white-space:nowrap;flex-shrink:0}
+.geist-context-sources b{font:12px/21px var(--mono);font-weight:400;color:var(--muted);margin-left:auto;min-width:0;white-space:normal;text-align:right}
+.geist-context-share{white-space:nowrap}
+.geist-context-footnote{display:flex;justify-content:space-between;gap:12px;font:10px/18px var(--sans);color:var(--muted);margin-top:8px}
+.geist-review .geist-legend .review-overlay-key{display:none}
+.geist-review .review-action-mode .graph-scroll{min-height:376px;flex:1 0 376px}
+.geist-review .review-action-mode .graph-wrap{min-height:0;height:auto}
+.geist-review .review-action-mode .br-label{font-size:13px}
+.geist-review .review-action-mode .review-turn-duration{font-size:13px}
+.geist-review .review-action-mode .review-context-overflow-label{font-size:11px}
+.geist-review .br-trunk{stroke:#204965;stroke-width:2.4}
+.geist-review .br-connector{stroke:var(--branch-link);stroke-opacity:1}
+.geist-review .review-branch-halo{display:none}
+.geist-review .br-label,.geist-review .br-label.bad{font:12px var(--sans);fill:var(--branch-ink);stroke:var(--surface);stroke-width:2px;stroke-linejoin:round;paint-order:stroke fill}
+.geist-review .br-cap{stroke:var(--branch-bad);stroke-width:1.8}
+.geist-review .br-check{stroke:var(--branch-good);stroke-width:1.8}
+.geist-review .br-note{font:11px var(--sans);fill:var(--muted)}
+.geist-review .br-axis,.geist-review .br-round-label{font:10px var(--mono);fill:var(--muted)}
+.geist-review .review-turn-duration{font:12px var(--sans);fill:var(--ink);stroke-width:4px}
+.geist-review .review-duration-value{font:11px var(--mono);fill:var(--muted)}
+.geist-review .review-interval-guide{stroke:#aeb6c0;opacity:.85}
+.geist-review .review-turn-divider{stroke:#b7bec7;stroke-width:1;stroke-dasharray:5 5;opacity:.65}
+.geist-review .review-turn-divider.short{opacity:.8}
+.geist-review .review-context-grid{stroke:#b6bfca;stroke-dasharray:3 5;stroke-width:.8;opacity:.6}
+.geist-review .review-context-axis{font:10px var(--mono);fill:#4d6074}
+.geist-review #graph [data-context-segment]{opacity:1}
+.geist-review .review-context-turn:hover [data-context-segment],.geist-review .review-context-turn:focus-visible [data-context-segment]{stroke:var(--surface);stroke-width:.6}
+.geist-review .review-context-overflow-label{font:10px var(--mono);fill:#3b5777;stroke-width:4px}
+.geist-review .review-context-capped{stroke:#6388b5;stroke-width:.8}
+.geist-review .review-context-capped-dot{fill:#1763ac}
+.geist-review .review-compaction-divider{stroke:var(--review-compact);stroke-width:1.7;stroke-dasharray:7 5;opacity:1}
+.geist-review .review-compaction-hit{fill:#fff9df;stroke:#e3c46b}
+.geist-review .review-file-body{stroke-opacity:1;stroke-width:.9}
+.geist-review .review-file-object.read .review-file-body{fill:var(--file-read-soft)}
+.geist-review .review-file-object.change .review-file-body{fill:var(--file-change-soft)}
+.geist-review .review-file-name{font:11px var(--sans);fill:var(--branch-ink)}
+.geist-review .review-file-lane-label{font:11px var(--sans)}
+.geist-review .review-file-object.selected .review-file-body{stroke-width:1.8}
+.geist-review .review-file-object.selected .review-file-body{fill:currentColor}
+.geist-review .review-file-object.selected .review-file-name{fill:#fff;font-weight:500}
+.geist-review .review-file-object.selected .review-file-icon{stroke:#fff}
+.geist-review .review-file-touch circle.review-file-touch-dot{r:4.5px}
+.geist-review .review-file-touch-ring{r:7.5px;stroke-width:1.2}
+.geist-review .review-file-focused .review-action-step:not(.file-related),.geist-review .review-file-focused .br-incident:not(.file-related){opacity:.38}
+.geist-review .review-action-node{stroke-width:1.5}
+.geist-review .review-action-icon{color:var(--review-action)}
+.geist-review .review-action-icon.bad{color:var(--branch-bad)}
+.geist-review .review-action-step.is-selected .review-action-node{stroke-width:2.2}
+.geist-review .review-action-condition{font-size:11px}
+.geist-result-glyph{fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;color:var(--file-read)}
+.geist-result-glyph.change{color:var(--file-change)}
+.geist-result-glyph.query{color:var(--review-retry)}
+.geist-result-glyph.check{color:var(--branch-good)}
+.geist-result-glyph.error{color:var(--branch-bad)}
+.geist-result-glyph.command,.geist-result-glyph.process,.geist-result-glyph.coordination{color:var(--branch-ink)}
+.geist-result-glyph.search,.geist-result-glyph.web{color:var(--review-retry)}
+.geist-result-glyph.pending{color:var(--review-unknown)}
+.geist-result-dot{fill:var(--file-read);stroke:var(--surface);stroke-width:.7}
+.geist-result-dot.change{fill:var(--file-change)}
+.geist-result-dot.query{fill:var(--review-retry)}
+.geist-result-dot.check{fill:var(--branch-good)}
+.geist-result-dot.error{fill:var(--branch-bad)}
+.geist-result-key{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.geist-result-key svg{width:14px;height:14px;flex:none}
+.geist-result-branch{cursor:pointer;outline:none}
+.geist-result-branch:hover .br-connector,.geist-result-branch:focus-visible .br-connector{stroke-width:1.8}
+.geist-outcome-record{padding:13px 0;border-bottom:1px solid var(--line)}
+.geist-outcome-record>strong{font:500 13px/22px var(--sans);color:var(--ink);overflow-wrap:anywhere}
+.geist-outcome-record>p{font:13px/23px var(--sans);margin:5px 0;color:var(--ink)}
+.geist-outcome-files{display:flex;flex-direction:column;gap:10px;padding:15px 0 20px}
+.geist-tool-time{stroke:#c38a30;stroke-width:2.2;fill:none;stroke-linecap:butt}
+.geist-tool-time-key{display:inline-flex;align-items:center;gap:6px;font-size:11px;white-space:nowrap}
+.geist-tool-time-key i{display:inline-block;width:16px;border-top:2px solid #c38a30}
+.geist-tool-timing{cursor:pointer;outline:none}
+.geist-tool-timing:focus-visible .geist-tool-time,.geist-tool-timing:hover .geist-tool-time{stroke-width:3.5}
+.geist-timing-facts{margin:0 0 16px}
+.geist-timing-facts>div{display:flex;justify-content:space-between;align-items:baseline;gap:20px;padding:12px 0;border-bottom:1px solid var(--line)}
+.geist-timing-facts dt{font:13px/22px var(--sans);color:var(--muted)}
+.geist-timing-facts dd{margin:0;font:13px/22px var(--mono);color:var(--ink)}
+.geist-review .graph-scroll{cursor:grab;touch-action:pan-y}
+.geist-review .graph-wrap{user-select:none;-webkit-user-select:none}
+.geist-review .overview-mode.branch-scene .graph-wrap{display:block;min-height:0;height:auto;align-items:flex-start;padding:0}
+.geist-review .overview-mode.branch-scene .graph-scroll{flex:0 0 auto;min-height:0;height:auto;max-height:none}
+.geist-review .graph-scroll.geist-dragging,.geist-review .graph-scroll.geist-dragging *{cursor:grabbing!important}
+.geist-review .graph-caption,.geist-review .overview-mode.branch-scene .graph-caption,.geist-review .review-action-mode .graph-caption{padding:0 24px;gap:0;flex-wrap:wrap;background:var(--surface);border-color:var(--line);min-height:0}
+.geist-review .graph-caption{flex-shrink:0}
+.geist-observe-row{flex:0 0 100%;display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;min-height:48px;padding:8px 0;border:0}
+.geist-legend{flex:1 0 100%;padding-bottom:8px}
+.geist-legend[hidden]{display:none}
+.geist-review #geist-legend-toggle{margin-left:auto;white-space:nowrap;font-size:11px}
+.geist-review #geist-legend-toggle:after{content:'⌄';display:inline-block;margin-left:6px}
+.geist-review #geist-legend-toggle[aria-expanded=true]:after{transform:rotate(180deg)}
+.geist-section-label{font-size:12px;color:var(--muted);flex:none}
+.geist-review .br-layers{gap:18px;margin:0;opacity:1;font-size:12px;flex-wrap:wrap;row-gap:10px}
+.geist-review .br-layer{gap:7px;line-height:24px;color:var(--ink)}
+.geist-review .br-layer input{appearance:none;width:14px;height:14px;display:inline-grid;place-content:center;border:1px solid #a8a8a8;border-radius:3px;background:var(--surface);cursor:pointer;flex:none}
+.geist-review .br-layer input:checked{border-color:var(--accent);background:var(--accent)}
+.geist-review .br-layer input:checked:after{content:'';width:7px;height:4px;border-left:1.6px solid #fff;border-bottom:1.6px solid #fff;transform:translateY(-1px) rotate(-45deg)}
+.geist-review .br-layer:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:4px;border-radius:3px}
+.geist-review .graph-caption .geist-symbols{flex-basis:100%;padding:12px 0 10px;gap:9px 18px;flex-wrap:wrap;color:var(--muted);font-size:11px;line-height:18px;margin:0}
+.geist-review .review-retry-summary{font-size:11px;color:var(--review-retry)}
+.geist-review .review-overlay-key{gap:10px 16px;padding:12px 0;margin:0;border:0;line-height:18px;font-size:11px;order:1}
+.geist-review .review-overlay-caption{color:var(--muted);font-weight:400}
+.geist-review .review-overlay-source{gap:6px;color:var(--ink)}
+.geist-review .review-overlay-source i{width:8px;height:8px;border-radius:2px}
+.geist-review .review-overlay-pick{font:11px var(--mono);color:var(--accent)}
+.geist-review .review-overlay-scale{font-size:10px;color:var(--muted)}
+.geist-review .graph-caption .tl-readout{font-size:11px;line-height:20px;padding:2px 0 9px;min-height:24px;color:var(--muted)}
+.geist-review .review-file-status{font-size:11px;line-height:20px;padding-top:10px;gap:7px 12px;min-height:32px;border-color:var(--line)}
+.geist-review .review-file-status strong{font-weight:500;color:var(--ink)}
+.geist-review .review-file-status button{font-size:11px}
+.geist-review .review-file-source-note{font-size:10px;color:var(--muted)}
+.geist-review .geist-file-selection-bar{order:0;flex:none;flex-basis:auto;min-height:0;padding:0;border:0;background:none}
+.geist-review .geist-file-selection-bar:not(.is-selected)>span{display:none}
+.geist-review .geist-file-selection-bar.is-selected{display:grid;flex-basis:100%;grid-template-columns:minmax(0,1fr) auto auto;gap:2px 16px;padding:2px 0 12px}
+.geist-review .geist-file-selection-bar.is-selected strong{grid-column:1;grid-row:1;max-width:none;font-size:12px;line-height:24px}
+.geist-review .geist-file-selection-bar.is-selected strong:before{content:'已选文件';font-weight:400;color:var(--muted);font-size:11px;margin-right:12px}
+.geist-review .geist-file-selection-bar.is-selected>span{grid-column:1 / -1;grid-row:2;color:var(--muted);font-size:11px}
+.geist-review .geist-file-selection-bar #review-file-history{grid-column:2;grid-row:1}
+.geist-review .geist-file-selection-bar #review-file-clear{grid-column:3;grid-row:1;font-size:12px;line-height:20px;border:1px solid var(--line);border-radius:6px;padding:3px 9px;color:var(--ink)}
+.geist-review .geist-file-selection-bar #review-file-clear:hover{background:var(--soft);border-color:var(--muted);text-decoration:none}
+.geist-review .review-action-guidance{display:none}
+.geist-review .step-panel.review-step-summary{padding:16px 24px;gap:12px;max-height:260px;background:var(--bg)}
+.geist-review .review-action-mode .step-panel.review-step-summary{flex:0 1 auto;min-height:140px}
+.geist-review .review-action-mode .geist-observe-row{flex:1 1 auto;border-bottom:0}
+.geist-review .review-action-mode .graph-caption .geist-symbols{flex:0 1 auto;padding-left:0}
+.geist-review .review-step-heading p{font-size:11px;line-height:18px;margin-bottom:6px}
+.geist-review .review-step-heading h3{font-size:15px;line-height:22px;letter-spacing:-.02em;font-weight:600}
+.geist-review .review-operation h4{font-size:13px;line-height:20px;font-weight:500}
+.geist-review .review-operation-result p,.geist-review .review-reply-summary{font-size:13px;line-height:22px}
+.geist-review .review-panel-quiet,.geist-review .review-operation-change{font-size:12px}
+.geist-review .review-operation-change{border-radius:6px;padding:5px 10px;background:var(--surface)}
+.geist-review .review-step-footer{padding-top:10px}
+.geist-review .review-step-footer>div>span,.geist-review .review-step-footer>div>button{font-size:11px}
+.geist-review .step-panel.geist-step{display:flex;flex-direction:column;flex:0 0 auto;min-height:0;max-height:280px;gap:18px;padding:12px 24px 24px;background:var(--surface);border:0;box-shadow:none}
+.geist-step-meta{display:flex;align-items:center;justify-content:space-between;gap:20px;font:12px/20px var(--sans);color:var(--muted)}
+.geist-step-meta>span{display:flex;align-items:center;flex-wrap:wrap;gap:4px 14px}
+.geist-step-meta b{font-weight:500;color:var(--ink)}
+.geist-operations{display:flex;flex-direction:column;gap:20px}
+.geist-operation{display:flex;gap:24px;align-items:center}
+.geist-operation-copy{flex:1;min-width:0}
+.geist-operation h3{margin:0 0 6px;font:600 16px/24px var(--sans);letter-spacing:-.02em;color:var(--ink);overflow-wrap:anywhere}
+.geist-operation p{margin:0;font:13px/22px var(--sans);color:var(--ink);overflow-wrap:anywhere}
+.geist-operation[data-tone=bad] p{color:var(--branch-bad)}
+.geist-operation[data-tone=unknown] p{color:var(--review-unknown)}
+.geist-operation-size{display:block;margin-top:4px;font:11px/20px var(--sans);color:var(--muted);font-variant-numeric:tabular-nums}
+.geist-review .geist-diff-action{flex:none;display:flex;align-items:center;gap:14px;padding:7px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font:500 12px/20px var(--sans);box-shadow:0 1px 2px #00000005}
+.geist-review .geist-diff-action:hover{background:var(--soft);border-color:var(--muted)}
+.geist-step-navigation{display:flex;gap:4px}
+.geist-review .geist-step-navigation button{width:28px;height:28px;padding:0;border:0;background:none;border-radius:5px;color:var(--ink);font-size:16px;cursor:pointer}
+.geist-review .geist-step-navigation button:hover:not(:disabled){background:var(--soft)}
+.geist-review .geist-step-navigation button:disabled{opacity:.25;cursor:default}
+.geist-step-evidence,.geist-step-recovery{display:flex;flex-wrap:wrap;gap:6px 20px}
+.geist-step-evidence{padding-top:2px}
+.geist-review .geist-text-action{padding:0;border:0;border-radius:0;background:none;box-shadow:none;color:var(--review-action);font:12px/21px var(--sans);text-align:left;flex:none;cursor:pointer}
+.geist-review .geist-text-action:hover{text-decoration:underline;text-underline-offset:3px}
+.geist-review .geist-text-action.quiet{color:var(--muted)}
+.geist-review .geist-text-action.recovery{color:var(--branch-good)}
+.geist-step-next{display:flex;align-items:baseline;gap:5px 10px;flex-wrap:wrap;margin-top:2px;font:12px/21px var(--sans);color:var(--muted)}
+.geist-context-link{margin-left:auto}
+.geist-answer{display:grid;grid-template-columns:70px minmax(0,1fr);gap:12px}
+.geist-answer>span{font-size:13px;color:var(--muted)}
+.geist-answer p{margin:0;font:14px/24px var(--sans);color:var(--ink)}
+.geist-review .drawer-backdrop{background:#00000020}
+.geist-review .drawer{border:0;border-right:1px solid var(--line);box-shadow:8px 0 28px #0000000a;width:min(460px,100%)}
+.geist-review .drawer-head{padding:24px;gap:16px}
+.geist-review .drawer-title{font-size:18px;line-height:26px;font-weight:600;letter-spacing:-.03em}
+.geist-review .drawer-description{font-size:12px;line-height:20px}
+.geist-review .drawer-body{padding:20px 24px 28px;font-size:13px}
+.geist-review .drawer-body h3{font-size:12px;color:var(--muted)}
+.geist-review .review-explain{font-size:14px;line-height:24px}
+.geist-review .review-quiet,.geist-review .source-row{font-size:12px;line-height:21px}
+.geist-review .action-button{font-size:12px;padding:7px 12px;line-height:20px;background:var(--surface);border-radius:6px}
+.geist-review .action-button.primary{background:var(--accent);color:white;border-color:var(--accent)}
+.geist-review .review-context-headline strong{font-size:32px;color:var(--accent);letter-spacing:-1.2px}
+.geist-review .review-context-category>div:first-child,.geist-review .review-context-category b{font-size:13px}
+.geist-review .review-context-category small{font-size:11px}
+.geist-review .review-context-meter{height:5px;background:var(--soft)}
+.geist-review .review-source-definition strong{font-size:13px}
+.geist-review .review-source-definition p{font-size:13px;line-height:23px}
+.geist-review .review-round-search input{border-radius:6px;font:13px var(--mono);height:36px}
+.geist-review .review-round-card strong,.geist-review .review-round-card b{font-size:12px}
+.geist-review .review-round-card>div button{font-size:11px;padding:8px 5px}
+.geist-review .review-detail-overlay{background:#00000040;padding:24px;backdrop-filter:blur(2px)}
+.geist-review .review-detail-window{border:1px solid var(--line);border-radius:12px;box-shadow:0 0 0 1px #00000004,0 16px 48px #00000024;height:auto;max-height:calc(100dvh - 48px)}
+.geist-review .review-detail-window:has(.review-diff-scroller){height:min(800px,calc(100dvh - 48px))}
+.geist-review .review-detail-window:has(.geist-history-rounds){height:min(820px,calc(100dvh - 48px));width:min(850px,100%)}
+.geist-review .review-detail-window>header{padding:24px;gap:16px}
+.geist-review .review-detail-window h2{font-size:18px;line-height:26px;font-weight:600;letter-spacing:-.025em}
+.geist-review .review-detail-window header p{font-size:12px;line-height:20px}
+.geist-review .review-detail-window header>button,.geist-review .drawer-close{border-radius:6px;width:28px;height:28px}
+.geist-review .review-detail-body{padding:20px 24px 24px}
+.geist-review .review-file-list strong,.geist-review .review-file-history strong{font-size:13px;font-weight:500}
+.geist-review .review-file-list span,.geist-review .review-file-history small{font-size:12px;line-height:20px}
+.geist-review .review-file-list small,.geist-review .review-file-evidence-note{font-size:11px;line-height:20px}
+.geist-review .review-file-history button{gap:16px;padding:16px 0}
+.geist-review .review-file-history button>span:first-child,.geist-review .review-file-history button>span:last-child{font-size:11px}
+.geist-review .review-file-history button:hover,.geist-review .review-file-list button:hover{background:var(--bg)}
+.geist-review .review-detail-section h3{font-size:13px;font-weight:600}
+.geist-review .review-detail-section p{font-size:13px;line-height:23px}
+.geist-review .review-change-status{font-size:13px;line-height:23px}
+.geist-review .review-diff-toolbar>span{font-size:12px}
+.geist-review .review-diff-row{font-size:12px;line-height:23px}
+.geist-review .review-diff-row.remove{background:#ffedeb}
+.geist-review .review-diff-row.add{background:#e6f7ed}
+.geist-review .review-diff-column-key{background:var(--bg);font-size:11px;line-height:30px}
+.geist-review .review-diff-note{font-size:11px;line-height:20px}
+.geist-history-overview{position:sticky;top:-20px;z-index:2;background:var(--surface);padding-top:20px;margin-top:-20px;padding-bottom:15px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.geist-history-overview>p{display:flex;align-items:baseline;gap:7px 16px;flex-wrap:wrap;margin:0 0 8px;font-size:12px;color:var(--muted)}
+.geist-history-overview>p>strong{font-weight:500;font-size:14px;color:var(--ink)}
+.geist-history-map{display:block;width:100%;height:58px;overflow:visible}
+.geist-history-map text{font:11px var(--sans);fill:var(--muted)}
+.geist-history-rail{stroke:var(--line);stroke-width:1.5;fill:none}
+.geist-history-dot{stroke:var(--surface);stroke-width:1}
+.geist-history-dot.change{fill:var(--file-change)}
+.geist-history-dot.read{fill:var(--file-read)}
+.geist-history-dot.failed{fill:var(--branch-bad)}
+.geist-history-dot.current{stroke:var(--accent);stroke-width:2}
+.geist-history-map g{cursor:pointer;outline:none}
+.geist-history-map g:hover .geist-history-dot,.geist-history-map g:focus-visible .geist-history-dot{stroke:var(--accent);stroke-width:2}
+.geist-history-controls{display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+.geist-history-controls button:last-child{margin-left:auto}
+.geist-history-round{padding:0 0 0 22px;border-left:1px solid var(--line);margin-left:5px;position:relative;scroll-margin-top:160px}
+.geist-history-round:before{content:'';position:absolute;width:7px;height:7px;left:-4px;top:21px;border-radius:50%;background:var(--file-change);box-shadow:0 0 0 4px var(--surface)}
+.geist-history-round[data-history-tone=read]:before{background:var(--file-read)}
+.geist-history-round[data-history-tone=failed]:before{background:var(--branch-bad)}
+.geist-history-round summary{display:flex;align-items:center;gap:10px 16px;list-style:none;cursor:pointer;padding:16px 0;min-height:48px;font:12px/20px var(--sans);color:var(--muted)}
+.geist-history-round summary::-webkit-details-marker{display:none}
+.geist-history-round summary:after{content:'⌄';font-size:16px;line-height:18px;margin-left:auto;flex:none;transition:transform .1s}
+.geist-history-round[open] summary:after{transform:rotate(180deg)}
+.geist-history-round summary strong{font-weight:500;font-size:13px;color:var(--ink);min-width:62px;white-space:nowrap}
+.geist-history-round summary em{font:11px var(--sans);color:var(--accent);white-space:nowrap}
+.geist-history-round-content{padding:1px 0 16px;display:flex;flex-direction:column;gap:20px}
+.geist-history-operation-title{display:flex;gap:12px;align-items:baseline;font:11px/19px var(--sans);color:var(--muted)}
+.geist-history-operation-title strong{font:500 12px/19px var(--sans)}
+.geist-history-operation .change{color:var(--file-change)}
+.geist-history-operation .read{color:var(--file-read)}
+.geist-history-operation .failed{color:var(--branch-bad)}
+.geist-history-operation>p{font:13px/22px var(--sans);color:var(--ink);margin:5px 0}
+.geist-history-excerpt{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:11px/21px var(--mono);color:var(--muted);margin-bottom:4px}
+.geist-history-operation-links{display:flex;gap:18px;flex-wrap:wrap}
+.geist-history-rounds+.review-file-evidence-note{padding-top:15px;border-top:1px solid var(--line);margin-top:12px}
+@media(max-width:760px){
+  .geist-context-overview{padding:12px 16px 10px}
+  .geist-context-sources{gap:7px 14px}
+  .geist-review .review-toolbar{padding:0 16px;gap:7px;flex-wrap:nowrap}
+  .geist-review .review-toolbar small,.geist-review #review-stress{display:none}
+  .geist-review .review-toolbar button,.geist-review .review-toolbar a{padding:5px 7px}
+  .geist-review .review-toolbar .review-spacer{min-width:0}
+  .geist-review .graph-caption,.geist-review .overview-mode.branch-scene .graph-caption,.geist-review .review-action-mode .graph-caption{padding-left:16px;padding-right:16px}
+  .geist-observe-row{gap:12px;min-height:44px;padding:6px 0}
+  .geist-review .br-layers{gap:8px 14px;font-size:12px}
+  .geist-review .review-overlay-key{gap:8px 12px;padding:10px 0}
+  .geist-review .review-overlay-caption{flex-basis:100%}
+  .geist-review .review-overlay-pick{margin-left:0}
+  .geist-review .step-panel.review-step-summary{padding:15px 16px;max-height:245px}
+  .geist-review .step-panel.geist-step{padding:10px 16px 12px;gap:14px;max-height:280px}
+  .geist-review .geist-file-selection-bar{padding-left:0;padding-right:0}
+  .geist-review .review-action-mode .graph-caption .geist-symbols{padding-left:0;flex-basis:100%;padding-top:0}
+  .geist-review .review-detail-overlay{padding:12px}
+  .geist-review .review-detail-window{max-height:calc(100dvh - 24px)}
+  .geist-review .review-detail-window:has(.geist-history-rounds){height:calc(100dvh - 24px)}
+  .geist-review .review-detail-window>header,.geist-review .review-detail-body{padding:20px}
+}
+@media(max-width:540px){.geist-step-meta>span{gap:8px}.geist-operation{gap:12px;flex-wrap:wrap}.geist-operation-copy{flex-basis:100%}.geist-operation h3{font-size:15px}.geist-review .geist-diff-action{padding:5px 10px}.geist-section-label{display:none}}
+@media(max-width:600px){.geist-context-sources{grid-template-columns:repeat(3,minmax(0,1fr))}.geist-context-sources button{flex-wrap:wrap;gap:3px 6px}.geist-context-sources b{font-size:10px}.geist-context-model{font-size:11px}}
+@media(max-width:440px){.geist-context-sources{grid-template-columns:repeat(2,minmax(0,1fr))}.geist-context-total strong{font-size:25px}.geist-context-overview>header{gap:2px}.geist-context-model{flex-basis:100%}}
+@media(max-width:540px){.geist-history-round{padding-left:16px;scroll-margin-top:180px}.geist-history-round summary{gap:8px;flex-wrap:wrap}.geist-history-round summary strong{min-width:auto}.geist-history-round summary>span{font-size:11px}}
+@media(max-width:480px){.geist-review .geist-file-selection-bar.is-selected{gap:3px 9px}.geist-review .geist-file-selection-bar.is-selected strong:before{display:none}.geist-review .geist-file-selection-bar #review-file-history{grid-column:2;grid-row:2}.geist-review .geist-file-selection-bar.is-selected>span{grid-column:1}.geist-review .geist-file-selection-bar #review-file-clear{grid-column:2}}
+@media(min-width:1000px){
+  .geist-review .review-operations{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+  .geist-review .review-operation+.review-operation{border-top:0;padding-top:0;border-left:1px solid var(--line);padding-left:20px}
+}
+@media(max-width:480px){.geist-review .geist-edition,.geist-review .geist-previous{display:none}.geist-review .review-toolbar{gap:5px;padding:0 12px}.geist-review .review-toolbar strong{font-size:13px}.geist-review .review-file-source-note{display:none}}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#151515;--surface:#0a0a0a;--ink:#ededed;--muted:#a1a1a1;--line:#303030;--grid:#292929;--soft:#222;--accent:#64a8ff;--error:#ff7178;--error-bg:#3d2021;--branch-ink:#e2e8f0;--branch-muted:#aab3bf;--branch-model:#60a5fa;--branch-good:#4cce9a;--branch-bad:#ff7178;--branch-link:#9aa8b7;--review-action:#64a8ff;--review-action-tint:#142c48;--review-retry:#bb8aff;--review-compact:#edb62b;--review-unknown:#e0b34b;--file-read:#6bb8ff;--file-change:#f5ad66;--file-read-soft:#10273b;--file-change-soft:#332314;--chart-system:#a78bfa;--chart-tools:#eab308;--chart-user:#4fc77a;--chart-inject:#e879c6;--chart-skill:#fb923c;--chart-assistant:#4c9fff;--chart-tool:#21c4ad}
+  .geist-review .br-trunk{stroke:#92b9da}.geist-review .review-context-axis,.geist-review .review-context-overflow-label{fill:#b0c5dc}.geist-review .review-context-capped-dot{fill:#86baff}.geist-review .review-turn-divider{stroke:#68788b}.geist-review .review-context-grid{stroke:#5e6d80}.geist-review .review-compaction-hit{fill:#342b12;stroke:#887026}.geist-review .br-layer input:checked{background:#1d6dc4;border-color:#64a8ff}.geist-review .review-diff-row.remove{background:#3f2025}.geist-review .review-diff-row.add{background:#143525}
+  .geist-review .review-file-object.selected .review-file-name{fill:#111}.geist-review .review-file-object.selected .review-file-icon{stroke:#111}
+}
+/* 短面板:这一页嵌在对话区里,高度常常不到 700。先让顶栏与上下文块让位,再让图高跟着压缩,
+   保证「当前上下文 + 主图 + 时间轴 + 观察开关」在首屏都看得见。 */
+@media (max-height: 820px) {
+  .geist-review .review-toolbar { height: 48px; }
+  .geist-review .app { height: calc(100dvh - 48px); }
+  .geist-context-overview { padding: 9px 16px 8px; }
+  .geist-context-overview h2 { font-size: 13px; line-height: 19px; }
+  .geist-context-total { margin: 2px 0 5px; font-size: 11px; }
+  .geist-context-total strong { font-size: 22px; line-height: 26px; }
+  .geist-context-total b { font-size: 13px; }
+  .geist-context-meter { height: 8px; }
+  .geist-context-sources { margin-top: 6px; gap: 3px 16px; }
+  .geist-review .geist-context-sources button { font-size: 12px; line-height: 19px; }
+  .geist-context-sources b { font-size: 11px; line-height: 19px; }
+  .geist-review .graph-caption .geist-symbols { padding: 8px 0 7px; }
+  .geist-review .graph-caption .tl-readout { padding: 1px 0 6px; min-height: 20px; }
+}
+
+@media (max-height: 700px) {
+  .geist-review .review-toolbar { height: 44px; }
+  .geist-review .app { height: calc(100dvh - 44px); }
+  .geist-context-overview { padding: 7px 14px 6px; }
+  .geist-context-overview > header { gap: 2px 12px; }
+  .geist-context-model { display: none; }
+  .geist-context-total strong { font-size: 20px; line-height: 24px; }
+  .geist-context-meter { height: 6px; }
+  .geist-context-sources { margin-top: 5px; gap: 2px 14px; }
+  .geist-review .graph-caption .geist-symbols { display: none; }
+  .geist-review .graph-caption .tl-readout { padding: 0 0 5px; }
+}
+
+@media (max-height: 560px) {
+  .geist-context-overview > header { display: none; }
+  .geist-context-total { margin: 0 0 4px; }
+  .geist-context-total strong { font-size: 18px; line-height: 22px; }
+  .geist-review .overview-mode .geist-context-sources { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .geist-review .geist-context-sources button { font-size: 11px; }
+}
+
+@media (max-height: 660px) {
+  .geist-review .review-toolbar { height: 40px; }
+  .geist-review .app { height: calc(100dvh - 40px); }
+  .geist-context-overview { padding: 5px 14px 4px; }
+  .geist-context-total { margin: 0 0 4px; }
+  .geist-context-sources { margin-top: 3px; }
+  .geist-review .graph-caption .tl-readout { padding-bottom: 0; min-height: 18px; }
+}
+
+@media (max-height: 640px) {
+  .geist-review .overview-mode .geist-context-overview > header { display: none; }
+  .geist-context-total { margin: 0 0 3px; }
+  .geist-context-total strong { font-size: 18px; line-height: 22px; }
+  .geist-context-overview { padding: 4px 14px 4px; }
+}
+/* 行动路径:步数多时本来就是横向滚动,这里只保证首屏放得下"步标签 + 主图 + 步骤详情"。 */
+@media (max-height: 820px) {
+  .geist-review .review-action-mode .graph-scroll { min-height: 300px; flex: 1 1 auto; }
+  .geist-review .step-panel.geist-step { max-height: 210px; }
+  .geist-review .review-action-mode .geist-context-overview { padding: 8px 14px 7px; }
+}
+@media (max-height: 700px) {
+  .geist-review .review-action-mode .graph-scroll { min-height: 260px; }
+  .geist-review .step-panel.geist-step { max-height: 170px; padding: 8px 16px 10px; gap: 10px; }
+}
+@media (max-height: 620px) {
+  .geist-review .review-action-mode .graph-scroll { min-height: 232px; }
+  .geist-review .step-panel.geist-step { max-height: 140px; }
+  .geist-review .review-action-mode .geist-context-sources { display: none; }
+}
+
+/* 页面自己占满视口:整页不滚动,滚动只发生在图区内部的平移/缩放上。 */
+html, body { height: 100%; overflow: hidden; }
+body { display: flex; flex-direction: column; align-items: stretch; }
+.geist-review .review-toolbar { flex: none; }
+.geist-review .app { height: auto; flex: 1 1 auto; min-height: 0; width: 100%; max-width: none; margin: 0; }
+
+/* 短面板的行动路径:轴注记与修改行会撞在一起,先收掉注记,保留图例与开关。 */
+@media (max-height: 800px) {
+  .geist-review .review-action-mode .br-axis { display: none; }
+}
+
+/* 顶栏整行去掉:只把「每轮耗时 / 行动路径 / 返回全景 / 缩放」留在底部一条工具行。 */
+.geist-review .app { order: 1; }
+.geist-review .review-toolbar {
+  order: 2; height: 36px; padding: 0 14px; gap: 4px;
+  border-bottom: 0; border-top: 1px solid var(--line);
+}
+.geist-review .review-toolbar strong,
+.geist-review .geist-edition,
+.geist-review .review-toolbar small,
+.geist-review #review-stress { display: none; }
+.geist-review .review-toolbar button { padding: 4px 7px; }
+.geist-review .review-toolbar .review-controls { margin-left: 2px; }
+
+/* 上下文条再压一档:七类来源排成一行,总占用与进度条并排。 */
+.geist-context-overview { padding: 7px 16px 6px; }
+.geist-context-overview > header { margin: 0; }
+.geist-context-total { margin: 1px 0 4px; }
+.geist-context-total strong { font-size: 19px; line-height: 22px; }
+.geist-context-total b { font-size: 12px; }
+.geist-context-meter { height: 5px; margin-top: 3px; }
+.geist-context-sources { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px 12px; margin-top: 5px; }
+.geist-review .geist-context-sources button { font-size: 12px; line-height: 18px; gap: 5px; }
+.geist-context-sources b { font-size: 11px; line-height: 18px; }
+@media (max-width: 1120px) {
+  .geist-context-sources { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* 平移是运输,不是重排:把画布提升为合成层,滚动只做位移,不重画。 */
+.geist-review #graph-wrap { will-change: transform; }
+.geist-review #graph-scroll { will-change: scroll-position; }

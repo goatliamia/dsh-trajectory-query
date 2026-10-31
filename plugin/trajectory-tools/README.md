@@ -3,6 +3,8 @@
 Model-facing, read-only tools over the session event log that DSH already keeps.
 把 DSH 已经保存的会话事件日志变成**模型可查的事实源**(只读)。
 
+除 `trajectory-query` 外，插件注册 `trace-analysis`（过程诊断）和 `context-profile`（上下文与工具配置剖面）。0.6.0 将细分方法放入 skill 引用资源，以 DSH runtime skill 的元数据注册；报告由模型撰写。
+
 English | [中文](#中文)
 
 ---
@@ -112,13 +114,11 @@ const processPrompt = ENTRY_PROMPTS.process;
 const profilePrompt = ENTRY_PROMPTS.profile;
 ```
 
-Choose one entry and supply the target session and question. Subject methods and report rules come from inspection results. The module also exports `INSPECT_METHODS`, `INSPECT_OUTPUT_RULE` and `METHOD_VERSION`.
+Choose one entry and supply the target session and question. These entries request the corresponding skill. Analysis methods live in the bundled skill resources; inspection results contain evidence only.
 
 ### Bundled skill
 
-The plugin also registers one thin runtime skill, `trajectory-query` (`lib/skill.js`), so the
-discipline travels with the tools and no agent preset has to be edited: query instead of guessing,
-quote verbatim, cite `(session, seq@logId)`, and interpret empty results within their scope and filters.
+The plugin registers `trajectory-query` for historical fact checks, `trace-analysis` for question-specific diagnosis, and `context-profile` for the current context and capability configuration. Runtime skills load their packaged resources through `lib/skill.js` and declare a directory base for relative references.
 
 ### Optional: reconcile after compaction
 
@@ -167,9 +167,9 @@ reply should end with the two lines, and the host log gains one `compaction reco
 ### Install (permanent, not a dynamic plugin)
 
 ```text
-1. pnpm pack                      # -> dsh-trajectory-tools-0.5.1.tgz
+1. pnpm pack                      # -> dsh-trajectory-tools-0.6.0.tgz
 2. in ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.5.1.tgz"
+     dependencies:  "dsh-trajectory-tools": "file:<abs path>/dsh-trajectory-tools-0.6.0.tgz"
      dsh.profile.bundles: append "dsh-trajectory-tools"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. restart `dsh web`              # host plugins do not hot-reload reliably
@@ -293,12 +293,11 @@ import { ENTRY_PROMPTS } from 'dsh-trajectory-tools/prompts';
 ```
 
 `process` 用于过程诊断，`profile` 用于静态剖面；选择一个入口，另附会话和用户问题。
-场景方法和报告规则随查询按需取得，也可从同一模块读取。实时作用域工具/SDK 完整快照尚未接入；静态入口使用已确认的构成及历史证据。
+入口请求使用对应的 skill，分析方法保存在随包的引用资源中。实时作用域工具/SDK 完整快照尚未接入；静态入口使用已确认的构成及历史证据。
 
 ### 自带 skill
 
-插件同时注册一个薄的 runtime skill `trajectory-query`(`lib/skill.js`),让纪律跟着工具走、
-不用改任何 agent preset:先查再答、逐字引用、引用写 `(session, seq@logId)`；空结果限定于本次范围与过滤。
+插件注册历史查证 `trajectory-query`、按问题诊断 `trace-analysis` 和静态剖面 `context-profile`。`lib/skill.js` 加载随包正文，并为方法引用声明目录基址。
 
 ### 可选功能：压缩后对账
 
@@ -342,9 +341,9 @@ import { ENTRY_PROMPTS } from 'dsh-trajectory-tools/prompts';
 ### 安装(常驻,非动态插件)
 
 ```text
-1. pnpm pack                      # 生成 dsh-trajectory-tools-0.5.1.tgz
+1. pnpm pack                      # 生成 dsh-trajectory-tools-0.6.0.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.5.1.tgz"
+     dependencies 增加 "dsh-trajectory-tools": "file:<绝对路径>/dsh-trajectory-tools-0.6.0.tgz"
      dsh.profile.bundles 追加 "dsh-trajectory-tools"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重载/重启 `dsh web`             # host 插件不会可靠热更新

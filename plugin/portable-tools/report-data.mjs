@@ -4,7 +4,7 @@ import { reportTable } from '../trajectory-tools/lib/report-data.js';
 export function portableReportData(data, query, source) {
   const { session, context, turns, calls, usage, turnNumbers } = selectPortableEvidence(data, query);
   const coverage = { host: data.host, context: data.payload.evidence?.context,
-    grain: data.host === 'pi' ? 'assistant-cycle / recorded native calls' : 'visible-action / response usage; not hidden model steps',
+    grain: data.host === 'pi' ? 'assistant-cycle / recorded native calls' : data.host === 'claude' ? 'assistant-record / message usage deduplicated by ID' : 'visible-action / response usage; not hidden model steps',
     focusedMetrics: query.focus ? 'Owning turns, not tool/file/skill attribution' : null };
   const evidence = seq => Number.isSafeInteger(seq) ? [{ session: data.session, log: data.logId, seq }] : [];
   const table = (kind, rows, fields) => reportTable({ source, kind, rows, fields, coverage,
@@ -13,8 +13,8 @@ export function portableReportData(data, query, source) {
     ...r, id: 'context:' + r.seq, evidence: evidence(r.seq),
   })), ['turn', 'step', 'time', 'system', 'tools', 'user', 'inject', 'skill', 'assistant', 'tool', 'total']);
   if (query.view === 'cost') return table('usage', usage.map((r, i) => {
-    const own = usageRow(data.host, r), turn = data.host === 'pi' ? r.turn : session.turns.find(t => t.id === r.turnId)?.number;
-    return { id: 'usage:' + (r.responseId || r.seq || i), turn, step: data.host === 'pi' ? r.step : null,
+    const own = usageRow(data.host, r), turn = data.host !== 'codex' ? r.turn : session.turns.find(t => t.id === r.turnId)?.number;
+    return { id: 'usage:' + (r.responseId || r.seq || i), turn, step: data.host !== 'codex' ? r.step : null,
       uncachedInputTokens: own.uncachedInput, cacheReadTokens: own.cachedInput,
       cacheWriteTokens: own.cacheWrite, outputTokens: own.output, evidence: evidence(r.seq) };
   }), ['turn', 'step', 'uncachedInputTokens', 'cacheReadTokens', 'cacheWriteTokens', 'outputTokens']);

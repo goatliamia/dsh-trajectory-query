@@ -1,0 +1,5 @@
+export const DIAGNOSIS_SKILLS = Object.freeze([
+  {name:'trace-analysis',description:'分析会话推进、耗时、用量、反复尝试、工具文件使用和上下文变化，找到值得优先调整的做法。',whenToUse:'需要诊断会话过程、定位问题并选择可验证的改法。'},
+  {name:'context-profile',description:'分析当前上下文和工具配置，结合实际使用判断保留与调整。',whenToUse:'需要查看上下文或工具配置的静态剖面，并结合使用场景评估。'},
+]);
+export const QUERY_SKILL={name:'trajectory-query',description:'查证过去发生的动作、反馈和结果。',whenToUse:'需要找回历史事实、原话或事件关系。'};

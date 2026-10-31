@@ -1,0 +1,12 @@
+{
+  "name": "trajectory-tree-local",
+  "interface": { "displayName": "Trajectory Tree 本地插件" },
+  "plugins": [
+    {
+      "name": "trajectory-tree",
+      "source": { "source": "local", "path": "./dist/trajectory-tree-codex" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Developer tools"
+    }
+  ]
+}

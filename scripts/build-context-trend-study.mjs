@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import vm from 'node:vm';
 import { requireStudySnapshot } from './context-study-snapshot.mjs';
+import { visualTokenCss } from '../design/tokens.mjs';
 
 const option = name => { const i = process.argv.indexOf(name); return i < 0 ? null : process.argv[i + 1]; };
 const savedSource = '.dsh/context-trend-study-source.html';
@@ -18,7 +19,7 @@ const match = frozen.match(/<script id="trace-data" type="application\/json">([\
 if (!match) throw Error('Use a frozen trace page containing trace-data');
 const payload = JSON.parse(match[1]);
 const coverage = requireStudySnapshot(payload, { allowIncomplete });
-const assets = resolve('docs/demo/layout-review');
+const assets = resolve('view/assets');
 mkdirSync(target, { recursive: true });
 const template = readFileSync('plugin/analysis-view/lib/trace/page.html', 'utf8');
 let head = template.slice(0, template.indexOf('<script id="trace-data"'));
@@ -39,9 +40,9 @@ renderer = renderer.replace(seam, () => readFileSync('lib/context-trend-geometry
 new vm.Script(renderer);
 const encoded = JSON.stringify(payload).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 // Show the project's light presentation, using its own canonical tokens.
-const projectTheme = readFileSync('docs/demo/layout-review/geist.css', 'utf8').match(/:root\s*{([\s\S]*?)}/)[1];
+const projectTheme = readFileSync('view/assets/geist.css', 'utf8').match(/:root\s*{([\s\S]*?)}/)[1];
 const page = head.replace('<title>执行路径</title>', '<title>上下文趋势 · 独立试作</title>')
-  .replace('</head>', '<style>:root{' + projectTheme + '}</style><link rel="stylesheet" href="/study.css"></head>')
+  .replace('</head>', '<style>:root{' + projectTheme + '}' + visualTokenCss({legacyAliases:true}) + '</style><link rel="stylesheet" href="/study.css"></head>')
   .replace('<body class="geist-review">', '<body class="geist-review context-trend-study">')
   .replace('<span class="geist-edition">02</span>', '<span class="geist-edition">趋势试作</span>')
   + '<script id="trace-data" type="application/json">' + encoded + '</script>\n'

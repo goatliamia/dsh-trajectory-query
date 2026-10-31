@@ -58,7 +58,7 @@ export class InspectionService {
       signal?.throwIfAborted(); if (this.closed) throw Error('Inspection service disposed');
       const bytes = JSON.stringify(index).length * 2;
       if (bytes > this.maxBytes) throw Error('Inspection exceeds retained-data budget');
-      const value = { index, session, bytes, methods: new Set(), outputRuleSent: false, at: this.now() }, key = randomUUID();
+      const value = { index, session, bytes, at: this.now() }, key = randomUUID();
       this.entries.set(key, value);
       while (this.entries.size > 4 || [...this.entries.values()].reduce((n, e) => n + e.bytes, 0) > this.maxBytes) this.entries.delete(this.entries.keys().next().value);
       this.arm(); return { id: key, entry: value };
@@ -93,9 +93,6 @@ export class InspectionService {
     }
     const page = inspectionPage(entry.index, q.view, offset, limit, q);
     page.log = entry.index.log;
-    const repeatedMethod = entry.methods.has(q.view);
-    if (repeatedMethod) delete page.method;
-    if (entry.outputRuleSent) delete page.outputRule;
     const primary = page.items.map(row => row.callSeq ?? row.evidence?.calls?.[0]?.seq ?? row.seq).filter(Number.isSafeInteger);
     const pointers = [...new Set([...primary, ...evidencePointers(page).map(ref => ref.seq)])].slice(0, 6);
     page.reads = pointers.map(seq => ({ tool: 'trajectory_read',
@@ -104,7 +101,6 @@ export class InspectionService {
       args: { session: entry.session, snapshot: id, view: 'overview', turns: row.turns, groupBy: 'turn', limit: 10 } };
     page.snapshot = id; page.view = q.view; page.ok = true;
     page.nextCursor = page.nextOffset == null ? null : id + ':' + Buffer.from(JSON.stringify(q)).toString('base64url') + ':' + page.nextOffset;
-    entry.methods.add(q.view); entry.outputRuleSent = true;
     return JSON.parse(JSON.stringify(page));
   }
   async readLinked(args, signal) {

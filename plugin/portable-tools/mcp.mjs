@@ -7,7 +7,7 @@ import { TOOLS, executeTool } from './tools.mjs';
 import { fileService, sourceOptions } from './runtime.mjs';
 
 export function createMcpServer(service) {
-  const server = new Server({ name: 'trajectory-evidence', version: '0.1.0' }, { capabilities: { tools: {} } });
+  const server = new Server({ name: 'trajectory-evidence', version: '0.2.1' }, { capabilities: { tools: {} } });
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS.map(t => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false } })) }));
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     try { const result = await executeTool(service, request.params.name, request.params.arguments || {}, extra.signal); return { content: [{ type: 'text', text: JSON.stringify(result) }] }; }

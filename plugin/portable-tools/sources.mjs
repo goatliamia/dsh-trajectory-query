@@ -5,6 +5,8 @@ import { adaptPiSession, piSessionPath } from '../../analyzers/pi-adapter.mjs';
 import { readPiSession } from '../../analyzers/pi-reader.mjs';
 import { adaptCodexThread } from '../../analyzers/codex-adapter.mjs';
 import { readCodexThread } from '../../analyzers/codex-reader.mjs';
+import { readClaudeTranscript } from '../../analyzers/claude-reader.mjs';
+import { projectClaudeTranscript, finalizeClaudeDataset } from '../../analyzers/claude-adapter.mjs';
 
 export const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 export function visible(value, parameters = false) {
@@ -18,6 +20,11 @@ const strings = value => typeof value === 'string' ? value : Array.isArray(value
 export const recordText = record => strings(record.body);
 
 export function datasetFromNative(host, native, options = {}) {
+  if (host === 'claude') {
+    const projected = projectClaudeTranscript(native);
+    return finalizeClaudeDataset(datasetFromNative('pi', projected), native, projected);
+  }
+  if (!['pi', 'codex'].includes(host)) throw Error('Unsupported native host');
   const payload = host === 'pi' ? adaptPiSession(native) : adaptCodexThread(native, options);
   const session = payload.sessions[0], records = new Map();
   function add(seq, body, metadata = {}, original = body) {
@@ -130,7 +137,8 @@ async function boundedRead(file, maxBytes = 128 * 1024 * 1024) {
 export async function loadPortableSource(spec, signal) {
   signal?.throwIfAborted();
   if (spec.host === 'pi') return datasetFromNative('pi', spec.input || await readPiSession(spec.file, { ...spec, signal }));
-  if (spec.host !== 'codex') throw Error('Supported hosts: pi, codex');
+  if (spec.host === 'claude') return datasetFromNative('claude', spec.input || await readClaudeTranscript(spec.file, { signal }));
+  if (spec.host !== 'codex') throw Error('Supported hosts: pi, codex, claude');
   const snapshot = spec.snapshot || (spec.file ? JSON.parse(await boundedRead(resolve(spec.file))) : await readCodexThread(spec.thread, { signal }));
   let rollout = spec.rolloutText;
   if (!spec.apiOnly && rollout === undefined) {

@@ -1,11 +1,13 @@
 import { validateDataset, DATA_SCHEMA } from './contract.mjs';
 import { reportTable } from '../plugin/trajectory-tools/lib/report-data.js';
+import {collectSummaryDataset} from './summary-data.mjs';
 
 // execute is supplied by the host: registered DSH tools, Pi extension, MCP,
 // or a local read-only service. The model never has to relay these pages.
 export async function collectDataset(execute, query, { maxRows = 20000, maxBytes = 8 * 1024 * 1024, signal } = {}) {
   if (query.tool !== 'trajectory_inspect') throw Error('Dataset query must use trajectory_inspect');
   if (!query.args?.snapshot) throw Error('Bind a previously inspected snapshot before exporting');
+  if (query.table) return collectSummaryDataset(execute,query,{maxRows,maxBytes,signal});
   const args = { ...query.args, format: 'data', sort: 'time', limit: 500 };
   let cursor, table, sourceKey, bytes = 0, expectedOffset = 0;
   const seen = new Set();

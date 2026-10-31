@@ -21,7 +21,12 @@ try {
   assert.equal(first.summary.usage.cachedInput, 31800); assert.equal(first.synthetic, true);
   assert.equal(first.summary.measuredToolIntervals, 12); assert.ok(first.summary.toolCoveredMs <= first.summary.observedTurnSpanMs);
   const page = await executeTool(service, 'trajectory_inspect', { cursor: first.cursor, snapshot: first.snapshot, limit: 2 });
-  assert.equal(page.rows[0].turn, 3); assert.ok(page.methodRef); assert.ok(!page.reportRule);
+  assert.equal(page.rows[0].turn, 3); assert.ok(!('method' in page)&&!('methodRef' in page)&&!('reportRule' in page));
+  for (const view of ['overview', 'latency', 'cost', 'repeats', 'io', 'context']) {
+    for (const result of [await executeTool(service, 'trajectory_inspect', { snapshot: first.snapshot, view }), page]) {
+      for (const key of ['method', 'methodRef', 'outputRule', 'reportRule']) assert.ok(!(key in result), 'Evidence results do not carry teaching fields: ' + view + '.' + key);
+    }
+  }
   await assert.rejects(executeTool(service, 'trajectory_inspect', { cursor: first.cursor, focus: { tool: 'read' } }), /Cursor/);
   await assert.rejects(executeTool(service, 'trajectory_inspect', { snapshot: first.snapshot, session: 'other' }), /another session/);
   await assert.rejects(executeTool(service, 'trajectory_inspect', { view: 'unknown' }), /Invalid/);

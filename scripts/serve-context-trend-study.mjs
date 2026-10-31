@@ -4,7 +4,7 @@ import { resolve, extname } from 'node:path';
 const files = new Map([
   ['/', resolve('.dsh/context-trend-study/index.html')],
   ['/renderer.js', resolve('.dsh/context-trend-study/renderer.js')],
-  ['/study.css', resolve('docs/demo/layout-review/context-observation.css')],
+  ['/study.css', resolve('view/assets/context-observation.css')],
   ...['Geist-Variable.woff2', 'GeistMono-Variable.woff2'].flatMap(name => [
     ['/fonts/' + name, resolve('plugin/analysis-view/lib/trace/fonts', name)],
     ['/analysis-view/trace/fonts/' + name, resolve('plugin/analysis-view/lib/trace/fonts', name)],

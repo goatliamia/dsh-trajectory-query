@@ -1,7 +1,7 @@
   // Shared host study: independent overlay switches and source multi-selection.
-  const studyMeaning = data.host === 'codex' ? { delta: '可见文本变化', total: '文本趋势', title: '可见文本趋势', quantity: '可见文本估算' } : data.host === 'pi' ? { delta: '上下文增量', total: '总趋势', title: '上下文估算趋势', quantity: '可见上下文估算' } : { delta: '上下文增量', total: '总趋势', title: '上下文总趋势', quantity: '上下文构成估算' };
+  const studyMeaning = ['codex','claude'].includes(data.host) ? { delta: '可见文本变化', total: '文本趋势', title: '可见文本趋势', quantity: '可见文本估算' } : data.host === 'pi' ? { delta: '上下文增量', total: '总趋势', title: '上下文估算趋势', quantity: '可见上下文估算' } : { delta: '上下文增量', total: '总趋势', title: '上下文总趋势', quantity: '上下文构成估算' };
   const studySources = new Set(CONTEXT_CATEGORIES.map(c => c.key));
-  let studyShowTotal = true;
+  let studyShowTotal = false;
   const studyCategories = () => CONTEXT_CATEGORIES.filter(c => studySources.has(c.key));
   const studyLabel = () => studySources.size === CONTEXT_CATEGORIES.length ? '全部构成' : studySources.size ? studyCategories().map(c => c.label).join(' + ') : '未选择构成';
   const studySum = row => studyCategories().reduce((sum, c) => sum + Number(row?.[c.key] || 0), 0);

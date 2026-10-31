@@ -1,185 +1,163 @@
-# Trajectory Tree
+<h1 align="center">Trajectory Tree · 轨迹树</h1>
 
-[English](README.en.md)
+<p align="center"><strong>从对话日志，看见 Agent 怎样工作。</strong></p>
+<p align="center">执行路径 · 上下文变化 · 工具证据 · 可视化诊断报告</p>
 
-Trajectory Tree（轨迹树）用于查看和分析 Agent 会话：追踪执行过程、上下文构成、工具与文件使用，按原文取证并给出可验证的改进建议。支持 DSH，另提供 Pi / Codex 分析工具和独立会话视图。
+<p align="center">
+  <a href="README.en.md">English</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="docs/host-entrypoints.md">宿主接入</a> ·
+  <a href="LICENSE">MIT License</a>
+</p>
 
-| 组件 | 入口 | 用途 |
-|---|---|---|
-| `dsh-trajectory-tools` | DSH 模型工具 | 四个只读入口：查历史、读原文、看关系、诊断取证 |
-| `dsh-analysis-view` | DSH「分析」与「路径」 | 轮次、用量、工具、异常事件及按需解读；执行路径、上下文、文件、Skill 与子代理 |
-| `dsh-conversation-search` | DSH 右侧栏 | 搜索当前对话，跳到对应轮次 |
-| `trajectory-portable-tools` | Pi 扩展 / Codex MCP / CLI | 同一组四工具，分析耗时、用量、反复尝试、工具文件及上下文 |
+<p align="center"><code>DSH</code> &nbsp; <code>Pi</code> &nbsp; <code>Codex</code> &nbsp; <code>Claude Code</code></p>
 
-查询工具只读，完整参数与结果可继续追查。DSH 的按需解读会调用模型；可选的压缩后对账默认开启，见下方说明。
+![执行路径：轮次主干、工具分支、文件变化与上下文增量](docs/media/trajectory-overview.jpg)
 
-## 环境
+从全程主线进入某一轮，查看工具参数、返回、文件变化和反馈。长对话先显示实际主线，再逐步补齐详情。
 
-- DSH：验证环境为 SDK 0.2.2-alpha.2、Web GUI，Node.js 18+；profile 默认在 `~/.dsh/profiles/web`。
-- Pi / Codex 工具：Node.js 20+。Pi 原生扩展需要 Pi；Codex 在线读取需要官方 `codex app-server`。离线文件分析无需启动模型。
+> 以下图片和动图使用示例数据，由项目现有视图与报告组件渲染。
 
-## 安装 DSH 插件
+## 追踪上下文怎样变化
 
-三个 DSH 包都是本地文件依赖，不发布 npm。在各自目录打包：
+点选一种或多种来源，追踪它们的保留量和增减。路径页的增量与总趋势可以同时显示；**总趋势默认关闭，按需开启**。
 
-```sh
-cd plugin/trajectory-tools && pnpm pack
-cd ../analysis-view && pnpm pack
-cd ../conversation-search && pnpm pack
-```
+![上下文趋势组件：按来源查看保留量与每轮增减](docs/media/context-trend.jpg)
 
-将 `.tgz` 放到固定目录，然后在 `~/.dsh/profiles/web/package.json` 中添加依赖与 bundle：
+## 看见上下文逐轮装配
 
-```json
-{
-  "dependencies": {
-    "dsh-trajectory-tools": "file:/绝对路径/dsh-trajectory-tools-0.5.1.tgz",
-    "dsh-analysis-view": "file:/绝对路径/dsh-analysis-view-0.10.30.tgz",
-    "dsh-conversation-search": "file:/绝对路径/dsh-conversation-search-0.2.1.tgz"
-  },
-  "dsh": {
-    "profile": {
-      "bundles": [
-        "dsh-trajectory-tools",
-        "dsh-analysis-view",
-        "dsh-conversation-search"
-      ]
-    }
-  }
-}
-```
+保留的材料留在原位，新内容逐轮接入，历史改写时定位发生变化的片段。组件可嵌入报告，按已有结构记录回放。
+
+![上下文装配概念序列：逐轮追加、保留与历史改写](docs/media/context-assembly.gif)
+
+## 把诊断变成一篇可读的报告
+
+把关键判断、证据和下一次行动放在一起，配合数值、分布、趋势及原文位置阅读。**报告由 AI 撰写**，Markdown 与图表组件装配为可交互 HTML。
+
+![示例诊断报告：关键读数、阶段分布和输入构成](docs/media/diagnostic-report.jpg)
+
+## 快速开始
+
+从仓库根目录操作。DSH 插件需要 Node.js 18+；其他宿主的工具与独立视图需要 Node.js 20+。
+
+<details>
+<summary><strong>DSH · 原生插件与分析面板</strong></summary>
 
 ```sh
-cd ~/.dsh/profiles/web && pnpm install
+npm pack ./plugin/trajectory-tools
+npm pack ./plugin/analysis-view
+dsh plugin --profile web add ./dsh-trajectory-tools-0.6.0.tgz ./dsh-analysis-view-0.10.32.tgz
 ```
 
-重启 `dsh web`。host 插件不会可靠热更新，客户端改动刷新页面即可。
+重启 `dsh web`，在「分析」中查看统计，或用 `/trajectory` 打开当前会话路径。已运行的实例先退出，避免端口冲突。
 
-## 四个取证工具
+可另装 [对话搜索](plugin/conversation-search/README.md)，在右侧栏搜索并跳转到消息。DSH 的按需解读会调用当前模型；压缩后对账默认开启，可设 `config.reconcile: false` 关闭。
 
-| 工具 | 用途 |
-|---|---|
-| `trajectory_inspect` | `overview` 总览、`latency` 耗时、`cost` 用量与定义、`repeats` 反复尝试、`io` 工具文件、`context` 上下文 |
-| `trajectory_search` | `events` 字面搜索、`catalog` 计数与范围、`cost` 用量、`sessions` 会话列表 |
-| `trajectory_read` | 原文、关联动作与反馈；完整参数、返回和差异可分段续读 |
-| `trajectory_graph` | 事件关系与会话谱系 |
+[分析面板](plugin/analysis-view/README.md) · [取证工具](plugin/trajectory-tools/README.md)
 
-DSH 模型侧调用示例：
+</details>
 
-```js
-trajectory_inspect({ view: "overview" })
-trajectory_search({ view: "sessions" })
-trajectory_search({ view: "events", query: "关键词" })
-trajectory_read({ session: "会话 ID", seq: 123 })
-trajectory_graph({ session: "会话 ID", seq: 123 })
-```
-
-沿用返回的 `snapshot`，可切换范围或聚焦工具、文件，并按阅读指针追查。证据保留原生身份与 `seq@logId`；未命中仅表示在本次范围和过滤下未找到。
-
-DSH 附带 `trajectory-query` skill，Pi / Codex 附带简短的 [trace-analysis skill](.agents/skills/trace-analysis/SKILL.md)。各宿主的参数有差别，见 [DSH 工具说明](plugin/trajectory-tools/README.md) / [Pi 与 Codex 工具说明](plugin/portable-tools/README.md)。
-
-**DSH 压缩后对账**：默认在成功压缩后的当轮收尾点，要求模型简述当前任务、进度与下一步，可能增加一个模型步骤。设 `config.reconcile: false` 可关闭。
-
-## DSH 分析与路径
-
-- **分析**：轮次、工具调用、失败、缓存、逐轮用量、工具分布和有证据的异常事件；按需解读按钮使用当前模型调用一次。
-- **路径**：全程概览与逐轮主线、支路、时间轴；可查看上下文构成、文件变化、工具参数与返回、Skill 和子代理。
-- **长会话**：先显示实际主线，再逐步补齐详情和图层；选中轮次优先加载，较早的上下文增量可继续取回。
-- **对话搜索**：右侧栏按关键词搜索，默认只搜用户和助手消息，可包含工具结果，点击跳到相应轮次。
-
-```text
-GET /analysis-view/digest?session=<id>          # 统计；&fresh=1 刷新缓存
-GET /analysis-view/interpret?session=<id>       # 按需解读，会消耗模型调用
-GET /analysis-view/trace?session=<id>           # 独立路径快照
-GET /analysis-view/trace?staged=1&session=<id>  # 分阶段路径页
-GET /analysis-view/trace-data?session=<id>&stage=core
-GET /conversation-search/search?session=<id>&q=<词>&scope=chat|all
-```
-
-详细使用见 [分析面板](plugin/analysis-view/README.md) / [对话搜索](plugin/conversation-search/README.md)。
-
-## Pi / Codex
-
-从仓库根目录安装工具依赖：
+<details>
+<summary><strong>Pi · 当前分支与原生命令</strong></summary>
 
 ```sh
 npm ci --prefix plugin/portable-tools --ignore-scripts
-```
-
-Pi 可加载原生扩展，读取当前分支和 SDK 工具清单，也可离线分析 Session v3 JSONL：
-
-```sh
 pi -e ./plugin/portable-tools
-# 或离线分析
-node scripts/trajectory-query.mjs --host pi --file /absolute/session.jsonl --request query.json
 ```
 
-Codex 可接入 MCP，或用 CLI 分析指定线程 / 官方快照：
+使用 `/trajectory` 打开当前选中分支。`trace-analysis` 分析会话过程，`context-profile` 查看当前上下文与工具配置。
+
+[Pi 使用说明](plugin/portable-tools/README.md#pi)
+
+</details>
+
+<details>
+<summary><strong>Codex · 插件、MCP 与独立视图</strong></summary>
 
 ```sh
-node scripts/trajectory-query.mjs --host codex --thread THREAD_ID --request query.json
-node scripts/trajectory-query.mjs --host codex --file /absolute/snapshot.json --request query.json
+npm ci --prefix plugin/portable-tools --ignore-scripts
+node scripts/sync-host-skills.mjs
+node scripts/package-trajectory.mjs --host codex
 ```
 
-`query.json` 示例：
+从本地插件目录安装 `dist/trajectory-tree-codex`，使用 `$trajectory-view`、`$trace-analysis` 或 `$context-profile`。
 
-```json
-{"view":"overview"}
-```
-
-MCP 配置、范围选择、正文续读与工具定义查询见 [安装与参数](plugin/portable-tools/README.md)。
-
-Pi 原生扩展可取得当前配置，离线历史不等同于当前配置；Codex 分析已记录的工具声明。文本构成与定义体积是估算，实际用量单独统计。Codex 已用真实会话验证；Pi 已验证原生日志与扩展接口，尚未完成真实 Pi 进程验证。
-
-## 独立会话视图
-
-Pi / Codex 可生成独立网页，使用项目原有配色和执行路径。上方构成支持点选多类，下方增量与总趋势可同时显示。
+也可以直接生成当前会话视图；读取本机会话需要官方 `codex app-server`：
 
 ```sh
-# Pi 原生日志
-node scripts/build-pi-demo.mjs --session /absolute/session.jsonl
-# Codex：只读导出并生成视图
-node scripts/export-codex-thread.mjs --thread THREAD_ID
-# 启动本地预览
-node scripts/serve-layout-review.mjs 3086
+node scripts/trajectory-view.mjs --host codex --serve
 ```
 
-访问 `http://127.0.0.1:3086/pi` 或 `http://127.0.0.1:3086/codex`。Pi 不传 `--session` 时生成明确标注的模拟示例，需要本地 Pi 源仓库。选项见 [Pi](docs/demo/layout-review/PI.md) / [Codex](docs/demo/layout-review/CODEX.md)。这些是独立预览，DSH 插件的既有视图入口不变。
+[插件入口](docs/host-entrypoints.md) · [Codex / MCP 配置](plugin/portable-tools/README.md#codex)
 
-会话导出、构建页面和截图保存在 Git 忽略的 `.dsh/`，不随仓库提交。
+</details>
 
-## 自检
+<details>
+<summary><strong>Claude Code · 原生插件与 transcript</strong></summary>
 
 ```sh
-node analyzers/self-test.mjs
-node analyzers/host-self-test.mjs
-node analyzers/shape-law.mjs
+npm ci --prefix plugin/portable-tools --ignore-scripts
+node scripts/sync-host-skills.mjs
+node scripts/package-trajectory.mjs --host claude
+claude --plugin-dir ./dist/trajectory-tree-claude
+```
+
+使用 `/trajectory-tree:trajectory-view`、`/trajectory-tree:trace-analysis` 或 `/trajectory-tree:context-profile`。插件在会话启动、恢复等时机提供当前 transcript 路径。
+
+[Claude Code 使用说明](plugin/claude/README.md)
+
+</details>
+
+### 离线生成视图
+
+```sh
+node scripts/trajectory-view.mjs --host pi --file /absolute/session.jsonl --open
+node scripts/trajectory-view.mjs --host claude --file /absolute/transcript.jsonl --open
+```
+
+生成过程不调用模型。命令返回独立 HTML 文件和本地预览地址；页面包含字体，可离线保存。
+
+## 同一组取证工具
+
+| 工具 | 用途 |
+| --- | --- |
+| `trajectory_inspect` | 查看过程、耗时、用量、反复尝试、工具文件和上下文统计 |
+| `trajectory_search` | 定位会话、字面记录与统计范围 |
+| `trajectory_read` | 查看原文、关联动作与反馈，分段追读完整参数和结果 |
+| `trajectory_graph` | 查看记录关系与会话谱系 |
+
+查询只读。各宿主按已有记录提供证据，不把未记录的内容补成事实。
+
+| 宿主 | 主要数据来源 |
+| --- | --- |
+| DSH | 原生事件与官方统计投影、上下文构成、文件、Skill 和子代理记录 |
+| Pi | 选中分支、当前 SDK 配置及采集到的工具执行时间 |
+| Codex | 官方会话读取接口，以及对应线程的本地记录补充 |
+| Claude Code | 明确选定的 transcript、原生工具参数与结果、已记录的消息用量 |
+
+## 文档
+
+- [宿主接入与命令](docs/host-entrypoints.md)
+- [工具配置、查询与正文续读](plugin/portable-tools/README.md)
+- [分析方法](skill/trace-analysis/SKILL.md) · [上下文与配置剖面](skill/context-profile/SKILL.md)
+- [HTML 报告组件用法](report/AUTHORING.md)
+
+<details>
+<summary>开发与自检</summary>
+
+```sh
+node scripts/sync-host-skills.mjs --check
+node scripts/sync-view-assets.mjs --check
 npm test --prefix plugin/trajectory-tools
-node plugin/analysis-view/self-test.mjs
-node plugin/conversation-search/self-test.mjs
 npm test --prefix plugin/portable-tools
-node analyzers/pi-adapter-test.mjs
-node analyzers/codex-adapter-test.mjs
+node plugin/analysis-view/presentation-test.mjs
+node plugin/analysis-view/perf-test.mjs
 ```
 
-## 目录与文档
+`plugin/` 提供宿主接入，`analyzers/` 处理原生记录，`view/` 与 `report/` 提供视图和报告组件。公开展示素材可由 `node scripts/build-readme-media.mjs --serve 3099` 重现。
 
-- `plugin/`：三个 DSH 插件和 Pi / Codex 工具。
-- `analyzers/`：确定性分析器、宿主适配与自检。
-- `scripts/`：导出、查询 CLI 和独立视图构建。
-- `skill/`、`.agents/skills/`：模型调用指引。
-- `docs/`：使用文档、研究和实验记录；[诊断使用入口](docs/diagnostics.md)。
-- `experiments/`：实验语料、探针与报告。
-
-## 版本
-
-| 包 | 版本 |
-|---|---|
-| dsh-trajectory-tools | 0.5.1 |
-| dsh-analysis-view | 0.10.30 |
-| dsh-conversation-search | 0.2.1 |
-| trajectory-portable-tools | 0.1.0 |
+</details>
 
 ## 许可证
 
-MIT © 2026 goatliamia，见 [LICENSE](LICENSE)。
+[MIT](LICENSE) © 2026 goatliamia

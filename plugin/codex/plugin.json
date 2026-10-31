@@ -1,0 +1,19 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "trajectory-tree",
+  "version": "0.2.1",
+  "description": "Open Agent session visualizations and analyze traces with evidence-backed tools.",
+  "repository": "https://github.com/goatliamia/trajectory-tree",
+  "license": "MIT",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Trajectory Tree",
+        "shortDescription": "会话路径、上下文视图与轨迹分析",
+        "developerName": "goatliamia",
+        "category": "Developer tools",
+        "brandColor": "#3485ed"
+      }
+    }
+  }
+}

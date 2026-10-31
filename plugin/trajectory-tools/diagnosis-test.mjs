@@ -52,7 +52,7 @@ apply({ tools: { register(t) { tools.set(t.name, t); return () => {}; } }, effec
 const invoke = (name, args) => tools.get(name).execute({ session: 'fixture', ...args }, { signal: new AbortController().signal });
 const first = await invoke('trajectory_inspect', { view: 'overview', turns: { from: 1, to: 1 }, groupBy: 'turn' });
 assert.equal(first.ok, true); assert.equal(first.items[0].samples[0].prompt.text, 'Compare the outputs and preserve the running job.');
-assert.equal(first.summary.usage.input, 5); assert.ok(first.method && first.outputRule);
+assert.equal(first.summary.usage.input, 5); assert.ok(!('method' in first)&&!('methodRef' in first)&&!('outputRule' in first));
 assert.equal(first.summary.usage.settlements, 1); assert.equal(first.summary.usage.requests, undefined, 'settlements do not claim to count attempts');
 const snapshot = first.snapshot;
 const second = await invoke('trajectory_inspect', { snapshot, view: 'overview', turns: { from: 2, to: 2 }, groupBy: 'turn' });

@@ -97,6 +97,7 @@ check("client: 只依赖 react", required.length > 0 && required.every((name) =>
 
 let Panel = null;
 const ctx = {
+  commandUi: { register(command) { check("client: /trajectory is a direct UI action", command.name === "trajectory" && command.ui.kind === "action"); } },
   uiConversation: { views: { register() {} }, binding() { return { target() { return { getSnapshot() { return null; }, subscribe() { return () => {}; } }; } }; } },
   slots: {
     inject(name, register) { register(); },

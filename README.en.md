@@ -1,185 +1,163 @@
-# Trajectory Tree
+<h1 align="center">Trajectory Tree</h1>
 
-[中文](README.md)
+<p align="center"><strong>See how your agent gets the work done.</strong></p>
+<p align="center">Execution paths · Context changes · Tool evidence · Visual diagnosis reports</p>
 
-Trajectory Tree helps you explore and diagnose Agent conversations: execution paths, context composition, tool and file use, original evidence, and improvements you can verify. Includes DSH plugins plus Pi / Codex analysis tools and standalone conversation views.
+<p align="center">
+  <a href="README.md">中文</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="docs/host-entrypoints.md">Host setup</a> ·
+  <a href="LICENSE">MIT License</a>
+</p>
 
-| Component | Entry point | Purpose |
-|---|---|---|
-| `dsh-trajectory-tools` | DSH model tools | Four read-only entries: search history, read originals, inspect relations, collect diagnostic evidence |
-| `dsh-analysis-view` | DSH Analysis / Path tabs | Turns, usage, tools, incidents and on-demand interpretation; execution paths, context, files, Skills and subagents |
-| `dsh-conversation-search` | DSH right sidebar | Search the current conversation and jump to a turn |
-| `trajectory-portable-tools` | Pi extension / Codex MCP / CLI | The same four tools for latency, usage, repeated attempts, tool/file access and context |
+<p align="center"><code>DSH</code> &nbsp; <code>Pi</code> &nbsp; <code>Codex</code> &nbsp; <code>Claude Code</code></p>
 
-Query tools are read-only, with continued access to full arguments and results. DSH interpretation makes a model call; its optional post-compaction check-in is enabled by default, as described below.
+![Execution path with turns, tool branches, file changes and context deltas](docs/media/trajectory-overview.jpg)
 
-## Requirements
+Start with the whole session, then open a turn to inspect arguments, results, file changes and feedback. Long conversations show the actual trunk first and fill in details progressively.
 
-- DSH: verified with SDK 0.2.2-alpha.2 and Web GUI; Node.js 18+. Default profile: `~/.dsh/profiles/web`.
-- Pi / Codex tools: Node.js 20+. The native Pi extension requires Pi; online Codex reads require the official `codex app-server`. Offline file analysis does not start a model.
+> Images and animation below use synthetic examples rendered by the project's existing views and report components.
 
-## Install the DSH plugins
+## Follow context as it changes
 
-The three DSH packages are local file dependencies, not published to npm. Pack each directory:
+Select one or more sources to follow their retained size and changes. Delta and total layers can coexist in the path view; **the total trend starts off and can be enabled when needed**.
 
-```sh
-cd plugin/trajectory-tools && pnpm pack
-cd ../analysis-view && pnpm pack
-cd ../conversation-search && pnpm pack
-```
+![Context component showing retained content and per-turn changes by source](docs/media/context-trend.jpg)
 
-Place the `.tgz` files in a stable location and add dependencies and bundles to `~/.dsh/profiles/web/package.json`:
+## Watch context come together
 
-```json
-{
-  "dependencies": {
-    "dsh-trajectory-tools": "file:/absolute/path/dsh-trajectory-tools-0.5.1.tgz",
-    "dsh-analysis-view": "file:/absolute/path/dsh-analysis-view-0.10.30.tgz",
-    "dsh-conversation-search": "file:/absolute/path/dsh-conversation-search-0.2.1.tgz"
-  },
-  "dsh": {
-    "profile": {
-      "bundles": [
-        "dsh-trajectory-tools",
-        "dsh-analysis-view",
-        "dsh-conversation-search"
-      ]
-    }
-  }
-}
-```
+Retained material stays in place, new content joins turn by turn, and historical rewrites identify the changed fragments. The same component can replay recorded structure inside a report.
+
+![Concept sequence showing context retention, appends and a historical rewrite](docs/media/context-assembly.gif)
+
+## Read findings alongside their evidence
+
+Bring findings, evidence and next actions into one report, using metrics, distributions, trends and original record locations. **The AI authors the report**; Markdown and chart components assemble into interactive HTML.
+
+![Example diagnosis report with metrics, stage distribution and input composition](docs/media/diagnostic-report.jpg)
+
+## Quick start
+
+Run commands from the repository root. DSH plugins require Node.js 18+; other hosts and standalone views require Node.js 20+.
+
+<details>
+<summary><strong>DSH · Native plugins and analysis panel</strong></summary>
 
 ```sh
-cd ~/.dsh/profiles/web && pnpm install
+npm pack ./plugin/trajectory-tools
+npm pack ./plugin/analysis-view
+dsh plugin --profile web add ./dsh-trajectory-tools-0.6.0.tgz ./dsh-analysis-view-0.10.32.tgz
 ```
 
-Restart `dsh web`. Host plugins do not hot-reload reliably; client-only changes need a page refresh.
+Restart `dsh web`, open Analysis, or use `/trajectory` for the current session's path. Stop an existing instance before restarting to avoid a port conflict.
 
-## Four evidence tools
+Optionally add [Conversation search](plugin/conversation-search/README.md) for sidebar search and message navigation. DSH on-demand interpretation calls the current model. The post-compaction check-in is enabled by default; disable it with `config.reconcile: false`.
 
-| Tool | Purpose |
-|---|---|
-| `trajectory_inspect` | `overview`, `latency`, `cost` (usage and declarations), `repeats`, `io` (tools/files), `context` |
-| `trajectory_search` | `events` literal search, `catalog` counts and ranges, `cost` usage, `sessions` list |
-| `trajectory_read` | Original records, connected actions and feedback; continue through full arguments, results and diffs |
-| `trajectory_graph` | Event relations and session lineage |
+[Analysis panel](plugin/analysis-view/README.md) · [Evidence tools](plugin/trajectory-tools/README.md)
 
-Example model-side DSH calls:
+</details>
 
-```js
-trajectory_inspect({ view: "overview" })
-trajectory_search({ view: "sessions" })
-trajectory_search({ view: "events", query: "keyword" })
-trajectory_read({ session: "SESSION_ID", seq: 123 })
-trajectory_graph({ session: "SESSION_ID", seq: 123 })
-```
-
-Reuse the returned `snapshot` to change ranges or focus on a tool or file, then follow read pointers. Evidence retains native identities and `seq@logId`; an empty result is limited to the selected scope and filters.
-
-DSH includes the `trajectory-query` skill; Pi / Codex include a short [trace-analysis skill](.agents/skills/trace-analysis/SKILL.md). Host parameters differ; see [DSH tools](plugin/trajectory-tools/README.md) and [Pi / Codex tools](plugin/portable-tools/README.md).
-
-**DSH post-compaction check-in:** enabled by default. After successful compaction, the model is asked at the end of the turn to state its task, progress and next action. This can add a model step. Disable with `config.reconcile: false`.
-
-## DSH Analysis and Path
-
-- **Analysis:** turns, tool calls, failures, cache, per-turn usage, tool distribution and evidence-backed incidents. On-demand interpretation makes one call using the current model.
-- **Path:** session overview and individual turns, trunk, branches and time axis; context composition, file changes, tool arguments/results, Skills and subagents.
-- **Long conversations:** the actual trunk appears first, followed by details and other layers. Selected turns get priority; earlier context increments can be loaded separately.
-- **Conversation search:** keyword search in the sidebar, chat messages by default with optional tool output; click a hit to jump to its turn.
-
-```text
-GET /analysis-view/digest?session=<id>          # statistics; &fresh=1 bypasses cache
-GET /analysis-view/interpret?session=<id>       # on-demand interpretation; uses a model call
-GET /analysis-view/trace?session=<id>           # standalone Path snapshot
-GET /analysis-view/trace?staged=1&session=<id>  # staged Path page
-GET /analysis-view/trace-data?session=<id>&stage=core
-GET /conversation-search/search?session=<id>&q=<term>&scope=chat|all
-```
-
-See [Analysis](plugin/analysis-view/README.md) and [Conversation search](plugin/conversation-search/README.md).
-
-## Pi / Codex
-
-Install the tool dependencies from the repository root:
+<details>
+<summary><strong>Pi · Selected branch and native command</strong></summary>
 
 ```sh
 npm ci --prefix plugin/portable-tools --ignore-scripts
-```
-
-Pi can load the native extension to inspect the current branch and SDK tool inventory, or analyze a Session v3 JSONL file offline:
-
-```sh
 pi -e ./plugin/portable-tools
-# Or analyze offline
-node scripts/trajectory-query.mjs --host pi --file /absolute/session.jsonl --request query.json
 ```
 
-Codex supports MCP integration or CLI analysis of a thread / official snapshot:
+Use `/trajectory` for the selected branch, `trace-analysis` for the session process, and `context-profile` for current context and tool configuration.
+
+[Pi setup](plugin/portable-tools/README.md#pi)
+
+</details>
+
+<details>
+<summary><strong>Codex · Plugin, MCP and standalone views</strong></summary>
 
 ```sh
-node scripts/trajectory-query.mjs --host codex --thread THREAD_ID --request query.json
-node scripts/trajectory-query.mjs --host codex --file /absolute/snapshot.json --request query.json
+npm ci --prefix plugin/portable-tools --ignore-scripts
+node scripts/sync-host-skills.mjs
+node scripts/package-trajectory.mjs --host codex
 ```
 
-Example `query.json`:
+Install `dist/trajectory-tree-codex` from the local plugin directory, then use `$trajectory-view`, `$trace-analysis`, or `$context-profile`.
 
-```json
-{"view":"overview"}
-```
-
-See [setup and parameters](plugin/portable-tools/README.md) for MCP configuration, scope selection, full-body continuation and tool-definition queries.
-
-The native Pi extension can read current configuration; historical files are not a current inventory. Codex analyzes recorded tool declarations. Text composition and definition sizes are estimates; recorded usage is reported separately. Codex was verified with a real conversation. Pi native logs and extension interfaces were tested; a real Pi process has not been verified here.
-
-## Standalone conversation views
-
-Pi / Codex can generate standalone pages using the project's palette and execution path. Select multiple context sources above the graph; delta and total trends can be shown together.
+Generate a view directly for the current session; local session reads require the official `codex app-server`:
 
 ```sh
-# Native Pi session
-node scripts/build-pi-demo.mjs --session /absolute/session.jsonl
-# Codex: read-only export and view generation
-node scripts/export-codex-thread.mjs --thread THREAD_ID
-# Start local previews
-node scripts/serve-layout-review.mjs 3086
+node scripts/trajectory-view.mjs --host codex --serve
 ```
 
-Open `http://127.0.0.1:3086/pi` or `http://127.0.0.1:3086/codex`. Without `--session`, the Pi builder creates a clearly labeled synthetic example and requires a local Pi source repository. See [Pi](docs/demo/layout-review/PI.md) / [Codex](docs/demo/layout-review/CODEX.md) for options. These are independent previews; existing DSH view routes stay the same.
+[Plugin entry points](docs/host-entrypoints.md) · [Codex / MCP setup](plugin/portable-tools/README.md#codex)
 
-Exports, generated pages and screenshots are kept in Git-ignored `.dsh/`, outside repository commits.
+</details>
 
-## Self-tests
+<details>
+<summary><strong>Claude Code · Native plugin and transcript</strong></summary>
 
 ```sh
-node analyzers/self-test.mjs
-node analyzers/host-self-test.mjs
-node analyzers/shape-law.mjs
+npm ci --prefix plugin/portable-tools --ignore-scripts
+node scripts/sync-host-skills.mjs
+node scripts/package-trajectory.mjs --host claude
+claude --plugin-dir ./dist/trajectory-tree-claude
+```
+
+Use `/trajectory-tree:trajectory-view`, `/trajectory-tree:trace-analysis`, or `/trajectory-tree:context-profile`. The plugin provides the current transcript path at session startup, resume and related lifecycle events.
+
+[Claude Code setup](plugin/claude/README.md)
+
+</details>
+
+### Generate an offline view
+
+```sh
+node scripts/trajectory-view.mjs --host pi --file /absolute/session.jsonl --open
+node scripts/trajectory-view.mjs --host claude --file /absolute/transcript.jsonl --open
+```
+
+Generation does not call a model. The command returns a standalone HTML file and a local preview URL; fonts are embedded for offline viewing.
+
+## One set of evidence tools
+
+| Tool | Purpose |
+| --- | --- |
+| `trajectory_inspect` | Inspect the process, latency, usage, repeated attempts, tools/files and context |
+| `trajectory_search` | Locate sessions, literal records and statistical scopes |
+| `trajectory_read` | Read originals, connected actions and feedback; continue through full arguments and results |
+| `trajectory_graph` | Inspect record relations and session lineage |
+
+Queries are read-only. Each host exposes its recorded evidence; missing content remains unknown.
+
+| Host | Main data sources |
+| --- | --- |
+| DSH | Native events, official statistics, context composition, files, Skills and subagents |
+| Pi | Selected branch, current SDK configuration and captured execution timing |
+| Codex | Official session APIs and matching local thread records |
+| Claude Code | An explicitly selected transcript, native tool arguments/results and recorded message usage |
+
+## Documentation
+
+- [Host setup and commands](docs/host-entrypoints.md)
+- [Tool configuration, queries and continued reads](plugin/portable-tools/README.md)
+- [Analysis methods](skill/trace-analysis/SKILL.md) · [Context and configuration profile](skill/context-profile/SKILL.md)
+- [HTML report components](report/AUTHORING.md)
+
+<details>
+<summary>Development and checks</summary>
+
+```sh
+node scripts/sync-host-skills.mjs --check
+node scripts/sync-view-assets.mjs --check
 npm test --prefix plugin/trajectory-tools
-node plugin/analysis-view/self-test.mjs
-node plugin/conversation-search/self-test.mjs
 npm test --prefix plugin/portable-tools
-node analyzers/pi-adapter-test.mjs
-node analyzers/codex-adapter-test.mjs
+node plugin/analysis-view/presentation-test.mjs
+node plugin/analysis-view/perf-test.mjs
 ```
 
-## Files and documentation
+`plugin/` provides host integrations, `analyzers/` reads native records, and `view/` plus `report/` provide visualizations. Recreate the public showcase pages with `node scripts/build-readme-media.mjs --serve 3099`.
 
-- `plugin/`: three DSH plugins and portable Pi / Codex tools.
-- `analyzers/`: deterministic analyzers, host adapters and self-tests.
-- `scripts/`: export, query CLI and standalone view builders.
-- `skill/`, `.agents/skills/`: model usage instructions.
-- `docs/`: usage, research and experiment records; [diagnostic entry points](docs/diagnostics.md).
-- `experiments/`: test corpora, probes and reports.
-
-## Versions
-
-| Package | Version |
-|---|---|
-| dsh-trajectory-tools | 0.5.1 |
-| dsh-analysis-view | 0.10.30 |
-| dsh-conversation-search | 0.2.1 |
-| trajectory-portable-tools | 0.1.0 |
+</details>
 
 ## License
 
-MIT © 2026 goatliamia, see [LICENSE](LICENSE).
+[MIT](LICENSE) © 2026 goatliamia

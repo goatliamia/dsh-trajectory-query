@@ -32,9 +32,11 @@ try {
   const { tool: readTool, linked, ...readArgs } = first.rows[0].read;
   const nativeRead = cli(['--tool', readTool, '--args', JSON.stringify(readArgs)]); assert.ok(nativeRead.native.entryId, 'native session ID in a pointer works across CLI processes');
 
-  const hooks = new Map(), registered = new Map();
-  const pi = { on: (event, handler) => hooks.set(event, handler), registerTool: tool => registered.set(tool.name, tool), getActiveTools: () => ['read'], getAllTools: () => [{ name: 'read', description: 'Read files', parameters: { type: 'object' }, exposure: 'inline' }, { name: 'rare_but_needed', description: 'Recover a missing resource', parameters: { type: 'object' }, exposure: 'deferred' }] };
+  const hooks = new Map(), registered = new Map(), commands=new Map();
+  const pi = { registerCommand:(name,command)=>commands.set(name,command), on: (event, handler) => hooks.set(event, handler), registerTool: tool => registered.set(tool.name, tool), getActiveTools: () => ['read'], getAllTools: () => [{ name: 'read', description: 'Read files', parameters: { type: 'object' }, exposure: 'inline' }, { name: 'rare_but_needed', description: 'Recover a missing resource', parameters: { type: 'object' }, exposure: 'deferred' }] };
   piExtension(pi); assert.equal(registered.size, 4);
+  assert.ok(commands.has('trajectory'),'Pi has a native /trajectory command');
+  let notice;await commands.get('trajectory').handler('--unknown',{ui:{notify:text=>{notice=text;}}});assert.ok(notice.startsWith('用法：/trajectory'));
   const ctx = { cwd: input.header.cwd, model: { id: 'pi-demo-model', provider: 'synthetic-provider', contextWindow: 200000 }, getSystemPrompt: () => 'Current assembled system prompt', sessionManager: { getSessionId: () => input.header.id, getSessionFile: () => file, getEntries: () => input.entries, getLeafId: () => input.entries.at(-1).id } };
   for (const row of input.capture) if (hooks.has(row.event.type)) hooks.get(row.event.type)(row.event, ctx);
   const result = await registered.get('trajectory_inspect').execute('analysis', { view: 'cost', groupBy: 'definition' }, undefined, undefined, ctx), native = JSON.parse(result.content[0].text);

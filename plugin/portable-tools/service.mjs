@@ -1,6 +1,5 @@
 import { inspectData, VIEWS } from './analysis.mjs';
 import { hash, recordText } from './sources.mjs';
-import { INSPECT_METHODS, INSPECT_OUTPUT_RULE, METHOD_VERSION } from '../trajectory-tools/lib/inspect-methods.js';
 import { portableReportData } from './report-data.mjs';
 import { reportPage } from '../trajectory-tools/lib/report-data.js';
 
@@ -42,7 +41,7 @@ export class PortableService {
       if (id && id !== key) throw Error('Source changed; use a new snapshot or the persistent MCP/Pi tool');
       if (bytes > this.maxBytes) throw Error('Source exceeds retained snapshot budget');
       if (this.closed) throw Error('Service disposed');
-      const item = { id: key, data, alias: session, bytes, at: Date.now(), methods: new Set(), outputSent: false };
+      const item = { id: key, data, alias: session, bytes, at: Date.now() };
       this.entries.delete(key); this.entries.set(key, item);
       while (this.entries.size > 2 || [...this.entries.values()].reduce((n, v) => n + v.bytes, 0) > this.maxBytes) this.entries.delete(this.entries.keys().next().value);
       this.arm(); return item;
@@ -84,18 +83,15 @@ export class PortableService {
       }
       if (q.groupBy && !(['overview', 'io'].includes(view) ? ['turn', 'tool', 'file'] : view === 'cost' ? ['turn', 'definition'] : ['turn']).includes(q.groupBy)) throw Error('Grouping is not available for this view; tool/file groups do not allocate model usage');
       const report = inspectData(data, { ...q, view }), page = paginate(report.rows, args.limit ?? 6);
-      const repeated = item.methods.has(view); item.methods.add(view);
       const { rows, ...summary } = report;
-      const method = repeated ? { methodRef: METHOD_VERSION + ':' + view } : { method: { version: METHOD_VERSION, text: INSPECT_METHODS[view] } };
-      const output = item.outputSent ? {} : { reportRule: INSPECT_OUTPUT_RULE }; item.outputSent = true;
       // Expansion pointers are valid for this frozen cut, even after a live append.
       const bind = value => {
         if (Array.isArray(value)) return value.map(bind);
         if (!value || typeof value !== 'object') return value;
-        if (value.tool?.startsWith('trajectory_')) return { ...value, snapshot: item.id };
+        if (typeof value.tool === 'string' && value.tool.startsWith('trajectory_')) return { ...value, snapshot: item.id };
         return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, bind(v)]));
       };
-      return bind({ ...base, view, ...(offset ? { summary: report.summary, coverage: report.coverage } : summary), ...page, ...method, ...output });
+      return bind({ ...base, view, ...(offset ? { summary: report.summary, coverage: report.coverage } : summary), ...page });
     }
     if (name === 'trajectory_search') {
       let records = data.records.filter(r => !q.turns || r.turn >= q.turns.from && r.turn <= q.turns.to);
@@ -114,7 +110,7 @@ export class PortableService {
       const maxChars = args.maxChars ?? 8000, start = args.offset ?? 0;
       if (!Number.isSafeInteger(start) || start < 0 || !Number.isInteger(maxChars) || maxChars < 100 || maxChars > 24000) throw Error('Invalid read offset/maxChars');
       const chunk = (r, field, budget) => {
-        let value = field === 'text' ? recordText(r) : field === 'arguments' ? r.body?.arguments : ['parameters', 'description'].includes(field) ? r.body?.[field] ?? r.body?.function?.[field] : r.body;
+        let value = field === 'text' ? recordText(r) : field === 'arguments' ? r.body?.arguments ?? (data.host === 'claude' && r.kind === 'call' ? r.body?.input : undefined) : ['parameters', 'description'].includes(field) ? r.body?.[field] ?? r.body?.function?.[field] : r.body;
         if (field === 'result') { const returned = r.kind === 'result' ? r : data.records.find(x => x.seq === r.resultSeq); if (!returned) throw Error('No recorded result'); value = returned.body; }
         if (value === undefined) throw Error('This record has no ' + field);
         const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);

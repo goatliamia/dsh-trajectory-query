@@ -5,6 +5,10 @@ A resident **Analysis** tab for the DSH Web GUI that turns a session's trajector
 DSH Web GUI 常驻「分析」标签:把一次会话的轨迹组织成 **runtime incident view**——
 系统发生了什么、以及 Harness 为什么这样反应。
 
+0.10.31 起，Web 端可用 `/trajectory` 直接打开当前会话的路径与上下文页；这是客户端动作，不发送分析提示词或调用模型。
+
+0.10.32 合入来源多选与总趋势图层。总趋势默认关闭；共享资源与独立宿主视图同步，保留已做的缓存、可见区域裁剪和折线压缩。
+
 English | [中文](#中文)
 
 ---
@@ -43,9 +47,9 @@ The Analysis tab appears next to Conversation and Trajectory.
 Dynamic plugins are session-scoped and vanish on reload; this one is installed into the web profile.
 
 ```text
-1. pnpm pack                      # -> dsh-analysis-view-0.10.30.tgz
+1. pnpm pack                      # -> dsh-analysis-view-0.10.31.tgz
 2. add to ~/.dsh/profiles/web/package.json:
-     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.10.30.tgz"
+     dependencies:  "dsh-analysis-view": "file:<abs path>/dsh-analysis-view-0.10.31.tgz"
      dsh.profile.bundles: append "dsh-analysis-view"
 3. pnpm install                   # in ~/.dsh/profiles/web
 4. rebuild / restart `dsh web`    # so the new client module enters the bundle
@@ -113,9 +117,9 @@ The standalone `GET /analysis-view/trace?session=<id>` URL returns a self-contai
 动态插件是会话级、刷新即失;这个是装进 web profile 的常驻插件。
 
 ```text
-1. pnpm pack                      # 生成 dsh-analysis-view-0.10.30.tgz
+1. pnpm pack                      # 生成 dsh-analysis-view-0.10.31.tgz
 2. 在 ~/.dsh/profiles/web/package.json 中:
-     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.10.30.tgz"
+     dependencies 增加 "dsh-analysis-view": "file:<绝对路径>/dsh-analysis-view-0.10.31.tgz"
      dsh.profile.bundles 追加 "dsh-analysis-view"
 3. 在 ~/.dsh/profiles/web 下执行 pnpm install
 4. 重建/重启 `dsh web`,让新的 client 模块进入前端包

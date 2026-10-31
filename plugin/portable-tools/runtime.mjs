@@ -5,7 +5,7 @@ import { listCodexThreads } from '../../analyzers/codex-reader.mjs';
 export function sourceOptions(args) {
   const option = name => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1]; };
   const host = option('--host'), file = option('--file'), thread = option('--thread') || (!file && host === 'codex' ? process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID : undefined);
-  if (!['pi', 'codex'].includes(host) || host === 'pi' && !file) throw Error('Use --host pi --file session.jsonl, or --host codex [--file snapshot.json / --thread ID]');
+  if (!['pi', 'codex', 'claude'].includes(host) || ['pi', 'claude'].includes(host) && !file) throw Error('Use --host pi|claude --file session.jsonl, or --host codex [--file snapshot.json / --thread ID]');
   return { host, file, thread, bindThread: !!option('--thread'), leafId: option('--leaf'), captureFile: option('--capture'), rollout: option('--rollout'), apiOnly: args.includes('--api-only'), synthetic: args.includes('--synthetic') };
 }
 export function fileService(spec, options = {}) {
