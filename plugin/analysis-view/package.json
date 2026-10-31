@@ -1,6 +1,6 @@
 {
   "name": "dsh-analysis-view",
-  "version": "0.10.35",
+  "version": "0.10.36",
   "private": true,
   "type": "module",
   "description": "「分析」标签与执行路径页:Geist 视觉、上下文层、文件层、子代理与 Skill 观察",

@@ -273,9 +273,9 @@ window.__geistBoot = () => {
       const pos = x(index), active = index === selectedStep, left = start + index * gap + 6, right = left + gap - 12;
       const info = reviewStepContext(t, step);
       let part = '<rect x="' + left + '" y="28" width="' + (right - left) + '" height="' + (height - 60) + '" class="br-hit"/>';
-      part += brText(pos, showTime ? 42 : 48, '第 ' + step.number + ' 步', 'review-turn-duration');
-      if (showTime) part += brText(pos, 57, preciseTime(step.end - step.start), 'review-turn-duration review-duration-value');
-      part += '<path d="M' + left + ' 62v4H' + right + 'v-4" class="review-interval-guide"/>';
+      // 步号与耗时并成一行,顶部少一行给图。
+      part += brText(pos, 48, '第 ' + step.number + ' 步' + (showTime ? ' · ' + preciseTime(step.end - step.start) : ''), 'review-turn-duration');
+      part += '<path d="M' + left + ' 56v4H' + right + 'v-4" class="review-interval-guide"/>';
       if (showContext && info) {
         const values = CONTEXT_CATEGORIES.map(c => ({ ...c, value: info.parts[c.key] }));
         const plus = values.reduce((n, c) => n + Math.max(0, c.value), 0), minus = values.reduce((n, c) => n + Math.max(0, -c.value), 0);
