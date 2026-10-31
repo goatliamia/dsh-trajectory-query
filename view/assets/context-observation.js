@@ -26,7 +26,8 @@
     geistRenderContextOverview();
     const total = studyShowTotal && view === 'overview';
     reviewContextScale.pixels = 76;
-    return { height: total ? 430 : 350, base: total ? 282 : overviewLayers.has('context') ? 202 : 208 };
+    // 总趋势只多画一条存量带,不改画布高度与基线;否则一开一关整张图都挪。
+    return { height: 350, base: overviewLayers.has('context') ? 202 : 208 };
   };
   function studySyncSources() {
     const region = $('geist-context-overview'); if (!region) return;
@@ -96,7 +97,8 @@
       studyProjectionCache = { series, axis, points: series.rows.map((row, index) => ({ row, index, x: projection.mapTime(row.time) })) };
     const points = studyProjectionCache.points;
     if (!points.length) return '';
-    const max = studyNice(series.maximum * 1.03), pixels = 154, stockBase = base;
+    // 存量带画在主干下方:增量全为正时,那块本来空着。
+    const max = studyNice(series.maximum * 1.03), pixels = 154, stockBase = base + pixels;
     const y = value => stockBase - value / max * pixels;
     const firstVisible = points.findIndex(p => p.x >= left);
     const first = firstVisible < 0 ? Math.max(0, points.length - 1) : Math.max(0, firstVisible - 1);
