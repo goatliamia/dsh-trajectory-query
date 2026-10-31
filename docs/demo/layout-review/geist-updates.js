@@ -1,6 +1,20 @@
   // Merge arrivals cheaply, then rebuild only the indices whose inputs changed.
   // Several arrivals in one frame share the same index and graph work.
   window.__ctxProbe = () => ({ rows: reviewContextRequests.length, index: reviewContextStepIndex.size, view, sample: reviewContextRequests.slice(0, 2).map(r => ({ seq: r.seq, turn: r.turn, step: r.step })) });
+
+  // 临时:把探针结果直接显示在页面上,便于截图核对;确认后删除。
+  if (typeof document !== 'undefined') {
+    const showProbe = () => {
+      let el = document.getElementById('ctx-probe');
+      if (!el) {
+        el = document.createElement('div'); el.id = 'ctx-probe';
+        el.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:9999;font:11px/1.4 monospace;background:#fff;color:#111;border:1px solid #ccc;padding:4px 6px;border-radius:4px;max-width:72ch;white-space:pre-wrap';
+        document.body.appendChild(el);
+      }
+      try { el.textContent = JSON.stringify(window.__ctxProbe()); } catch (error) { el.textContent = String(error); }
+    };
+    setTimeout(showProbe, 1500); setInterval(showProbe, 1000);
+  }
   const geistDirty = new Set();
   const geistUpdateCounts = window.__traceUpdates = { context: 0, outcomes: 0, actors: 0, stats: 0, graph: 0, contextLayer: 0, summary: 0 };
   const geistArrived = new Set();
