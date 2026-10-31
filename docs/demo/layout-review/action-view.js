@@ -16,12 +16,26 @@
     const width = Math.max(viewportWidth, gutter * 2 + gap * count);
     const start = (width - gap * count) / 2, x = index => start + (index + .5) * gap;
     const scale = { ...reviewActionScale(t), pixels: 100 };
+    // 上下按本轮实际的增减极值分配:数据在真实页面里是齐的(rows 598 / index 598)。
+    let sideUp = 0, sideDown = 0;
+    if (showContext) for (const step of steps) {
+      const info = reviewStepContext(t, step); if (!info) continue;
+      let plus = 0, minus = 0;
+      for (const c of CONTEXT_CATEGORIES) { const value = info.parts[c.key] || 0; if (value > 0) plus += value; else minus -= value; }
+      sideUp = Math.max(sideUp, plus); sideDown = Math.max(sideDown, minus);
+    }
+    const band = scale.pixels * 2;
+    const upPixels = sideUp + sideDown > 0 ? Math.max(28, band * sideUp / (sideUp + sideDown)) : scale.pixels;
+    const downPixels = band - upPixels;
+    const upSide = { limit: Math.max(1, sideUp), pixels: upPixels }, downSide = { limit: Math.max(1, sideDown), pixels: downPixels };
+    const gridTop = base - upPixels, gridBottom = base + downPixels;
     let html = '<title>第 ' + t.number + ' 轮 · 逐步行动</title><desc>每个图标是一段模型处理及随后发起的工具操作，步内可能经历请求重试。上下文与主线共用零点，向上增加、向下减少。步骤间距表示顺序，不表示耗时。</desc>', axisLabels = '';
     html += '<defs><pattern id="review-action-negative" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M0 5L5 0" stroke="var(--surface)" stroke-opacity=".6"/></pattern></defs>';
-    if (showContext) for (const sign of [1, -1]) {
-      const y = base - sign * scale.pixels;
-      html += '<path d="M' + gutter + ' ' + y + 'H' + (width - gutter) + '" class="review-context-grid"/>';
-      axisLabels += brText(gutter - 7, y + 3, reviewSigned(sign * scale.limit), 'review-context-axis', 'end');
+    if (showContext) {
+      html += '<path d="M' + gutter + ' ' + gridTop + 'H' + (width - gutter) + '" class="review-context-grid"/>';
+      html += '<path d="M' + gutter + ' ' + gridBottom + 'H' + (width - gutter) + '" class="review-context-grid"/>';
+      axisLabels += brText(gutter - 7, gridTop + 3, reviewSigned(upSide.limit), 'review-context-axis', 'end');
+      axisLabels += brText(gutter - 7, gridBottom + 3, reviewSigned(-downSide.limit), 'review-context-axis', 'end');
     }
     html += '<path d="M' + (x(0) - 36) + ' ' + base + 'H' + (x(count - 1) + 36) + '" class="br-trunk"/>';
     steps.forEach((step, index) => {
@@ -34,7 +48,7 @@
       if (showContext && info) {
         const values = CONTEXT_CATEGORIES.map(c => ({ ...c, value: info.parts[c.key] }));
         const plus = values.reduce((n, c) => n + Math.max(0, c.value), 0), minus = values.reduce((n, c) => n + Math.max(0, -c.value), 0);
-        const sides = { up: contextDisplaySide(plus, scale), down: contextDisplaySide(minus, scale) };
+        const sides = { up: contextDisplaySide(plus, upSide), down: contextDisplaySide(minus, downSide) };
         let up = base, down = base;
         for (const c of values) {
           if (!c.value) continue;
